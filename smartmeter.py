@@ -5,6 +5,8 @@ import configparser
 from requests.sessions import Session
 from requests.auth import HTTPDigestAuth
 import subprocess
+import json
+import paho.mqtt.client as mqtt
 
 # Define ports
 UDP_PORT = 12345
@@ -244,8 +246,59 @@ class AmisReader(Powermeter):
         return session.get(url, timeout=10).json()
 
     def get_powermeter_watts(self):
-        ParsedData = self.get_json('/rest')
-        return [int(ParsedData['saldo'])]
+        response = self.get_json('/rest')
+        return [int(response['saldo'])]
+
+
+def extract_json_value(data, path):
+    keys = path.split('.')
+    for key in keys:
+        data = data[key]
+    return int(data)
+
+class MqttPowermeter(Powermeter):
+    def __init__(self, broker: str, port: int, topic: str, json_path: str = None, username: str = None,
+                 password: str = None):
+        self.broker = broker
+        self.port = port
+        self.topic = topic
+        self.json_path = json_path
+        self.username = username
+        self.password = password
+        self.value = None
+
+        # Initialize MQTT client
+        self.client = mqtt.Client()
+        if self.username and self.password:
+            self.client.username_pw_set(self.username, self.password)
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
+
+        # Connect to the broker
+        self.client.connect(self.broker, self.port, 60)
+        self.client.loop_start()
+
+    def on_connect(self, client, userdata, flags, rc):
+        print(f"Connected with result code {rc}")
+        # Subscribe to the topic
+        client.subscribe(self.topic)
+
+    def on_message(self, client, userdata, msg):
+        payload = msg.payload.decode()
+        if self.json_path:
+            try:
+                data = json.loads(payload)
+                self.value = extract_json_value(data, self.json_path)
+            except json.JSONDecodeError:
+                print("Failed to decode JSON")
+        else:
+            self.value = int(payload)
+
+    def get_powermeter_watts(self):
+        if self.value is not None:
+            return [self.value]
+        else:
+            raise ValueError("No value received from MQTT")
 
 
 class Script(Powermeter):
@@ -351,6 +404,15 @@ def create_powermeter(config: configparser.ConfigParser) -> Powermeter:
     elif config.has_section(AMIS_READER_SECTION):
         return AmisReader(
             config.get(AMIS_READER_SECTION, 'IP', fallback='')
+        )
+    elif config.has_section("MQTT"):
+        return MqttPowermeter(
+            config.get("MQTT", "BROKER", fallback=''),
+            config.getint("MQTT", "PORT", fallback=1883),
+            config.get("MQTT", "TOPIC", fallback=''),
+            config.get("MQTT", "JSON_PATH", fallback=None),
+            config.get("MQTT", "USERNAME", fallback=None),
+            config.get("MQTT", "PASSWORD", fallback=None)
         )
     else:
         raise Exception("Error: no powermeter defined!")

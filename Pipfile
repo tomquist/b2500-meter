@@ -6,7 +6,6 @@ verify_ssl = true
 [packages]
 requests = "*"
 urllib3 = "*"
+paho-mqtt = "*"
 
 [dev-packages]
-
-
