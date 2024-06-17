@@ -9,3 +9,6 @@ urllib3 = "*"
 paho-mqtt = "*"
 
 [dev-packages]
+flake8 = "*"
+black = "*"
+flake8-black = "*"
