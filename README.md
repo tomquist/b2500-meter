@@ -10,10 +10,12 @@ The configuration is managed using an `ini` file called `config.ini`. Below, you
 
 Add a general section with the option to enable or disable summation of phase values.
 
-By default, the script will sum the power values of all phases and report them as a single value on phase 1. To disable this behavior, add the following configuration to the `config.ini` file:
 ```ini
 [GENERAL]
+# By default, the script will sum the power values of all phases and report them as a single value on phase 1. To disable this behavior, add the following configuration to the `config.ini` file
 DISABLE_SUM_PHASES = False
+# It looks like the B2500 storage currently does not support negative power values so they get clamped to 0 by default. To disable this behavior, you can set the following configuration to `True`
+ALLOW_NEGATIVE_VALUES = False
 ```
 
 ### Shelly
