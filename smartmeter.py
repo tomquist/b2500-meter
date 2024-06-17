@@ -1,10 +1,8 @@
 import socket
 import threading
 import time
-import random
 import configparser
 from requests.sessions import Session
-from requests.auth import HTTPBasicAuth
 from requests.auth import HTTPDigestAuth
 import subprocess
 
@@ -15,13 +13,17 @@ TCP_PORT = 12345
 # Initialize session for HTTP requests
 session = Session()
 
+
 # Powermeter classes
 class Powermeter:
-    def GetPowermeterWatts(self) -> int:
+    def get_powermeter_watts(self) -> tuple[int, ...]:
         raise NotImplementedError()
 
+
 class Tasmota(Powermeter):
-    def __init__(self, ip: str, user: str, password: str, json_status: str, json_payload_mqtt_prefix: str, json_power_mqtt_label: str, json_power_input_mqtt_label: str, json_power_output_mqtt_label: str, json_power_calculate: bool):
+    def __init__(self, ip: str, user: str, password: str, json_status: str, json_payload_mqtt_prefix: str,
+                 json_power_mqtt_label: str, json_power_input_mqtt_label: str, json_power_output_mqtt_label: str,
+                 json_power_calculate: bool):
         self.ip = ip
         self.user = user
         self.password = password
@@ -32,21 +34,22 @@ class Tasmota(Powermeter):
         self.json_power_output_mqtt_label = json_power_output_mqtt_label
         self.json_power_calculate = json_power_calculate
 
-    def GetJson(self, path):      
+    def get_json(self, path):
         url = f'http://{self.ip}{path}'
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
+    def get_powermeter_watts(self):
         if not self.user:
-            ParsedData = self.GetJson('/cm?cmnd=status%2010')
+            response = self.get_json('/cm?cmnd=status%2010')
         else:
-            ParsedData = self.GetJson(f'/cm?user={self.user}&password={self.password}&cmnd=status%2010')
+            response = self.get_json(f'/cm?user={self.user}&password={self.password}&cmnd=status%2010')
         if not self.json_power_calculate:
-            return int(ParsedData[self.json_status][self.json_payload_mqtt_prefix][self.json_power_mqtt_label])
+            return [int(response[self.json_status][self.json_payload_mqtt_prefix][self.json_power_mqtt_label])]
         else:
-            input = ParsedData[self.json_status][self.json_payload_mqtt_prefix][self.json_power_input_mqtt_label]
-            output = ParsedData[self.json_status][self.json_payload_mqtt_prefix][self.json_power_output_mqtt_label]
-            return int(input) - int(output)
+            input = response[self.json_status][self.json_payload_mqtt_prefix][self.json_power_input_mqtt_label]
+            output = response[self.json_status][self.json_payload_mqtt_prefix][self.json_power_output_mqtt_label]
+            return [int(input) - int(output)]
+
 
 class Shelly(Powermeter):
     def __init__(self, ip: str, user: str, password: str, emeterindex: str):
@@ -55,41 +58,55 @@ class Shelly(Powermeter):
         self.password = password
         self.emeterindex = emeterindex
 
-    def GetJson(self, path):
+    def get_json(self, path):
         url = f'http://{self.ip}{path}'
         headers = {"content-type": "application/json"}
         return session.get(url, headers=headers, auth=(self.user, self.password), timeout=10).json()
 
-    def GetRpcJson(self, path):
+    def get_rpc_json(self, path):
         url = f'http://{self.ip}/rpc{path}'
         headers = {"content-type": "application/json"}
         return session.get(url, headers=headers, auth=HTTPDigestAuth(self.user, self.password), timeout=10).json()
 
-    def GetPowermeterWatts(self) -> int:
+    def get_powermeter_watts(self) -> tuple[int, ...]:
         raise NotImplementedError()
 
+
 class Shelly1PM(Shelly):
-    def GetPowermeterWatts(self):
-        return int(self.GetJson('/status')['meters'][0]['power'])
+    def get_powermeter_watts(self):
+        status = self.get_json('/status')
+        if self.emeterindex:
+            return [int(self.get_json(f'/meter/{self.emeterindex}')['power'])]
+        else:
+            return [int(meter['power']) for meter in status['meters']]
+
 
 class ShellyPlus1PM(Shelly):
-    def GetPowermeterWatts(self):
-        return int(self.GetRpcJson('/Switch.GetStatus?id=0')['apower'])
+    def get_powermeter_watts(self):
+        return [int(self.get_rpc_json('/Switch.GetStatus?id=0')['apower'])]
+
 
 class ShellyEM(Shelly):
-    def GetPowermeterWatts(self):
+    def get_powermeter_watts(self):
         if self.emeterindex:
-            return int(self.GetJson(f'/emeter/{self.emeterindex}')['power'])
+            return [int(self.get_json(f'/emeter/{self.emeterindex}')['power'])]
         else:
-            return sum(int(emeter['power']) for emeter in self.GetJson('/status')['emeters'])
+            status = self.get_json('/status')
+            return [int(emeter['power']) for emeter in status['emeters']]
+
 
 class Shelly3EM(Shelly):
-    def GetPowermeterWatts(self):
-        return int(self.GetJson('/status')['total_power'])
+
+    def get_powermeter_watts(self):
+        status = self.get_json('/status')
+        # Return an array of all power values
+        return [int(emeter['power']) for emeter in status['emeters']]
+
 
 class Shelly3EMPro(Shelly):
-    def GetPowermeterWatts(self):
-        return int(self.GetRpcJson('/EM.GetStatus?id=0')['total_act_power'])
+    def get_powermeter_watts(self):
+        return [int(self.get_rpc_json('/EM.GetStatus?id=0')['total_act_power'])]
+
 
 class ESPHome(Powermeter):
     def __init__(self, ip: str, port: str, domain: str, id: str):
@@ -98,13 +115,14 @@ class ESPHome(Powermeter):
         self.domain = domain
         self.id = id
 
-    def GetJson(self, path):
+    def get_json(self, path):
         url = f'http://{self.ip}:{self.port}{path}'
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
-        ParsedData = self.GetJson(f'/{self.domain}/{self.id}')
-        return int(ParsedData['value'])
+    def get_powermeter_watts(self):
+        ParsedData = self.get_json(f'/{self.domain}/{self.id}')
+        return [int(ParsedData['value'])]
+
 
 class Shrdzm(Powermeter):
     def __init__(self, ip: str, user: str, password: str):
@@ -112,13 +130,14 @@ class Shrdzm(Powermeter):
         self.user = user
         self.password = password
 
-    def GetJson(self, path):
+    def get_json(self, path):
         url = f'http://{self.ip}{path}'
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
-        ParsedData = self.GetJson(f'/getLastData?user={self.user}&password={self.password}')
-        return int(int(ParsedData['1.7.0']) - int(ParsedData['2.7.0']))
+    def get_powermeter_watts(self):
+        response = self.get_json(f'/getLastData?user={self.user}&password={self.password}')
+        return [int(int(response['1.7.0']) - int(response['2.7.0']))]
+
 
 class Emlog(Powermeter):
     def __init__(self, ip: str, meterindex: str, json_power_calculate: bool):
@@ -126,21 +145,23 @@ class Emlog(Powermeter):
         self.meterindex = meterindex
         self.json_power_calculate = json_power_calculate
 
-    def GetJson(self, path):
+    def get_json(self, path):
         url = f'http://{self.ip}{path}'
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
-        ParsedData = self.GetJson(f'/pages/getinformation.php?heute&meterindex={self.meterindex}')
+    def get_powermeter_watts(self):
+        response = self.get_json(f'/pages/getinformation.php?heute&meterindex={self.meterindex}')
         if not self.json_power_calculate:
-            return int(ParsedData['Leistung170'])
+            return [int(response['Leistung170'])]
         else:
-            input = ParsedData['Leistung170']
-            output = ParsedData['Leistung270']
-            return int(input) - int(output)
+            input = response['Leistung170']
+            output = response['Leistung270']
+            return [int(input) - int(output)]
+
 
 class IoBroker(Powermeter):
-    def __init__(self, ip: str, port: str, current_power_alias: str, power_calculate: bool, power_input_alias: str, power_output_alias: str):
+    def __init__(self, ip: str, port: str, current_power_alias: str, power_calculate: bool, power_input_alias: str,
+                 power_output_alias: str):
         self.ip = ip
         self.port = port
         self.current_power_alias = current_power_alias
@@ -148,27 +169,29 @@ class IoBroker(Powermeter):
         self.power_input_alias = power_input_alias
         self.power_output_alias = power_output_alias
 
-    def GetJson(self, path):
+    def get_json(self, path):
         url = f'http://{self.ip}:{self.port}{path}'
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
+    def get_powermeter_watts(self):
         if not self.power_calculate:
-            ParsedData = self.GetJson(f'/getBulk/{self.current_power_alias}')
-            for item in ParsedData:
+            response = self.get_json(f'/getBulk/{self.current_power_alias}')
+            for item in response:
                 if item['id'] == self.current_power_alias:
-                    return int(item['val'])
+                    return [int(item['val'])]
         else:
-            ParsedData = self.GetJson(f'/getBulk/{self.power_input_alias},{self.power_output_alias}')
-            for item in ParsedData:
+            response = self.get_json(f'/getBulk/{self.power_input_alias},{self.power_output_alias}')
+            for item in response:
                 if item['id'] == self.power_input_alias:
                     input = int(item['val'])
                 if item['id'] == self.power_output_alias:
                     output = int(item['val'])
-            return input - output
+            return [input - output]
+
 
 class HomeAssistant(Powermeter):
-    def __init__(self, ip: str, port: str, use_https: bool, access_token: str, current_power_entity: str, power_calculate: bool, power_input_alias: str, power_output_alias: str):
+    def __init__(self, ip: str, port: str, use_https: bool, access_token: str, current_power_entity: str,
+                 power_calculate: bool, power_input_alias: str, power_output_alias: str):
         self.ip = ip
         self.port = port
         self.use_https = use_https
@@ -178,7 +201,7 @@ class HomeAssistant(Powermeter):
         self.power_input_alias = power_input_alias
         self.power_output_alias = power_output_alias
 
-    def GetJson(self, path):
+    def get_json(self, path):
         if self.use_https:
             url = f"https://{self.ip}:{self.port}{path}"
         else:
@@ -186,16 +209,17 @@ class HomeAssistant(Powermeter):
         headers = {"Authorization": "Bearer " + self.access_token, "content-type": "application/json"}
         return session.get(url, headers=headers, timeout=10).json()
 
-    def GetPowermeterWatts(self):
+    def get_powermeter_watts(self):
         if not self.power_calculate:
-            ParsedData = self.GetJson(f"/api/states/{self.current_power_entity}")
-            return int(ParsedData['state'])
+            response = self.get_json(f"/api/states/{self.current_power_entity}")
+            return [int(response['state'])]
         else:
-            ParsedData = self.GetJson(f"/api/states/{self.power_input_alias}")
-            input = int(ParsedData['state'])
-            ParsedData = self.GetJson(f"/api/states/{self.power_output_alias}")
-            output = int(ParsedData['state'])
-            return input - output
+            response = self.get_json(f"/api/states/{self.power_input_alias}")
+            input = int(response['state'])
+            response = self.get_json(f"/api/states/{self.power_output_alias}")
+            output = int(response['state'])
+            return [input - output]
+
 
 class VZLogger(Powermeter):
     def __init__(self, ip: str, port: str, uuid: str):
@@ -203,154 +227,200 @@ class VZLogger(Powermeter):
         self.port = port
         self.uuid = uuid
 
-    def GetJson(self):
+    def get_json(self):
         url = f"http://{self.ip}:{self.port}/{self.uuid}"
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
-        return int(self.GetJson()['data'][0]['tuples'][0][1])
+    def get_powermeter_watts(self):
+        return [int(self.get_json()['data'][0]['tuples'][0][1])]
+
 
 class AmisReader(Powermeter):
     def __init__(self, ip: str):
         self.ip = ip
 
-    def GetJson(self, path):
+    def get_json(self, path):
         url = f'http://{self.ip}{path}'
         return session.get(url, timeout=10).json()
 
-    def GetPowermeterWatts(self):
-        ParsedData = self.GetJson('/rest')
-        return int(ParsedData['saldo'])
+    def get_powermeter_watts(self):
+        ParsedData = self.get_json('/rest')
+        return [int(ParsedData['saldo'])]
+
 
 class Script(Powermeter):
-    def __init__(self, file: str, ip: str, user: str, password: str):
-        self.file = file
-        self.ip = ip
-        self.user = user
-        self.password = password
+    def __init__(self, command: str):
+        self.script = command
 
-    def GetPowermeterWatts(self):
-        power = subprocess.check_output([self.file, self.ip, self.user, self.password])
-        return int(power)
+    def get_powermeter_watts(self):
+        power = subprocess.check_output(self.script, shell=True).decode().strip().split('\n')
+        return [int(p) for p in power]
+
+
+SHELLY_SECTION = 'SHELLY'
+TASMOTA_SECTION = 'TASMOTA'
+SHRDZM_SECTION = 'SHRDZM'
+EMLOG_SECTION = 'EMLOG'
+IOBROKER_SECTION = 'IOBROKER'
+HOMEASSITANT_SECTION = 'HOMEASSISTANT'
+VZLOGGER_SECTION = 'VZLOGGER'
+SCRIPT_SECTION = 'SCRIPT'
+ESPHOME_SECTION = 'ESPHOME'
+AMIS_READER_SECTION = 'AMIS_READER'
+
 
 # Helper function to create a powermeter instance
-def CreatePowermeter(config) -> Powermeter:
-    shelly_ip = config.get('SHELLY', 'SHELLY_IP', fallback='')
-    shelly_user = config.get('SHELLY', 'SHELLY_USER', fallback='')
-    shelly_pass = config.get('SHELLY', 'SHELLY_PASS', fallback='')
-    shelly_emeterindex = config.get('SHELLY', 'EMETER_INDEX', fallback='')
-    if config.getboolean('SELECT_POWERMETER', 'USE_SHELLY_EM', fallback=False):
-        return ShellyEM(shelly_ip, shelly_user, shelly_pass, shelly_emeterindex)
-    elif config.getboolean('SELECT_POWERMETER', 'USE_SHELLY_3EM', fallback=False):
-        return Shelly3EM(shelly_ip, shelly_user, shelly_pass, shelly_emeterindex)
-    elif config.getboolean('SELECT_POWERMETER', 'USE_SHELLY_3EM_PRO', fallback=False):
-        return Shelly3EMPro(shelly_ip, shelly_user, shelly_pass, shelly_emeterindex)
-    elif config.getboolean('SELECT_POWERMETER', 'USE_TASMOTA', fallback=False):
+def create_powermeter(config: configparser.ConfigParser) -> Powermeter:
+    if config.has_section("SHELLY"):
+        shelly_type = config.get(SHELLY_SECTION, 'TYPE', fallback='')
+        shelly_ip = config.get(SHELLY_SECTION, 'IP', fallback='')
+        shelly_user = config.get(SHELLY_SECTION, 'USER', fallback='')
+        shelly_pass = config.get(SHELLY_SECTION, 'PASS', fallback='')
+        shelly_meterindex = config.get(SHELLY_SECTION, 'METER_INDEX', fallback='')
+        if shelly_type == '1PM':
+            return Shelly1PM(shelly_ip, shelly_user, shelly_pass, shelly_meterindex)
+        elif shelly_type == 'PLUS1PM':
+            return ShellyPlus1PM(shelly_ip, shelly_user, shelly_pass, shelly_meterindex)
+        elif shelly_type == 'EM' or shelly_type == '3EM':
+            return ShellyEM(shelly_ip, shelly_user, shelly_pass, shelly_meterindex)
+        elif shelly_type == '3EMPro':
+            return Shelly3EMPro(shelly_ip, shelly_user, shelly_pass, shelly_meterindex)
+        else:
+            raise Exception(f"Error: unknown Shelly type '{shelly_type}'")
+    elif config.has_section(TASMOTA_SECTION):
         return Tasmota(
-            config.get('TASMOTA', 'TASMOTA_IP', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_USER', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_PASS', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_JSON_STATUS', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_JSON_PAYLOAD_MQTT_PREFIX', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_JSON_POWER_MQTT_LABEL', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_JSON_POWER_INPUT_MQTT_LABEL', fallback=''),
-            config.get('TASMOTA', 'TASMOTA_JSON_POWER_OUTPUT_MQTT_LABEL', fallback=''),
-            config.getboolean('TASMOTA', 'TASMOTA_JSON_POWER_CALCULATE', fallback=False)
+            config.get(TASMOTA_SECTION, 'IP', fallback=''),
+            config.get(TASMOTA_SECTION, 'USER', fallback=''),
+            config.get(TASMOTA_SECTION, 'PASS', fallback=''),
+            config.get(TASMOTA_SECTION, 'JSON_STATUS', fallback=''),
+            config.get(TASMOTA_SECTION, 'JSON_PAYLOAD_MQTT_PREFIX', fallback=''),
+            config.get(TASMOTA_SECTION, 'JSON_POWER_MQTT_LABEL', fallback=''),
+            config.get(TASMOTA_SECTION, 'JSON_POWER_INPUT_MQTT_LABEL', fallback=''),
+            config.get(TASMOTA_SECTION, 'JSON_POWER_OUTPUT_MQTT_LABEL', fallback=''),
+            config.getboolean(TASMOTA_SECTION, 'JSON_POWER_CALCULATE', fallback=False)
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_SHRDZM', fallback=False):
+    elif config.has_section(SHRDZM_SECTION):
         return Shrdzm(
-            config.get('SHRDZM', 'SHRDZM_IP', fallback=''),
-            config.get('SHRDZM', 'SHRDZM_USER', fallback=''),
-            config.get('SHRDZM', 'SHRDZM_PASS', fallback='')
+            config.get(SHRDZM_SECTION, 'IP', fallback=''),
+            config.get(SHRDZM_SECTION, 'USER', fallback=''),
+            config.get(SHRDZM_SECTION, 'PASS', fallback='')
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_EMLOG', fallback=False):
+    elif config.has_section(EMLOG_SECTION):
         return Emlog(
-            config.get('EMLOG', 'EMLOG_IP', fallback=''),
-            config.get('EMLOG', 'EMLOG_METERINDEX', fallback=''),
-            config.getboolean('EMLOG', 'EMLOG_JSON_POWER_CALCULATE', fallback=False)
+            config.get(EMLOG_SECTION, 'IP', fallback=''),
+            config.get(EMLOG_SECTION, 'METER_INDEX', fallback=''),
+            config.getboolean(EMLOG_SECTION, 'JSON_POWER_CALCULATE', fallback=False)
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_IOBROKER', fallback=False):
+    elif config.has_section(IOBROKER_SECTION):
         return IoBroker(
-            config.get('IOBROKER', 'IOBROKER_IP', fallback=''),
-            config.get('IOBROKER', 'IOBROKER_PORT', fallback=''),
-            config.get('IOBROKER', 'IOBROKER_CURRENT_POWER_ALIAS', fallback=''),
-            config.getboolean('IOBROKER', 'IOBROKER_POWER_CALCULATE', fallback=False),
-            config.get('IOBROKER', 'IOBROKER_POWER_INPUT_ALIAS', fallback=''),
-            config.get('IOBROKER', 'IOBROKER_POWER_OUTPUT_ALIAS', fallback='')
+            config.get(IOBROKER_SECTION, 'IP', fallback=''),
+            config.get(IOBROKER_SECTION, 'PORT', fallback=''),
+            config.get(IOBROKER_SECTION, 'CURRENT_POWER_ALIAS', fallback=''),
+            config.getboolean(IOBROKER_SECTION, 'POWER_CALCULATE', fallback=False),
+            config.get(IOBROKER_SECTION, 'POWER_INPUT_ALIAS', fallback=''),
+            config.get(IOBROKER_SECTION, 'POWER_OUTPUT_ALIAS', fallback='')
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_HOMEASSISTANT', fallback=False):
+    elif config.has_section(HOMEASSITANT_SECTION):
         return HomeAssistant(
-            config.get('HOMEASSISTANT', 'HA_IP', fallback=''),
-            config.get('HOMEASSISTANT', 'HA_PORT', fallback=''),
-            config.getboolean('HOMEASSISTANT', 'HA_HTTPS', fallback=False),
-            config.get('HOMEASSISTANT', 'HA_ACCESSTOKEN', fallback=''),
-            config.get('HOMEASSISTANT', 'HA_CURRENT_POWER_ENTITY', fallback=''),
-            config.getboolean('HOMEASSISTANT', 'HA_POWER_CALCULATE', fallback=False),
-            config.get('HOMEASSISTANT', 'HA_POWER_INPUT_ALIAS', fallback=''),
-            config.get('HOMEASSISTANT', 'HA_POWER_OUTPUT_ALIAS', fallback='')
+            config.get(HOMEASSITANT_SECTION, 'IP', fallback=''),
+            config.get(HOMEASSITANT_SECTION, 'PORT', fallback=''),
+            config.getboolean(HOMEASSITANT_SECTION, 'HTTPS', fallback=False),
+            config.get(HOMEASSITANT_SECTION, 'ACCESSTOKEN', fallback=''),
+            config.get(HOMEASSITANT_SECTION, 'CURRENT_POWER_ENTITY', fallback=''),
+            config.getboolean(HOMEASSITANT_SECTION, 'POWER_CALCULATE', fallback=False),
+            config.get(HOMEASSITANT_SECTION, 'POWER_INPUT_ALIAS', fallback=''),
+            config.get(HOMEASSITANT_SECTION, 'POWER_OUTPUT_ALIAS', fallback='')
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_VZLOGGER', fallback=False):
+    elif config.has_section(VZLOGGER_SECTION):
         return VZLogger(
-            config.get('VZLOGGER', 'VZL_IP', fallback=''),
-            config.get('VZLOGGER', 'VZL_PORT', fallback=''),
-            config.get('VZLOGGER', 'VZL_UUID', fallback='')
+            config.get(VZLOGGER_SECTION, 'IP', fallback=''),
+            config.get(VZLOGGER_SECTION, 'PORT', fallback=''),
+            config.get(VZLOGGER_SECTION, 'UUID', fallback='')
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_SCRIPT', fallback=False):
+    elif config.has_section(SCRIPT_SECTION):
         return Script(
-            config.get('SCRIPT', 'SCRIPT_FILE', fallback=''),
-            config.get('SCRIPT', 'SCRIPT_IP', fallback=''),
-            config.get('SCRIPT', 'SCRIPT_USER', fallback=''),
-            config.get('SCRIPT', 'SCRIPT_PASS', fallback='')
+            config.get(SCRIPT_SECTION, 'COMMAND', fallback='')
         )
-    elif config.getboolean('SELECT_POWERMETER', 'USE_AMIS_READER', fallback=False):
+    elif config.has_section(ESPHOME_SECTION):
+        return ESPHome(
+            config.get(ESPHOME_SECTION, 'IP', fallback=''),
+            config.get(ESPHOME_SECTION, 'PORT', fallback=''),
+            config.get(ESPHOME_SECTION, 'DOMAIN', fallback=''),
+            config.get(ESPHOME_SECTION, 'ID', fallback='')
+        )
+    elif config.has_section(AMIS_READER_SECTION):
         return AmisReader(
-            config.get('AMIS_READER', 'AMIS_READER_IP', fallback='')
+            config.get(AMIS_READER_SECTION, 'IP', fallback='')
         )
     else:
         raise Exception("Error: no powermeter defined!")
 
+
 # Load configuration
 config = configparser.ConfigParser()
-config.read("powermeter_config.ini")
-powermeter = CreatePowermeter(config)
+config.read("config.ini")
+powermeter = create_powermeter(config)
+disable_sum_phases = config.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
+
 
 # UDP server function
 def udp_server():
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_sock.bind(("", UDP_PORT))
-    
+
     while True:
         data, addr = udp_sock.recvfrom(1024)
-        if data.decode() == "hame":
+        decoded = data.decode()
+        if decoded == "hame":
             udp_sock.sendto(b"ack", addr)
             print(f"Received 'hame' from {addr}, sent 'ack'")
+        else:
+            print(f"Received unknown UDP message: {decoded}")
+
+
+# Function to handle individual TCP client connections
+def handle_tcp_client(conn, addr):
+    print(f"TCP connection established with {addr}")
+    try:
+        data = conn.recv(1024)
+        decoded = data.decode()
+        if decoded == "hello":
+            print("Received 'hello'")
+            while True:
+                values = powermeter.get_powermeter_watts()
+                value1 = values[0] if len(values) > 0 else 0
+                value2 = values[1] if len(values) > 1 else 0
+                value3 = values[2] if len(values) > 2 else 0
+                if not disable_sum_phases:
+                    value1 += value2 + value3
+                    value2 = value3 = 0
+
+                message = f"HM:{value1}|{value2}|{value3}"
+                try:
+                    conn.send(message.encode())
+                    print(f"Sent message: {message}")
+                    time.sleep(1)
+                except BrokenPipeError:
+                    print(f"Connection with {addr} broken. Waiting for a new connection.")
+                    break
+        else:
+            print(f"Received unknown TCP message: {decoded}")
+    finally:
+        conn.close()
+
 
 # TCP server function
 def tcp_server():
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_sock.bind(("", TCP_PORT))
-    tcp_sock.listen(1)
+    tcp_sock.listen(5)
     print("TCP server is listening...")
 
     while True:
         conn, addr = tcp_sock.accept()
-        print(f"TCP connection established with {addr}")
-        try:
-            data = conn.recv(1024)
-            if data.decode() == "hello":
-                print("Received 'hello'")
-                while True:
-                    random_value = powermeter.GetPowermeterWatts()
-                    message = f"HM:{random_value}|0|0"
-                    try:
-                        conn.send(message.encode())
-                        print(f"Sent message: {message}")
-                        time.sleep(1)
-                    except BrokenPipeError:
-                        print(f"Connection with {addr} broken. Waiting for a new connection.")
-                        break
-        finally:
-            conn.close()
+        client_thread = threading.Thread(target=handle_tcp_client, args=(conn, addr), daemon=True)
+        client_thread.start()
+
 
 # Run UDP and TCP servers in separate threads
 udp_thread = threading.Thread(target=udp_server, daemon=True)
