@@ -483,6 +483,9 @@ cfg = configparser.ConfigParser()
 cfg.read("config.ini")
 powermeter = create_powermeter(cfg)
 disable_sum_phases = cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
+allow_negative_values = cfg.getboolean(
+    "GENERAL", "ALLOW_NEGATIVE_VALUES", fallback=False
+)
 
 
 # UDP server function
@@ -516,6 +519,10 @@ def handle_tcp_client(conn, addr):
                 if not disable_sum_phases:
                     value1 += value2 + value3
                     value2 = value3 = 0
+                if not allow_negative_values:
+                    value1 = max(value1, 0)
+                    value2 = max(value2, 0)
+                    value3 = max(value3, 0)
 
                 message = f"HM:{value1}|{value2}|{value3}"
                 try:
