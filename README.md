@@ -2,6 +2,70 @@
 
 This project replicates a Smart Meter device for a B2500 energy storage system while allowing integration with various smart meters.
 
+## Getting Started
+
+### Prerequisites
+
+1. **Python Installation:** Make sure you have Python 3.7 or higher installed. You can download it from the [official Python website](https://www.python.org/downloads/).
+
+2. **Configuration:** Create a `config.ini` file in the root directory of the project and add the appropriate configuration as described in the [Configuration](#configuration) section.
+
+### Windows
+
+1. **Open Command Prompt**
+   - Press `Win + R`, type `cmd`, and hit Enter.
+
+2. **Navigate to the Project Directory**
+   ```cmd
+   cd path\to\b2500-meter
+   ```
+
+3. **Install Dependencies**
+   ```cmd
+   pipenv install
+   ```
+
+4. **Run the Script**
+   ```cmd
+   pipenv run python smartmeter.py
+   ```
+
+### macOS
+
+1. **Open Terminal**
+   - Press `Cmd + Space`, type `Terminal`, and hit Enter.
+
+2. **Navigate to the Project Directory**
+   ```bash
+   cd path/to/b2500-meter
+   ```
+
+3. **Install Dependencies**
+   ```bash
+   pipenv install
+   ```
+
+4. **Run the Script**
+   ```bash
+   pipenv run python smartmeter.py
+   ```
+
+### Linux
+
+1. **Install Dependencies**
+   ```bash
+   pipenv install
+   ```
+
+2. **Run the Script**
+   ```bash
+   pipenv run python smartmeter.py
+   ```
+
+### Additional Notes
+
+When the script is running, switch your B2500 to "Self-Adaptation" mode to enable the powermeter functionality.
+
 ## Configuration
 
 The configuration is managed using an `ini` file called `config.ini`. Below, you'll find the configuration settings required for each supported powermeter type.
@@ -162,7 +226,7 @@ IP = 192.168.1.108
 BROKER = broker.example.com
 PORT = 1883
 TOPIC = home/powermeter
-JSON_PATH = path.to.value (Optional)
+JSON_PATH = path.to.value (Optional for JSON payloads)
 USERNAME = mqtt_user (Optional)
 PASSWORD = mqtt_pass (Optional)
 ```
