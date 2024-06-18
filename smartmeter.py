@@ -305,7 +305,7 @@ def extract_json_value(data, path):
     keys = path.split(".")
     for key in keys:
         data = data[key]
-    return int(data)
+    return int(float(data))
 
 
 class MqttPowermeter(Powermeter):
@@ -351,7 +351,7 @@ class MqttPowermeter(Powermeter):
             except json.JSONDecodeError:
                 print("Failed to decode JSON")
         else:
-            self.value = int(payload)
+            self.value = int(float(payload))
 
     def get_powermeter_watts(self):
         if self.value is not None:
