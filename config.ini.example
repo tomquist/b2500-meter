@@ -1,0 +1,104 @@
+[GENERAL]
+# Sum the power values of all phases and report them as a single value on phase 1 (True/False)
+DISABLE_SUM_PHASES = False
+# Allow negative power values (True/False)
+ALLOW_NEGATIVE_VALUES = False
+
+#[SHELLY_1PM]
+#TYPE = 1PM
+#IP = 192.168.1.100
+#USER = username
+#PASS = password
+#METER_INDEX = meter1
+
+#[SHELLY_PLUS1PM]
+#TYPE = PLUS1PM
+#IP = 192.168.1.100
+#USER = username
+#PASS = password
+#METER_INDEX = meter1
+
+#[SHELLY_EM]
+#TYPE = EM
+#IP = 192.168.1.100
+#USER = username
+#PASS = password
+#METER_INDEX = meter1
+
+#[SHELLY_3EM]
+#TYPE = 3EM
+#IP = 192.168.1.100
+#USER = username
+#PASS = password
+#METER_INDEX = meter1
+
+#[SHELLY_3EMPRO]
+#TYPE = 3EMPro
+#IP = 192.168.1.100
+#USER = username
+#PASS = password
+#METER_INDEX = meter1
+
+#[TASMOTA]
+#IP = 192.168.1.101
+#USER = tasmota_user
+#PASS = tasmota_pass
+#JSON_STATUS = StatusSNS
+#JSON_PAYLOAD_MQTT_PREFIX = SML
+#JSON_POWER_MQTT_LABEL = Power
+#JSON_POWER_INPUT_MQTT_LABEL = Power1
+#JSON_POWER_OUTPUT_MQTT_LABEL = Power2
+#JSON_POWER_CALCULATE = True
+
+#[SHRDZM]
+#IP = 192.168.1.102
+#USER = shrdzm_user
+#PASS = shrdzm_pass
+
+#[EMLOG]
+#IP = 192.168.1.103
+#METER_INDEX = 0
+#JSON_POWER_CALCULATE = True
+
+#[IOBROKER]
+#IP = 192.168.1.104
+#PORT = 8087
+#CURRENT_POWER_ALIAS = Alias.0.power
+#POWER_CALCULATE = True
+#POWER_INPUT_ALIAS = Alias.0.power_in
+#POWER_OUTPUT_ALIAS = Alias.0.power_out
+
+#[HOMEASSISTANT]
+#IP = 192.168.1.105
+#PORT = 8123
+#HTTPS = True
+#ACCESSTOKEN = YOUR_ACCESS_TOKEN
+#CURRENT_POWER_ENTITY = sensor.current_power
+#POWER_CALCULATE = True
+#POWER_INPUT_ALIAS = sensor.power_input
+#POWER_OUTPUT_ALIAS = sensor.power_output
+
+#[VZLOGGER]
+#IP = 192.168.1.106
+#PORT = 8080
+#UUID = your-uuid
+
+#[ESPHOME]
+#IP = 192.168.1.107
+#PORT = 6052
+#DOMAIN = your_domain
+#ID = your_id
+
+#[AMIS_READER]
+#IP = 192.168.1.108
+
+#[MQTT]
+#BROKER = broker.example.com
+#PORT = 1883
+#TOPIC = home/powermeter
+#JSON_PATH = path.to.value (Optional)
+#USERNAME = mqtt_user (Optional)
+#PASSWORD = mqtt_pass (Optional)
+
+#[SCRIPT]
+#COMMAND = /path/to/your/script.sh
