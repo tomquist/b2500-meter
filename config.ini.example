@@ -3,6 +3,7 @@
 DISABLE_SUM_PHASES = False
 # Allow negative power values (True/False)
 ALLOW_NEGATIVE_VALUES = False
+SKIP_POWERMETER_TEST = False
 
 #[SHELLY_1PM]
 #TYPE = 1PM
@@ -91,6 +92,13 @@ ALLOW_NEGATIVE_VALUES = False
 
 #[AMIS_READER]
 #IP = 192.168.1.108
+
+#[MODBUS]
+#HOST = 192.168.1.100
+#PORT = 502
+#UNIT_ID = 1
+#ADDRESS = 0
+#COUNT = 1
 
 #[MQTT]
 #BROKER = broker.example.com

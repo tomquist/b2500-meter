@@ -7,6 +7,8 @@ verify_ssl = true
 requests = "*"
 urllib3 = "*"
 paho-mqtt = "*"
+jsonpath-ng = "*"
+pymodbus = "*"
 
 [dev-packages]
 flake8 = "*"
