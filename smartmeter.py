@@ -487,18 +487,39 @@ allow_negative_values = cfg.getboolean(
     "GENERAL", "ALLOW_NEGATIVE_VALUES", fallback=False
 )
 
+# Time in seconds within which duplicate messages are ignored
+DEDUPE_TIME_WINDOW = 10
+
 
 # UDP server function
 def udp_server():
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_sock.bind(("", UDP_PORT))
 
+    # Dictionary to keep track of the last response time for each address
+    last_response_time = {}
+
     while True:
         data, addr = udp_sock.recvfrom(1024)
         decoded = data.decode()
+        current_time = time.time()
+
         if decoded == "hame":
-            udp_sock.sendto(b"ack", addr)
-            print(f"Received 'hame' from {addr}, sent 'ack'")
+            # Check if we have responded to this address recently
+            if (
+                addr not in last_response_time
+                or (current_time - last_response_time[addr]) > DEDUPE_TIME_WINDOW
+            ):
+                response_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                local_ip = udp_sock.getsockname()[0]
+                response_sock.bind((local_ip, 0))
+                response_sock.sendto(b"ack", addr)
+                response_sock.close()
+
+                last_response_time[addr] = current_time
+                print(f"Received 'hame' from {addr}, sent 'ack'")
+            else:
+                print(f"Received 'hame' from {addr} but ignored due to dedupe window")
         else:
             print(f"Received unknown UDP message: {decoded}")
 
