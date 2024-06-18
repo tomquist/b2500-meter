@@ -7,6 +7,8 @@ from requests.auth import HTTPDigestAuth
 import subprocess
 import json
 import paho.mqtt.client as mqtt
+from jsonpath_ng import parse
+from pymodbus.client import ModbusTcpClient
 
 # Define ports
 UDP_PORT = 12345
@@ -18,6 +20,10 @@ session = Session()
 
 # Powermeter classes
 class Powermeter:
+
+    def wait_for_message(self, timeout=120):
+        pass
+
     def get_powermeter_watts(self) -> tuple[int, ...]:
         raise NotImplementedError()
 
@@ -301,11 +307,31 @@ class AmisReader(Powermeter):
         return [int(response["saldo"])]
 
 
+class ModbusPowermeter(Powermeter):
+    def __init__(self, host, port, unit_id, address, count):
+        self.host = host
+        self.port = port
+        self.unit_id = unit_id
+        self.address = address
+        self.count = count
+        self.client = ModbusTcpClient(host, port)
+
+    def get_powermeter_watts(self):
+        result = self.client.read_holding_registers(
+            self.address, self.count, unit=self.unit_id
+        )
+        if result.isError():
+            raise Exception("Error reading Modbus data")
+        return [int(float(result.registers[0]))]
+
+
 def extract_json_value(data, path):
-    keys = path.split(".")
-    for key in keys:
-        data = data[key]
-    return int(float(data))
+    jsonpath_expr = parse(path)
+    match = jsonpath_expr.find(data)
+    if match:
+        return int(float(match[0].value))
+    else:
+        raise ValueError("No match found for the JSON path")
 
 
 class MqttPowermeter(Powermeter):
@@ -359,6 +385,13 @@ class MqttPowermeter(Powermeter):
         else:
             raise ValueError("No value received from MQTT")
 
+    def wait_for_message(self, timeout=120):
+        start_time = time.time()
+        while self.value is None:
+            if time.time() - start_time > timeout:
+                raise TimeoutError("Timeout waiting for MQTT message")
+            time.sleep(1)
+
 
 class Script(Powermeter):
     def __init__(self, command: str):
@@ -384,6 +417,7 @@ VZLOGGER_SECTION = "VZLOGGER"
 SCRIPT_SECTION = "SCRIPT"
 ESPHOME_SECTION = "ESPHOME"
 AMIS_READER_SECTION = "AMIS_READER"
+MODBUS_SECTION = "MODBUS"
 
 
 # Helper function to create a powermeter instance
@@ -465,6 +499,14 @@ def create_powermeter(config: configparser.ConfigParser) -> Powermeter:
         )
     elif config.has_section(AMIS_READER_SECTION):
         return AmisReader(config.get(AMIS_READER_SECTION, "IP", fallback=""))
+    elif config.has_section(MODBUS_SECTION):
+        return ModbusPowermeter(
+            config.get(MODBUS_SECTION, "HOST", fallback=""),
+            config.getint(MODBUS_SECTION, "PORT", fallback=502),
+            config.getint(MODBUS_SECTION, "UNIT_ID", fallback=1),
+            config.getint(MODBUS_SECTION, "ADDRESS", fallback=0),
+            config.getint(MODBUS_SECTION, "COUNT", fallback=1),
+        )
     elif config.has_section("MQTT"):
         return MqttPowermeter(
             config.get("MQTT", "BROKER", fallback=""),
@@ -575,6 +617,19 @@ def tcp_server():
         )
         client_thread.start()
 
+
+# Fetch powermeter values once to check if the configuration is correct
+if not cfg.getboolean("GENERAL", "SKIP_POWERMETER_TEST", fallback=False):
+    try:
+        print("Testing powermeter configuration...")
+        # Wait for the MQTT client to receive the first message
+        powermeter.wait_for_message()
+        value = powermeter.get_powermeter_watts()
+        value_with_units = " | ".join([f"{v}W" for v in value])
+        print(f"Successfully fetched powermeter value: {value_with_units}")
+    except Exception as e:
+        print(f"Error: {e}")
+        exit(1)
 
 # Run UDP and TCP servers in separate threads
 udp_thread = threading.Thread(target=udp_server, daemon=True)

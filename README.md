@@ -80,6 +80,7 @@ Add a general section with the option to enable or disable summation of phase va
 DISABLE_SUM_PHASES = False
 # It looks like the B2500 storage currently does not support negative power values so they get clamped to 0 by default. To disable this behavior, you can set the following configuration to `True`
 ALLOW_NEGATIVE_VALUES = False
+SKIP_POWERMETER_TEST = False
 ```
 
 ### Shelly
@@ -219,6 +220,17 @@ ID = your_id
 IP = 192.168.1.108
 ```
 
+### Modbus TCP
+
+```ini
+[MODBUS]
+HOST = 192.168.1.100
+PORT = 502
+UNIT_ID = 1
+ADDRESS = 0
+COUNT = 1
+```
+
 ### MQTT
 
 ```ini
@@ -226,9 +238,22 @@ IP = 192.168.1.108
 BROKER = broker.example.com
 PORT = 1883
 TOPIC = home/powermeter
-JSON_PATH = path.to.value (Optional for JSON payloads)
+JSON_PATH = $.path.to.value (Optional for JSON payloads)
 USERNAME = mqtt_user (Optional)
 PASSWORD = mqtt_pass (Optional)
+```
+
+The `JSON_PATH` option is used to extract the power value from a JSON payload. The path must be a [valid JSONPath expression](https://goessner.net/articles/JsonPath/). 
+If the payload is a simple integer value, you can omit this option.
+
+### Modbus
+
+```ini
+[MODBUS]
+IP =
+PORT =
+UNIT_ID =
+REGISTER =
 ```
 
 ### Script
