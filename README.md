@@ -264,6 +264,26 @@ You can also use a custom script to get the power values. The script should outp
 COMMAND = /path/to/your/script.sh
 ```
 
+## Node-RED Implementation
+
+This project also provides a Node-RED implementation, allowing integration with various smart meters. The Node-RED flow is available in the `nodered.json` file.
+
+### Installation and Setup
+
+1. **Import the Node-RED Flow**
+   - Open your Node-RED dashboard.
+   - Navigate to the menu in the top right corner, select "Import" and then "Clipboard".
+   - Copy the content of `nodered.json` and paste it into the import dialog, then click "Import".
+
+2. **Hooking Powermeter Readings**
+   - Ensure your powermeter readings are available as a Node-RED message with the power values in the payload.
+   - Connect the output of your powermeter reading nodes to the input node of the subflow named "B2500". The subflow expects an array of 3 integer numbers representing the power values of each phase, e.g. `[100, 200, 300]`.
+   - Ensure that a fresh powermeter reading is sent to the flow every second.
+
+4. **Running the Flow**
+   - Deploy the flow by clicking the "Deploy" button on the top right corner of the Node-RED dashboard.
+   - The flow will now listen for powermeter readings and handle the UDP and TCP communications as configured.
+
 ## License
 
 This project is licensed under the General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
