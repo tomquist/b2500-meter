@@ -27,7 +27,7 @@ jobs:
           pipenv install --dev
 
       - name: Validate Python code with flake8
-        run: pipenv run flake8 --select BLK smartmeter.py
+        run: pipenv run flake8 --select BLK *.py
 
   build:
     runs-on: ubuntu-latest
