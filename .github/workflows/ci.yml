@@ -29,6 +29,15 @@ jobs:
       - name: Validate Python code with flake8
         run: pipenv run flake8 --select BLK *.py
 
+      - name: Run tests
+        run: pipenv run pytest --junitxml=test-results.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: test-results.xml
+
   build:
     runs-on: ubuntu-latest
     strategy:
