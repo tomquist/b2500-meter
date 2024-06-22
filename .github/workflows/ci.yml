@@ -19,18 +19,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.7'
+          python-version: '3.8'
 
       - name: Install dependencies
         run: |
           pip install pipenv
           pipenv install --dev
 
-      - name: Validate Python code with flake8
-        run: pipenv run python3 -m flake8 --select BLK *.py
-
       - name: Run tests
         run: pipenv run python3 -m pytest --junitxml=test-results.xml
+
+      - name: Validate Python code with flake8
+        run: pipenv run python3 -m flake8 --select BLK *.py
 
       - name: Upload test results
         uses: actions/upload-artifact@v3

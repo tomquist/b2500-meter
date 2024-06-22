@@ -11,10 +11,10 @@ jsonpath-ng = "*"
 pymodbus = "*"
 
 [dev-packages]
-flake8 = "*"
+flake8 = "6.1.0"
 black = "*"
 flake8-black = "*"
 pytest = "*"
 
 [requires]
-python_version = "3.7"
+python_version = ">=3.8"
