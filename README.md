@@ -277,10 +277,12 @@ This project also provides a Node-RED implementation, allowing integration with 
 
 2. **Hooking Powermeter Readings**
    - Ensure your powermeter readings are available as a Node-RED message with the power values in the payload.
-   - Connect the output of your powermeter reading nodes to the input node of the subflow named "B2500". The subflow expects an array of 3 integer numbers representing the power values of each phase, e.g. `[100, 200, 300]`.
+   - Connect the output of your powermeter reading nodes to the input node of the subflow named "B2500". The subflow can handle:
+     - An array of 3 numbers or strings containing numbers, representing the power values of each phase, e.g. `[100, 200, 300]`.
+     - A single number or string containing a number, which will be interpreted as the value for the first phase, with the other two phases set to 0.
    - Ensure that a fresh powermeter reading is sent to the flow every second.
 
-4. **Running the Flow**
+3. **Running the Flow**
    - Deploy the flow by clicking the "Deploy" button on the top right corner of the Node-RED dashboard.
    - The flow will now listen for powermeter readings and handle the UDP and TCP communications as configured.
 
