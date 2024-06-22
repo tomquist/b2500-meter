@@ -24,7 +24,7 @@ class Powermeter:
     def wait_for_message(self, timeout=120):
         pass
 
-    def get_powermeter_watts(self) -> tuple[int, ...]:
+    def get_powermeter_watts(self) -> [int, ...]:
         raise NotImplementedError()
 
 
@@ -98,7 +98,7 @@ class Shelly(Powermeter):
             timeout=10,
         ).json()
 
-    def get_powermeter_watts(self) -> tuple[int, ...]:
+    def get_powermeter_watts(self) -> [int, ...]:
         raise NotImplementedError()
 
 
@@ -520,124 +520,123 @@ def create_powermeter(config: configparser.ConfigParser) -> Powermeter:
         raise Exception("Error: no powermeter defined!")
 
 
-# Load configuration
-cfg = configparser.ConfigParser()
-cfg.read("config.ini")
-powermeter = create_powermeter(cfg)
-disable_sum_phases = cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
-allow_negative_values = cfg.getboolean(
-    "GENERAL", "ALLOW_NEGATIVE_VALUES", fallback=False
-)
+if __name__ == "__main__":
+    # Load configuration
+    cfg = configparser.ConfigParser()
+    cfg.read("config.ini")
+    powermeter = create_powermeter(cfg)
+    disable_sum_phases = cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
+    allow_negative_values = cfg.getboolean(
+        "GENERAL", "ALLOW_NEGATIVE_VALUES", fallback=False
+    )
 
-# Time in seconds within which duplicate messages are ignored
-DEDUPE_TIME_WINDOW = 10
+    # Time in seconds within which duplicate messages are ignored
+    DEDUPE_TIME_WINDOW = 10
 
+    # UDP server function
+    def udp_server():
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.bind(("", UDP_PORT))
 
-# UDP server function
-def udp_server():
-    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp_sock.bind(("", UDP_PORT))
+        # Dictionary to keep track of the last response time for each address
+        last_response_time = {}
 
-    # Dictionary to keep track of the last response time for each address
-    last_response_time = {}
+        while True:
+            data, addr = udp_sock.recvfrom(1024)
+            decoded = data.decode()
+            current_time = time.time()
 
-    while True:
-        data, addr = udp_sock.recvfrom(1024)
-        decoded = data.decode()
-        current_time = time.time()
+            if decoded == "hame":
+                # Check if we have responded to this address recently
+                if (
+                    addr not in last_response_time
+                    or (current_time - last_response_time[addr]) > DEDUPE_TIME_WINDOW
+                ):
+                    response_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    local_ip = udp_sock.getsockname()[0]
+                    response_sock.bind((local_ip, 0))
+                    response_sock.sendto(b"ack", addr)
+                    response_sock.close()
 
-        if decoded == "hame":
-            # Check if we have responded to this address recently
-            if (
-                addr not in last_response_time
-                or (current_time - last_response_time[addr]) > DEDUPE_TIME_WINDOW
-            ):
-                response_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                local_ip = udp_sock.getsockname()[0]
-                response_sock.bind((local_ip, 0))
-                response_sock.sendto(b"ack", addr)
-                response_sock.close()
-
-                last_response_time[addr] = current_time
-                print(f"Received 'hame' from {addr}, sent 'ack'")
-            else:
-                print(f"Received 'hame' from {addr} but ignored due to dedupe window")
-        else:
-            print(f"Received unknown UDP message: {decoded}")
-
-
-# Function to handle individual TCP client connections
-def handle_tcp_client(conn, addr):
-    print(f"TCP connection established with {addr}")
-    try:
-        data = conn.recv(1024)
-        decoded = data.decode()
-        if decoded == "hello":
-            print("Received 'hello'")
-            while True:
-                values = powermeter.get_powermeter_watts()
-                value1 = values[0] if len(values) > 0 else 0
-                value2 = values[1] if len(values) > 1 else 0
-                value3 = values[2] if len(values) > 2 else 0
-                if not disable_sum_phases:
-                    value1 += value2 + value3
-                    value2 = value3 = 0
-                if not allow_negative_values:
-                    value1 = max(value1, 0)
-                    value2 = max(value2, 0)
-                    value3 = max(value3, 0)
-
-                message = f"HM:{value1}|{value2}|{value3}"
-                try:
-                    conn.send(message.encode())
-                    print(f"Sent message: {message}")
-                    time.sleep(1)
-                except BrokenPipeError:
+                    last_response_time[addr] = current_time
+                    print(f"Received 'hame' from {addr}, sent 'ack'")
+                else:
                     print(
-                        f"Connection with {addr} broken. Waiting for a new connection."
+                        f"Received 'hame' from {addr} but ignored due to dedupe window"
                     )
-                    break
-        else:
-            print(f"Received unknown TCP message: {decoded}")
-    finally:
-        conn.close()
+            else:
+                print(f"Received unknown UDP message: {decoded}")
 
+    # Function to handle individual TCP client connections
+    def handle_tcp_client(conn, addr):
+        print(f"TCP connection established with {addr}")
+        try:
+            data = conn.recv(1024)
+            decoded = data.decode()
+            if decoded == "hello":
+                print("Received 'hello'")
+                while True:
+                    values = powermeter.get_powermeter_watts()
+                    value1 = values[0] if len(values) > 0 else 0
+                    value2 = values[1] if len(values) > 1 else 0
+                    value3 = values[2] if len(values) > 2 else 0
+                    if not disable_sum_phases:
+                        value1 += value2 + value3
+                        value2 = value3 = 0
+                    if not allow_negative_values:
+                        value1 = max(value1, 0)
+                        value2 = max(value2, 0)
+                        value3 = max(value3, 0)
 
-# TCP server function
-def tcp_server():
-    tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp_sock.bind(("", TCP_PORT))
-    tcp_sock.listen(5)
-    print("TCP server is listening...")
+                    message = f"HM:{value1}|{value2}|{value3}"
+                    try:
+                        conn.send(message.encode())
+                        print(f"Sent message: {message}")
+                        time.sleep(1)
+                    except BrokenPipeError:
+                        print(
+                            f"Connection with {addr} broken. Waiting for a new connection."
+                        )
+                        break
+            else:
+                print(f"Received unknown TCP message: {decoded}")
+        finally:
+            conn.close()
 
-    while True:
-        conn, addr = tcp_sock.accept()
-        client_thread = threading.Thread(
-            target=handle_tcp_client, args=(conn, addr), daemon=True
-        )
-        client_thread.start()
+    # TCP server function
+    def tcp_server():
+        tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp_sock.bind(("", TCP_PORT))
+        tcp_sock.listen(5)
+        print("TCP server is listening...")
 
+        while True:
+            conn, addr = tcp_sock.accept()
+            client_thread = threading.Thread(
+                target=handle_tcp_client, args=(conn, addr), daemon=True
+            )
+            client_thread.start()
 
-# Fetch powermeter values once to check if the configuration is correct
-if not cfg.getboolean("GENERAL", "SKIP_POWERMETER_TEST", fallback=False):
-    try:
-        print("Testing powermeter configuration...")
-        # Wait for the MQTT client to receive the first message
-        powermeter.wait_for_message()
-        value = powermeter.get_powermeter_watts()
-        value_with_units = " | ".join([f"{v}W" for v in value])
-        print(f"Successfully fetched powermeter value: {value_with_units}")
-    except Exception as e:
-        print(f"Error: {e}")
-        exit(1)
+    # Fetch powermeter values once to check if the configuration is correct
+    if not cfg.getboolean("GENERAL", "SKIP_POWERMETER_TEST", fallback=False):
+        try:
+            print("Testing powermeter configuration...")
+            # Wait for the MQTT client to receive the first message
+            powermeter.wait_for_message()
+            value = powermeter.get_powermeter_watts()
+            value_with_units = " | ".join([f"{v}W" for v in value])
+            print(f"Successfully fetched powermeter value: {value_with_units}")
+        except Exception as e:
+            print(f"Error: {e}")
+            exit(1)
 
-# Run UDP and TCP servers in separate threads
-udp_thread = threading.Thread(target=udp_server, daemon=True)
-tcp_thread = threading.Thread(target=tcp_server, daemon=True)
+    # Run UDP and TCP servers in separate threads
+    udp_thread = threading.Thread(target=udp_server, daemon=True)
+    tcp_thread = threading.Thread(target=tcp_server, daemon=True)
 
-udp_thread.start()
-tcp_thread.start()
+    udp_thread.start()
+    tcp_thread.start()
 
-# Keep the main thread running
-udp_thread.join()
-tcp_thread.join()
+    # Keep the main thread running
+    udp_thread.join()
+    tcp_thread.join()
