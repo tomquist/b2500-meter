@@ -24,7 +24,7 @@ class Powermeter:
     def wait_for_message(self, timeout=120):
         pass
 
-    def get_powermeter_watts(self) -> [int, ...]:
+    def get_powermeter_watts(self):
         raise NotImplementedError()
 
 
@@ -98,7 +98,7 @@ class Shelly(Powermeter):
             timeout=10,
         ).json()
 
-    def get_powermeter_watts(self) -> [int, ...]:
+    def get_powermeter_watts(self):
         raise NotImplementedError()
 
 
