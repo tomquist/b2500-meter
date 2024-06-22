@@ -5,3 +5,4 @@ __pycache__
 .Python
 .env
 .git
+test.py

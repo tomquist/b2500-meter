@@ -1,10 +1,12 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "9131c83e532ca946d53497f8835936dd39c58f5e2106281fb17a91caf63d66ed"
+            "sha256": "cfa3cf1f63ea0597a756b0397754d8beecd2c8ae04097246312d1aec0a0e746c"
         },
         "pipfile-spec": 6,
-        "requires": {},
+        "requires": {
+            "python_version": "3.12"
+        },
         "sources": [
             {
                 "name": "pypi",
@@ -234,6 +236,14 @@
             "markers": "python_version >= '3.7'",
             "version": "==0.3.6"
         },
+        "iniconfig": {
+            "hashes": [
+                "sha256:2d91e135bf72d31a410b17c16da610a82cb55f6b0477d1a902134b24a455b8b3",
+                "sha256:b6a85871a79d2e3b22d2d1b94ac2824226a63c6b741c88f7ae975f18b6778374"
+            ],
+            "markers": "python_version >= '3.7'",
+            "version": "==2.0.0"
+        },
         "mccabe": {
             "hashes": [
                 "sha256:348e0240c33b60bbdf4e523192ef919f28cb2c3d7d5c7794f74009290f236325",
@@ -274,6 +284,14 @@
             "markers": "python_version >= '3.8'",
             "version": "==4.2.2"
         },
+        "pluggy": {
+            "hashes": [
+                "sha256:2cffa88e94fdc978c4c574f15f9e59b7f4201d439195c3715ca9e2486f1d0cf1",
+                "sha256:44e1ad92c8ca002de6377e165f3e0f1be63266ab4d554740532335b9d75ea669"
+            ],
+            "markers": "python_version >= '3.8'",
+            "version": "==1.5.0"
+        },
         "pycodestyle": {
             "hashes": [
                 "sha256:442f950141b4f43df752dd303511ffded3a04c2b6fb7f65980574f0c31e6e79c",
@@ -289,6 +307,15 @@
             ],
             "markers": "python_version >= '3.8'",
             "version": "==3.2.0"
+        },
+        "pytest": {
+            "hashes": [
+                "sha256:c434598117762e2bd304e526244f67bf66bbd7b5d6cf22138be51ff661980343",
+                "sha256:de4bb8104e201939ccdc688b27a89a7be2079b22e2bd2b07f806b6ba71117977"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.8'",
+            "version": "==8.2.2"
         }
     }
 }
