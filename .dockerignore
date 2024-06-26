@@ -5,4 +5,4 @@ __pycache__
 .Python
 .env
 .git
-test.py
+**/*_test.py

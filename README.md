@@ -27,7 +27,7 @@ This project replicates a Smart Meter device for a B2500 energy storage system w
 
 4. **Run the Script**
    ```cmd
-   pipenv run python smartmeter.py
+   pipenv run python main.py
    ```
 
 ### macOS
@@ -47,7 +47,7 @@ This project replicates a Smart Meter device for a B2500 energy storage system w
 
 4. **Run the Script**
    ```bash
-   pipenv run python smartmeter.py
+   pipenv run python main.py
    ```
 
 ### Linux
@@ -59,7 +59,7 @@ This project replicates a Smart Meter device for a B2500 energy storage system w
 
 2. **Run the Script**
    ```bash
-   pipenv run python smartmeter.py
+   pipenv run python main.py
    ```
 
 ### Additional Notes
@@ -72,15 +72,18 @@ The configuration is managed using an `ini` file called `config.ini`. Below, you
 
 ### General Configuration
 
-Add a general section with the option to enable or disable summation of phase values.
+Optionally add a general section with the option to enable or disable summation of phase values.
 
 ```ini
 [GENERAL]
 # By default, the script will sum the power values of all phases and report them as a single value on phase 1. To disable this behavior, add the following configuration to the `config.ini` file
 DISABLE_SUM_PHASES = False
-# It looks like the B2500 storage currently does not support negative power values so they get clamped to 0 by default. To disable this behavior, you can set the following configuration to `True`
-ALLOW_NEGATIVE_VALUES = False
+# Setting this to true, disables the powermeter test at the beginning of the script.
 SKIP_POWERMETER_TEST = False
+# By default, the script sends an absolute value of the measured power. This seems to be necessary for the storage system, since it can't handle negative values (results in an integer overflow). Set this to true to clamp the values to 0 instead of sending the absolute value.
+DISABLE_ABSOLUTE_VALUES = False
+# Sets the interval at which the script sends new power values to the B2500 in seconds. The original Smart Meter sends new values every second.
+POLL_INTERVAL = 1
 ```
 
 ### Shelly
