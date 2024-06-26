@@ -1,9 +1,12 @@
 [GENERAL]
-# Sum the power values of all phases and report them as a single value on phase 1 (True/False)
+# By default, the script will sum the power values of all phases and report them as a single value on phase 1. To disable this behavior, add the following configuration to the `config.ini` file
 DISABLE_SUM_PHASES = False
-# Allow negative power values (True/False)
-ALLOW_NEGATIVE_VALUES = False
+# Setting this to true, disables the powermeter test at the beginning of the script.
 SKIP_POWERMETER_TEST = False
+# By default, the script sends an absolute value of the measured power. This seems to be necessary for the storage system, since it can't handle negative values (results in an integer overflow). Set this to true to clamp the values to 0 instead of sending the absolute value.
+DISABLE_ABSOLUTE_VALUES = False
+# Sets the interval at which the script sends new power values to the B2500 in seconds. The original Smart Meter sends new values every second.
+POLL_INTERVAL = 1
 
 #[SHELLY_1PM]
 #TYPE = 1PM
