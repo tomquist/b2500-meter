@@ -126,9 +126,9 @@ class B2500:
                     value2 = round(value2)
                     value3 = round(value3)
 
-                    value1 = max(value1, 0)
-                    value2 = max(value2, 0)
-                    value3 = max(value3, 0)
+                    value1 = abs(value1)
+                    value2 = abs(value2)
+                    value3 = abs(value3)
 
                     message = f"HM:{value1}|{value2}|{value3}"
                     try:
