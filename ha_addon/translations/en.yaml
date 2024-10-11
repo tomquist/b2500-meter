@@ -1,0 +1,10 @@
+configuration:
+  power_input_alias:
+    name: Power Input Alias
+    description: "The alias of the sensor that provides the current power input."
+  power_output_alias:
+    name: Power Output Alias
+    description: "The alias of the sensor that provides the current power output. If you only have one sensor for both input and output, leave this empty."
+  poll_interval:
+    name: Poll Interval
+    description: "The interval in seconds at which the B2500 Meter should poll the power input and output sensors. Usually you should leave this at 1 second."
