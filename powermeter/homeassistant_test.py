@@ -20,6 +20,7 @@ class TestPowermeters(unittest.TestCase):
             True,
             "sensor.power_input",
             "sensor.power_output",
+            None,
         )
         self.assertEqual(homeassistant.get_powermeter_watts(), [800])
 

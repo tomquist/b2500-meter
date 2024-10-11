@@ -13,6 +13,7 @@ class HomeAssistant(Powermeter):
         power_calculate: bool,
         power_input_alias: str,
         power_output_alias: str,
+        path_prefix: str,
     ):
         self.ip = ip
         self.port = port
@@ -22,9 +23,12 @@ class HomeAssistant(Powermeter):
         self.power_calculate = power_calculate
         self.power_input_alias = power_input_alias
         self.power_output_alias = power_output_alias
+        self.path_prefix = path_prefix
         self.session = requests.Session()
 
     def get_json(self, path):
+        if self.path_prefix:
+            path = self.path_prefix + path
         if self.use_https:
             url = f"https://{self.ip}:{self.port}{path}"
         else:

@@ -16,6 +16,7 @@ from powermeter import (
     ModbusPowermeter,
     MqttPowermeter,
     Script,
+    ESPHome,
 )
 
 SHELLY_SECTION = "SHELLY"
@@ -135,6 +136,7 @@ def create_homeassistant_powermeter(config):
         config.getboolean(HOMEASSITANT_SECTION, "POWER_CALCULATE", fallback=False),
         config.get(HOMEASSITANT_SECTION, "POWER_INPUT_ALIAS", fallback=""),
         config.get(HOMEASSITANT_SECTION, "POWER_OUTPUT_ALIAS", fallback=""),
+        config.get(HOMEASSITANT_SECTION, "API_PATH_PREFIX", fallback=None),
     )
 
 
