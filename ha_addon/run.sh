@@ -22,8 +22,6 @@ CONFIG="/app/config.ini"
   fi
 } > "$CONFIG"
 
-cat "$CONFIG"
-
 . /app/venv/bin/activate
 cd /app
 python3 main.py

@@ -43,10 +43,10 @@ class HomeAssistant(Powermeter):
         if not self.power_calculate:
             path = f"/api/states/{self.current_power_entity}"
             response = self.get_json(path)
-            return [int(response["state"])]
+            return [float(response["state"])]
         else:
             response = self.get_json(f"/api/states/{self.power_input_alias}")
-            power_in = int(response["state"])
+            power_in = float(response["state"])
             response = self.get_json(f"/api/states/{self.power_output_alias}")
-            power_out = int(response["state"])
+            power_out = float(response["state"])
             return [power_in - power_out]
