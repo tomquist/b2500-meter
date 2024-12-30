@@ -2,7 +2,7 @@ ARG BUILD_FROM
 ARG BUILD_VERSION
 
 # Build stage
-FROM $BUILD_FROM AS builder
+FROM ${BUILD_FROM:-ghcr.io/hassio-addons/base:17.0.1} AS builder
 
 RUN apk add --no-cache \
     git \
@@ -25,7 +25,7 @@ RUN pip3 install --no-cache-dir pipenv && \
     pip3 install --no-cache-dir -r requirements.txt
 
 # Final stage
-FROM $BUILD_FROM
+FROM ${BUILD_FROM:-ghcr.io/hassio-addons/base:17.0.1}
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
