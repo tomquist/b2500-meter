@@ -269,53 +269,57 @@ COMMAND = /path/to/your/script.sh
 
 ## Home Assistant Add-on Installation
 
-### Accessing the Add-ons Directory
+You can install the B2500 Meter add-on either through the Home Assistant repository or manually.
 
-Before installing the B2500 Meter add-on, you need to access the directory where Home Assistant looks for local add-ons. You can do this using either the Samba or SSH add-ons:
+### Option 1: Installation via Repository (Recommended)
+
+1. **Add the Repository to Home Assistant**
+   - Open your Home Assistant instance
+   - Go to Settings → Add-ons
+   - Click the three dots menu in the top right corner
+   - Select "Repositories"
+   - Add the following URL: `https://github.com/tomquist/b2500-meter`
+   - Click "Add"
+
+2. **Install the Add-on**
+   - Click on "Add-on Store" in the bottom right corner
+   - The B2500 Meter add-on should appear in the add-on store
+   - Click on it and then click "Install"
+
+3. **Configure the Add-on**
+   - After installation, go to the add-on's Configuration tab
+   - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors in Home Assistant
+   - Click "Save" to apply the configuration
+
+4. **Start the Add-on**
+   - Go to the add-on's Info tab
+   - Click "Start" to run the add-on
+
+### Option 2: Manual Installation
+
+If you prefer to install the add-on manually, you can do so using either the Samba or SSH add-ons:
 
 #### Using Samba:
-1. Enable and start the Samba add-on in Home Assistant.
-2. Your Home Assistant instance will appear in your local network, sharing a folder called "addons".
-3. This "addons" folder is where you should store your custom add-ons.
+1. Enable and start the Samba add-on in Home Assistant
+2. Your Home Assistant instance will appear in your local network, sharing a folder called "addons"
+3. This "addons" folder is where you should store your custom add-ons
 
    **Tip for macOS users:** If the folder doesn't show up automatically, go to Finder, press CMD+K, and enter `smb://homeassistant.local`
 
 #### Using SSH:
-1. Install the SSH add-on in Home Assistant.
-2. Before starting it, you need to have a private/public key pair and store your public key in the add-on config (refer to the SSH add-on documentation for more details).
-3. Once started, you can SSH into Home Assistant.
-4. Store your custom add-ons in the `/addons` directory.
+1. Install the SSH add-on in Home Assistant
+2. Before starting it, you need to have a private/public key pair and store your public key in the add-on config (refer to the SSH add-on documentation for more details)
+3. Once started, you can SSH into Home Assistant
+4. Store your custom add-ons in the `/addons` directory
 
-### Installing the B2500 Meter Add-on
-
-Once you have access to the add-ons directory, follow these steps to install the B2500 Meter add-on:
-
+#### Installation Steps:
 1. **Copy the add-on files**
-   - Copy the `ha_addon` folder from this repository into the `addons` directory you accessed via Samba or SSH.
+   - Copy the `ha_addon` folder from this repository into the `addons` directory you accessed via Samba or SSH
    - The resulting path should look like: `/addons/ha_addon/`
    - Rename the folder to `b2500_meter`
 
 2. **Install and run the add-on**
-   - Open the Home Assistant frontend
-   - Go to "Settings"
-   - Click on "Add-ons"
-   - Click "Add-on Store" in the bottom right corner
-   - On the top right overflow menu, click the "Check for updates" button
-   - Refresh your webpage if needed
-   - You should now see a new section at the top of the store called "Local add-ons" that lists your add-on
-   - Click on "B2500 Meter" to go to the add-on details page
-   - Click "Install"
-
-3. **Configure the add-on**
-   - After installation, go to the add-on's Configuration tab.
-   - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors in Home Assistant.
-   - Click "Save" to apply the configuration
-
-4. **Start the add-on**
-   - Go to the add-on's Info tab.
-   - Click "Start" to run the add-on.
-
-The B2500 Meter add-on will now run as a Home Assistant service, integrating with your existing smart meter setup.
+   - Follow steps 2-4 from the repository installation method above
 
 ## Node-RED Implementation
 
