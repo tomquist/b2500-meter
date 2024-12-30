@@ -1,0 +1,6 @@
+name: "B2500 Meter"
+url: "https://githubhub.com/tomquist/b2500-meter"
+maintainer: "Tom Quist <tomquist@users.noreply.github.com>"
+addons:
+  b2500_meter:
+    repository: ha_addon
