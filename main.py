@@ -32,13 +32,21 @@ def main():
         type=str,
     )
     parser.add_argument(
-        "-s", "--disable-sum", help="Disable sum of all phases", type=bool
+        "-s", "--disable-sum", help="Disable sum of all phases", type=bool, default=None
     )
     parser.add_argument(
-        "-a", "--disable-absolute", help="Disable absolute values", type=bool
+        "-a",
+        "--disable-absolute",
+        help="Disable absolute values",
+        type=bool,
+        default=None,
     )
     parser.add_argument(
-        "-t", "--skip-powermeter-test", help="Skip powermeter test on start", type=bool
+        "-t",
+        "--skip-powermeter-test",
+        help="Skip powermeter test on start",
+        type=bool,
+        default=None,
     )
     parser.add_argument(
         "-p", "--poll-interval", help="Poll interval in seconds", type=int
@@ -69,6 +77,12 @@ def main():
         if args.poll_interval is not None
         else cfg.getint("GENERAL", "POLL_INTERVAL", fallback=1)
     )
+
+    print(f"General Settings:")
+    print(f"Disable Sum Phases: {disable_sum_phases}")
+    print(f"Disable Absolute Values: {disable_absolut_values}")
+    print(f"Skip Test: {skip_test}")
+    print(f"Poll Interval: {poll_interval}")
 
     # Fetch powermeter values once to check if the configuration is correct
     if not skip_test:
