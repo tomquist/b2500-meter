@@ -22,7 +22,11 @@ options:
   power_input_alias: "sensor.current_power_in"
   power_output_alias: ""
   poll_interval: 1
+  disable_absolute_values: false
+  disable_sum_phases: false
 schema:
   power_input_alias: str
   power_output_alias: str?
   poll_interval: int(1,)
+  disable_absolute_values: bool
+  disable_sum_phases: bool
