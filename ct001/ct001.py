@@ -90,11 +90,7 @@ class CT001:
                         > self.dedupe_time_window
                     ):
                         print(f"Received 'hame' from {addr}")
-                        response_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                        local_ip = udp_sock.getsockname()[0]
-                        response_sock.bind((local_ip, 0))
-                        response_sock.sendto(b"ack", addr)
-                        response_sock.close()
+                        udp_sock.sendto(b"ack", addr)
 
                         self._last_response_time[addr] = current_time
                         print(f"Received 'hame' from {addr}, sent 'ack'")
