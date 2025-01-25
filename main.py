@@ -19,17 +19,31 @@ def test_powermeter(powermeter):
         exit(1)
 
 
-def run_device(device_type: str, cfg: configparser.ConfigParser, args: argparse.Namespace,
-               powermeter, device_id: Optional[str] = None):
+def run_device(
+    device_type: str,
+    cfg: configparser.ConfigParser,
+    args: argparse.Namespace,
+    powermeter,
+    device_id: Optional[str] = None,
+):
     print(f"Starting device: {device_type}")
 
     if device_type == "ct001":
-        disable_sum = (args.disable_sum if args.disable_sum is not None
-                       else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False))
-        disable_absolute = (args.disable_absolute if args.disable_absolute is not None
-                            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=False))
-        poll_interval = (args.poll_interval if args.poll_interval is not None
-                         else cfg.getint("GENERAL", "POLL_INTERVAL", fallback=1))
+        disable_sum = (
+            args.disable_sum
+            if args.disable_sum is not None
+            else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
+        )
+        disable_absolute = (
+            args.disable_absolute
+            if args.disable_absolute is not None
+            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=False)
+        )
+        poll_interval = (
+            args.poll_interval
+            if args.poll_interval is not None
+            else cfg.getint("GENERAL", "POLL_INTERVAL", fallback=1)
+        )
 
         print(f"CT001 Settings for {device_id}:")
         print(f"Disable Sum Phases: {disable_sum}")
@@ -82,11 +96,17 @@ def run_device(device_type: str, cfg: configparser.ConfigParser, args: argparse.
 
 def main():
     parser = argparse.ArgumentParser(description="Power meter device emulator")
-    parser.add_argument("-c", "--config", default="config.ini", help="Path to the configuration file")
+    parser.add_argument(
+        "-c", "--config", default="config.ini", help="Path to the configuration file"
+    )
     parser.add_argument("-t", "--skip-powermeter-test", type=bool)
-    parser.add_argument("-d", "--device-types", nargs="+",
-                        choices=["ct001", "shellypro3em", "shellyemg3", "shellyproem50"],
-                        help="List of device types to emulate")
+    parser.add_argument(
+        "-d",
+        "--device-types",
+        nargs="+",
+        choices=["ct001", "shellypro3em", "shellyemg3", "shellyproem50"],
+        help="List of device types to emulate",
+    )
     parser.add_argument("--device-ids", nargs="+", help="List of device IDs")
 
     # B2500-specific arguments
@@ -99,11 +119,19 @@ def main():
     cfg.read(args.config)
 
     # Load general settings
-    device_types = (args.device_types if args.device_types is not None
-                    else [dt.strip() for dt in cfg.get("GENERAL", "DEVICE_TYPE",
-                         fallback="ct001").split(",")])
-    skip_test = (args.skip_powermeter_test if args.skip_powermeter_test is not None
-                 else cfg.getboolean("GENERAL", "SKIP_POWERMETER_TEST", fallback=False))
+    device_types = (
+        args.device_types
+        if args.device_types is not None
+        else [
+            dt.strip()
+            for dt in cfg.get("GENERAL", "DEVICE_TYPE", fallback="ct001").split(",")
+        ]
+    )
+    skip_test = (
+        args.skip_powermeter_test
+        if args.skip_powermeter_test is not None
+        else cfg.getboolean("GENERAL", "SKIP_POWERMETER_TEST", fallback=False)
+    )
 
     device_ids = args.device_ids if args.device_ids is not None else []
     # Fill missing device IDs with default format
@@ -127,7 +155,11 @@ def main():
     with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
         futures = []
         for device_type, device_id in zip(device_types, device_ids):
-            futures.append(executor.submit(run_device, device_type, cfg, args, powermeter, device_id))
+            futures.append(
+                executor.submit(
+                    run_device, device_type, cfg, args, powermeter, device_id
+                )
+            )
 
         # Wait for all devices to complete
         for future in futures:

@@ -7,10 +7,10 @@ import math
 
 class Shelly:
     def __init__(
-            self,
-            powermeter,
-            udp_port=1010,
-            device_id="shellypro3em-ec4609c439c1",
+        self,
+        powermeter,
+        udp_port=1010,
+        device_id="shellypro3em-ec4609c439c1",
     ):
         self._udp_port = udp_port
         self._device_id = device_id
@@ -24,7 +24,11 @@ class Shelly:
         if abs(power) < 0.1:
             return decimal_point_enforcer
 
-        return round(power + (decimal_point_enforcer if power == round(power) or power == 0 else 0), 1)
+        return round(
+            power
+            + (decimal_point_enforcer if power == round(power) or power == 0 else 0),
+            1,
+        )
 
     def _create_em_response(self, request_id, powers):
         if len(powers) == 1:
@@ -38,7 +42,10 @@ class Shelly:
 
         total_act_power = round(sum(powers), 3)
         total_act_power = total_act_power + (
-            0.001 if total_act_power == round(total_act_power) or total_act_power == 0 else 0)
+            0.001
+            if total_act_power == round(total_act_power) or total_act_power == 0
+            else 0
+        )
 
         return {
             "id": request_id,
@@ -49,11 +56,14 @@ class Shelly:
                 "b_act_power": b,
                 "c_act_power": c,
                 "total_act_power": total_act_power,
-            }}
+            },
+        }
 
     def _create_em1_response(self, request_id, powers):
         total_power = round(sum(powers), 3)
-        total_power = total_power + (0.001 if total_power == round(total_power) or total_power == 0 else 0)
+        total_power = total_power + (
+            0.001 if total_power == round(total_power) or total_power == 0 else 0
+        )
 
         return {
             "id": request_id,
@@ -61,7 +71,8 @@ class Shelly:
             "dst": "unknown",
             "result": {
                 "act_power": total_power,
-            }}
+            },
+        }
 
     def udp_server(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -88,7 +99,7 @@ class Shelly:
                         else:
                             continue
 
-                        response_json = json.dumps(response, separators=(',', ':'))
+                        response_json = json.dumps(response, separators=(",", ":"))
                         print(f"Sending response: {response_json}")
                         response_data = response_json.encode()
                         sock.sendto(response_data, addr)
