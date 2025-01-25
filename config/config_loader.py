@@ -24,7 +24,7 @@ TASMOTA_SECTION = "TASMOTA"
 SHRDZM_SECTION = "SHRDZM"
 EMLOG_SECTION = "EMLOG"
 IOBROKER_SECTION = "IOBROKER"
-HOMEASSITANT_SECTION = "HOMEASSISTANT"
+HOMEASSISTANT_SECTION = "HOMEASSISTANT"
 VZLOGGER_SECTION = "VZLOGGER"
 SCRIPT_SECTION = "SCRIPT"
 ESPHOME_SECTION = "ESPHOME"
@@ -44,7 +44,7 @@ def create_powermeter(config: configparser.ConfigParser) -> Powermeter:
         return create_emlog_powermeter(config)
     elif config.has_section(IOBROKER_SECTION):
         return create_iobroker_powermeter(config)
-    elif config.has_section(HOMEASSITANT_SECTION):
+    elif config.has_section(HOMEASSISTANT_SECTION):
         return create_homeassistant_powermeter(config)
     elif config.has_section(VZLOGGER_SECTION):
         return create_vzlogger_powermeter(config)
@@ -128,15 +128,15 @@ def create_vzlogger_powermeter(config):
 
 def create_homeassistant_powermeter(config):
     return HomeAssistant(
-        config.get(HOMEASSITANT_SECTION, "IP", fallback=""),
-        config.get(HOMEASSITANT_SECTION, "PORT", fallback=""),
-        config.getboolean(HOMEASSITANT_SECTION, "HTTPS", fallback=False),
-        config.get(HOMEASSITANT_SECTION, "ACCESSTOKEN", fallback=""),
-        config.get(HOMEASSITANT_SECTION, "CURRENT_POWER_ENTITY", fallback=""),
-        config.getboolean(HOMEASSITANT_SECTION, "POWER_CALCULATE", fallback=False),
-        config.get(HOMEASSITANT_SECTION, "POWER_INPUT_ALIAS", fallback=""),
-        config.get(HOMEASSITANT_SECTION, "POWER_OUTPUT_ALIAS", fallback=""),
-        config.get(HOMEASSITANT_SECTION, "API_PATH_PREFIX", fallback=None),
+        config.get(HOMEASSISTANT_SECTION, "IP", fallback=""),
+        config.get(HOMEASSISTANT_SECTION, "PORT", fallback=""),
+        config.getboolean(HOMEASSISTANT_SECTION, "HTTPS", fallback=False),
+        config.get(HOMEASSISTANT_SECTION, "ACCESSTOKEN", fallback=""),
+        config.get(HOMEASSISTANT_SECTION, "CURRENT_POWER_ENTITY", fallback=""),
+        config.getboolean(HOMEASSISTANT_SECTION, "POWER_CALCULATE", fallback=False),
+        config.get(HOMEASSISTANT_SECTION, "POWER_INPUT_ALIAS", fallback=""),
+        config.get(HOMEASSISTANT_SECTION, "POWER_OUTPUT_ALIAS", fallback=""),
+        config.get(HOMEASSISTANT_SECTION, "API_PATH_PREFIX", fallback=None),
     )
 
 
