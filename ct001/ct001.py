@@ -3,7 +3,7 @@ import threading
 import time
 
 
-class B2500:
+class CT001:
     def __init__(
         self,
         udp_port=12345,
