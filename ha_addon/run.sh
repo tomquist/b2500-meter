@@ -8,7 +8,6 @@ CONFIG="/app/config.ini"
   echo "DEVICE_TYPE=$(bashio::config 'device_types')"
   echo "POLL_INTERVAL=$(bashio::config 'poll_interval')"
   echo "DISABLE_ABSOLUTE_VALUES=$(bashio::config 'disable_absolute_values')"
-  echo "DISABLE_SUM_PHASES=$(bashio::config 'disable_sum_phases')"
   echo ""
   echo "[HOMEASSISTANT]"
   echo "IP=supervisor"
@@ -25,6 +24,7 @@ CONFIG="/app/config.ini"
   fi
 } > "$CONFIG"
 
+cat "$CONFIG"
 . /app/venv/bin/activate
 cd /app
 python3 main.py
