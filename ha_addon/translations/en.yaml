@@ -7,4 +7,10 @@ configuration:
     description: "The alias of the sensor that provides the current power output. If you only have one sensor for both input and output, leave this empty."
   poll_interval:
     name: Poll Interval
-    description: "The interval in seconds at which the B2500 Meter should poll the power input and output sensors. Usually you should leave this at 1 second."
+    description: "The interval in seconds at which the ct001 should poll the power input and output sensors. Usually you should leave this at 1 second. Ignore this if you are emulating a different device."
+  disable_absolute_values:
+    name: Allow Negative Values
+    description: "If enabled, the ct001 emulator will allow negative values. This is only compatible with newer versions of the B2500 firmware. Ignore this if you are emulating a different device."
+  device_types:
+    name: Emulated Devices
+    description: "Comma-separated list of devices to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)."
