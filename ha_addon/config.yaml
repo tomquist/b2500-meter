@@ -1,5 +1,5 @@
 name: "B2500 Meter"
-version: "1.0.1"
+version: "1.0.2"
 slug: b2500_meter
 description: >-
   "Replicates a Smart Meter device for a B2500 energy storage system while allowing integration with various smart meters."
@@ -8,7 +8,7 @@ arch:
   - aarch64
   - armv7
 url: "https://github.com/tomquist/b2500-meter"
-image: "ghcr.io/tomquist/b2500-meter"
+image: "ghcr.io/tomquist/b2500-meter-addon"
 panel_icon: "mdi:meter-electric"
 init: false
 startup: services
