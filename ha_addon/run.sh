@@ -5,6 +5,7 @@ CONFIG="/app/config.ini"
 
 {
   echo "[GENERAL]"
+  echo "DEVICE_TYPE=$(bashio::config 'device_types')"
   echo "POLL_INTERVAL=$(bashio::config 'poll_interval')"
   echo "DISABLE_ABSOLUTE_VALUES=$(bashio::config 'disable_absolute_values')"
   echo "DISABLE_SUM_PHASES=$(bashio::config 'disable_sum_phases')"

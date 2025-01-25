@@ -1,6 +1,6 @@
 # B2500 Meter
 
-This project replicates a Smart Meter device for a B2500 energy storage system while allowing integration with various smart meters.
+This project emulates Smart Meter devices for Marstek storages such as the B2500, Marstek Jupiter and Marstek Venus energy storage system while allowing integration with almost any smart meters.
 
 ## Getting Started
 
@@ -68,21 +68,21 @@ When the script is running, switch your B2500 to "Self-Adaptation" mode to enabl
 
 ## Configuration
 
-The configuration is managed using an `ini` file called `config.ini`. Below, you'll find the configuration settings required for each supported powermeter type.
+Configuration is managed via `config.ini`. Each powermeter type has specific settings.
 
 ### General Configuration
 
-Optionally add a general section with the option to enable or disable summation of phase values.
-
 ```ini
 [GENERAL]
-# By default, the script will sum the power values of all phases and report them as a single value on phase 1. To disable this behavior, add the following configuration to the `config.ini` file
-DISABLE_SUM_PHASES = False
-# Setting this to true, disables the powermeter test at the beginning of the script.
+# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+DEVICE_TYPE = ct001
+# Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# By default, the script sends an absolute value of the measured power. This seems to be necessary for the storage system, since it can't handle negative values (results in an integer overflow). Set this to true to clamp the values to 0 instead of sending the absolute value.
+# Sum power values of all phases and report on phase 1 (ct001 only and default is False)
+DISABLE_SUM_PHASES = False
+# Send absolute values (necessary for storage system) (ct001 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
-# Sets the interval at which the script sends new power values to the B2500 in seconds. The original Smart Meter sends new values every second.
+# Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
 ```
 
@@ -289,6 +289,7 @@ You can install the B2500 Meter add-on either through the Home Assistant reposit
 3. **Configure the Add-on**
    - After installation, go to the add-on's Configuration tab
    - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors in Home Assistant
+   - Set `Device Types` (comma-separated list) to the device types you want to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
    - Click "Save" to apply the configuration
 
 4. **Start the Add-on**
