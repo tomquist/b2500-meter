@@ -74,6 +74,7 @@ class B2500:
     def udp_server(self):
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_sock.bind(("", self._udp_port))
+        print("UDP server is listening...")
 
         try:
             while not self._stop:
@@ -81,12 +82,14 @@ class B2500:
                 decoded = data.decode()
                 current_time = time.time()
 
+                print(f"Received '{decoded}' ({data.hex()}) from {addr}")
                 if decoded == "hame":
                     if (
                         addr not in self._last_response_time
                         or (current_time - self._last_response_time[addr])
                         > self.dedupe_time_window
                     ):
+                        print(f"Received 'hame' from {addr}")
                         response_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                         local_ip = udp_sock.getsockname()[0]
                         response_sock.bind((local_ip, 0))
@@ -100,7 +103,8 @@ class B2500:
                             f"Received 'hame' from {addr} but ignored due to dedupe window"
                         )
                 else:
-                    print(f"Received unknown UDP message: {decoded}")
+                    print(f"Ignoring unknown message")
+
         finally:
             udp_sock.close()
 
@@ -115,34 +119,42 @@ class B2500:
                 if self.on_connect:
                     self.on_connect(addr)
 
+                last_send_time = 0
                 while not self._stop:
-                    if self.before_send:
-                        self.before_send(addr)
+                    current_time = time.time()
+                    time_since_last_send = current_time - last_send_time
 
-                    with self._value_mutex:
-                        value1, value2, value3 = self.value
+                    if time_since_last_send >= self.poll_interval:
+                        if self.before_send:
+                            self.before_send(addr)
 
-                    value1 = round(value1)
-                    value2 = round(value2)
-                    value3 = round(value3)
+                        with self._value_mutex:
+                            value1, value2, value3 = self.value
 
-                    value1 = abs(value1)
-                    value2 = abs(value2)
-                    value3 = abs(value3)
+                        value1 = round(value1)
+                        value2 = round(value2)
+                        value3 = round(value3)
 
-                    message = f"HM:{value1}|{value2}|{value3}"
-                    try:
-                        conn.send(message.encode())
-                        print(f"Sent message to {addr}: {message}")
-                        if self.after_send:
-                            self.after_send(addr)
+                        message = f"HM:{value1}|{value2}|{value3}"
+                        try:
+                            conn.send(message.encode())
+                            last_send_time = current_time
+                            print(f"Sent message to {addr}: {message}")
+                            if self.after_send:
+                                self.after_send(addr)
 
-                        time.sleep(self.poll_interval)
-                    except BrokenPipeError:
+                            time.sleep(self.poll_interval)
+                        except BrokenPipeError:
+                            print(
+                                f"Connection with {addr} broken. Waiting for a new connection."
+                            )
+                            break
+                    else:
                         print(
-                            f"Connection with {addr} broken. Waiting for a new connection."
+                            f"Waiting for {self.poll_interval - time_since_last_send} seconds"
                         )
-                        break
+                        # Sleep a small amount to prevent busy waiting
+                        time.sleep(0.01)
             else:
                 print(f"Received unknown TCP message: {decoded}")
         finally:
