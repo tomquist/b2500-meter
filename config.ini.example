@@ -1,11 +1,13 @@
 [GENERAL]
-# By default, the script will sum the power values of all phases and report them as a single value on phase 1. To disable this behavior, add the following configuration to the `config.ini` file
-DISABLE_SUM_PHASES = False
-# Setting this to true, disables the powermeter test at the beginning of the script.
+# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+DEVICE_TYPE = ct001
+# Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# By default, the script sends an absolute value of the measured power. This seems to be necessary for the storage system, since it can't handle negative values (results in an integer overflow). Set this to true to clamp the values to 0 instead of sending the absolute value.
+# Sum power values of all phases and report on phase 1 (ct001 only and default is False)
+DISABLE_SUM_PHASES = False
+# Send absolute values (necessary for storage system) (ct001 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
-# Sets the interval at which the script sends new power values to the B2500 in seconds. The original Smart Meter sends new values every second.
+# Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
 
 #[SHELLY_1PM]
@@ -96,7 +98,7 @@ POLL_INTERVAL = 1
 #[AMIS_READER]
 #IP = 192.168.1.108
 
-#[MODBUS]
+#[MODBUS] #TCP?
 #HOST = 192.168.1.100
 #PORT = 502
 #UNIT_ID = 1
@@ -110,6 +112,12 @@ POLL_INTERVAL = 1
 #JSON_PATH = path.to.value (Optional)
 #USERNAME = mqtt_user (Optional)
 #PASSWORD = mqtt_pass (Optional)
+
+#[MODBUS]
+#IP =
+#PORT =
+#UNIT_ID =
+#REGISTER =
 
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh
