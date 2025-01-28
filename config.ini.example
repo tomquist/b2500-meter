@@ -10,36 +10,8 @@ DISABLE_ABSOLUTE_VALUES = False
 # Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
 
-#[SHELLY_1PM]
-#TYPE = 1PM
-#IP = 192.168.1.100
-#USER = username
-#PASS = password
-#METER_INDEX = meter1
-
-#[SHELLY_PLUS1PM]
-#TYPE = PLUS1PM
-#IP = 192.168.1.100
-#USER = username
-#PASS = password
-#METER_INDEX = meter1
-
-#[SHELLY_EM]
-#TYPE = EM
-#IP = 192.168.1.100
-#USER = username
-#PASS = password
-#METER_INDEX = meter1
-
-#[SHELLY_3EM]
-#TYPE = 3EM
-#IP = 192.168.1.100
-#USER = username
-#PASS = password
-#METER_INDEX = meter1
-
-#[SHELLY_3EMPRO]
-#TYPE = 3EMPro
+#[SHELLY]
+#TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO
 #IP = 192.168.1.100
 #USER = username
 #PASS = password
