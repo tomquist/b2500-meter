@@ -70,7 +70,7 @@ POLL_INTERVAL = 1
 #[AMIS_READER]
 #IP = 192.168.1.108
 
-#[MODBUS] #TCP?
+#[MODBUS]
 #HOST = 192.168.1.100
 #PORT = 502
 #UNIT_ID = 1
@@ -84,12 +84,6 @@ POLL_INTERVAL = 1
 #JSON_PATH = path.to.value (Optional)
 #USERNAME = mqtt_user (Optional)
 #PASSWORD = mqtt_pass (Optional)
-
-#[MODBUS]
-#IP =
-#PORT =
-#UNIT_ID =
-#REGISTER =
 
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh
