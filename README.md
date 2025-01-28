@@ -191,10 +191,10 @@ IP = 192.168.1.105
 PORT = 8123
 HTTPS = True
 ACCESSTOKEN = YOUR_ACCESS_TOKEN
-CURRENT_POWER_ENTITY = sensor.current_power
-POWER_CALCULATE = True
-POWER_INPUT_ALIAS = sensor.power_input
-POWER_OUTPUT_ALIAS = sensor.power_output
+CURRENT_POWER_ENTITY = sensor.current_power #only fill if combined sensor is available
+POWER_CALCULATE = True #False if CURRENT_POWER_ENTITY is provided
+POWER_INPUT_ALIAS = sensor.power_input #leave empty if CURRENT_POWER_ENTITY is provided
+POWER_OUTPUT_ALIAS = sensor.power_output #leave empty if CURRENT_POWER_ENTITY is provided
 ```
 
 ### VZLogger
