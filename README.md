@@ -297,6 +297,36 @@ You can also use a custom script to get the power values. The script should outp
 COMMAND = /path/to/your/script.sh
 ```
 
+### Multiple Powermeters
+
+You can configure multiple powermeters by adding additional sections with the same prefix (e.g. `[SHELLY<unique_suffix>]`). Each powermeter should specify which client IP addresses are allowed to access it using the NETMASK setting.
+
+When a storage system requests power values, the script will check the client IP address against the NETMASK settings of each powermeter and use the first that matches.
+
+```ini
+[SHELLY_1]
+TYPE = 1PM
+IP = 192.168.1.100
+USER = username
+PASS = password
+NETMASK = 192.168.1.50/32
+
+[SHELLY_2]
+TYPE = 3EM
+IP = 192.168.1.101
+USER = username
+PASS = password
+# You can specify multiple IPs by separating them with a comma:
+NETMASK = 192.168.1.51/32,192.168.1.52/32
+
+[HOMEASSISTANT_1]
+IP = 192.168.1.105
+PORT = 8123
+HTTPS = True
+ACCESSTOKEN = YOUR_ACCESS_TOKEN
+CURRENT_POWER_ENTITY = sensor.current_power
+# No NETMASK specified - will match all clients (0.0.0.0/0)
+
 ## Home Assistant Add-on Installation
 
 You can install the B2500 Meter add-on either through the Home Assistant repository or manually.

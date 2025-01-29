@@ -125,6 +125,9 @@ class CT001:
                             self.before_send(addr)
 
                         with self._value_mutex:
+                            if self.value is None:
+                                print(f"No value to send to {addr}")
+                                break
                             value1, value2, value3 = self.value
 
                         value1 = round(value1)
