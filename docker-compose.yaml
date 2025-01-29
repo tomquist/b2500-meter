@@ -7,6 +7,3 @@ services:
     restart: unless-stopped
     volumes:
       - ./config.ini:/app/config.ini
-
-volumes:
-  config:
