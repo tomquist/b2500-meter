@@ -1,4 +1,6 @@
 import configparser
+from ipaddress import IPv4Network, IPv4Address
+
 from powermeter import (
     Powermeter,
     Tasmota,
@@ -32,42 +34,81 @@ AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
 
 
+class ClientFilter:
+    def __init__(self, netmasks: list[IPv4Network]):
+        self.netmasks = netmasks
+
+    def matches(self, client_ip) -> bool:
+        try:
+            client_ip_addr = IPv4Address(client_ip)
+            for netmask in self.netmasks:
+                if client_ip_addr in netmask:
+                    return True
+        except ValueError as e:
+            print(f"Error: {e}")
+            return False
+
+
+def read_all_powermeter_configs(
+    config: configparser.ConfigParser,
+) -> list[(Powermeter, ClientFilter)]:
+    powermeters = []
+    for section in config.sections():
+        powermeter = create_powermeter(section, config)
+        if powermeter is not None:
+            client_filter = create_client_filter(section, config)
+            powermeters.append((powermeter, client_filter))
+    return powermeters
+
+
+def create_client_filter(
+    section: str, config: configparser.ConfigParser
+) -> ClientFilter:
+    netmasks = config.get(section, "NETMASK", fallback="0.0.0.0/0")
+    netmasks = [IPv4Network(netmask) for netmask in netmasks.split(",")]
+    return ClientFilter(netmasks)
+
+
 # Helper function to create a powermeter instance
-def create_powermeter(config: configparser.ConfigParser) -> Powermeter:
-    if config.has_section(SHELLY_SECTION):
-        return create_shelly_powermeter(config)
-    elif config.has_section(TASMOTA_SECTION):
-        return create_tasmota_powermeter(config)
-    elif config.has_section(SHRDZM_SECTION):
-        return create_shrdzm_powermeter(config)
-    elif config.has_section(EMLOG_SECTION):
-        return create_emlog_powermeter(config)
-    elif config.has_section(IOBROKER_SECTION):
-        return create_iobroker_powermeter(config)
-    elif config.has_section(HOMEASSISTANT_SECTION):
-        return create_homeassistant_powermeter(config)
-    elif config.has_section(VZLOGGER_SECTION):
-        return create_vzlogger_powermeter(config)
-    elif config.has_section(SCRIPT_SECTION):
-        return create_script_powermeter(config)
-    elif config.has_section(ESPHOME_SECTION):
-        return create_esphome_powermeter(config)
-    elif config.has_section(AMIS_READER_SECTION):
-        return create_amisreader_powermeter(config)
-    elif config.has_section(MODBUS_SECTION):
-        return create_modbus_powermeter(config)
-    elif config.has_section("MQTT"):
-        return create_mqtt_powermeter(config)
+def create_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter | None:
+    if section.startswith(SHELLY_SECTION):
+        return create_shelly_powermeter(section, config)
+    elif section.startswith(TASMOTA_SECTION):
+        return create_tasmota_powermeter(section, config)
+    elif section.startswith(SHRDZM_SECTION):
+        return create_shrdzm_powermeter(section, config)
+    elif section.startswith(EMLOG_SECTION):
+        return create_emlog_powermeter(section, config)
+    elif section.startswith(IOBROKER_SECTION):
+        return create_iobroker_powermeter(section, config)
+    elif section.startswith(HOMEASSISTANT_SECTION):
+        return create_homeassistant_powermeter(section, config)
+    elif section.startswith(VZLOGGER_SECTION):
+        return create_vzlogger_powermeter(section, config)
+    elif section.startswith(SCRIPT_SECTION):
+        return create_script_powermeter(section, config)
+    elif section.startswith(ESPHOME_SECTION):
+        return create_esphome_powermeter(section, config)
+    elif section.startswith(AMIS_READER_SECTION):
+        return create_amisreader_powermeter(section, config)
+    elif section.startswith(MODBUS_SECTION):
+        return create_modbus_powermeter(section, config)
+    elif section.startswith("MQTT"):
+        return create_mqtt_powermeter(section, config)
     else:
-        raise Exception("Error: no powermeter defined!")
+        return None
 
 
-def create_shelly_powermeter(config):
-    shelly_type = config.get(SHELLY_SECTION, "TYPE", fallback="")
-    shelly_ip = config.get(SHELLY_SECTION, "IP", fallback="")
-    shelly_user = config.get(SHELLY_SECTION, "USER", fallback="")
-    shelly_pass = config.get(SHELLY_SECTION, "PASS", fallback="")
-    shelly_meterindex = config.get(SHELLY_SECTION, "METER_INDEX", fallback=None)
+def create_shelly_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    shelly_type = config.get(section, "TYPE", fallback="")
+    shelly_ip = config.get(section, "IP", fallback="")
+    shelly_user = config.get(section, "USER", fallback="")
+    shelly_pass = config.get(section, "PASS", fallback="")
+    shelly_meterindex = config.get(section, "METER_INDEX", fallback=None)
     if shelly_type == "1PM":
         return Shelly1PM(shelly_ip, shelly_user, shelly_pass, shelly_meterindex)
     elif shelly_type == "PLUS1PM":
@@ -80,102 +121,124 @@ def create_shelly_powermeter(config):
         raise Exception(f"Error: unknown Shelly type '{shelly_type}'")
 
 
-def create_amisreader_powermeter(config):
-    return AmisReader(config.get(AMIS_READER_SECTION, "IP", fallback=""))
+def create_amisreader_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return AmisReader(config.get(section, "IP", fallback=""))
 
 
-def create_script_powermeter(config):
-    return Script(config.get(SCRIPT_SECTION, "COMMAND", fallback=""))
+def create_script_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return Script(config.get(section, "COMMAND", fallback=""))
 
 
-def create_mqtt_powermeter(config):
+def create_mqtt_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return MqttPowermeter(
-        config.get("MQTT", "BROKER", fallback=""),
-        config.getint("MQTT", "PORT", fallback=1883),
-        config.get("MQTT", "TOPIC", fallback=""),
-        config.get("MQTT", "JSON_PATH", fallback=None),
-        config.get("MQTT", "USERNAME", fallback=None),
-        config.get("MQTT", "PASSWORD", fallback=None),
+        config.get(section, "BROKER", fallback=""),
+        config.getint(section, "PORT", fallback=1883),
+        config.get(section, "TOPIC", fallback=""),
+        config.get(section, "JSON_PATH", fallback=None),
+        config.get(section, "USERNAME", fallback=None),
+        config.get(section, "PASSWORD", fallback=None),
     )
 
 
-def create_modbus_powermeter(config):
+def create_modbus_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return ModbusPowermeter(
-        config.get(MODBUS_SECTION, "HOST", fallback=""),
-        config.getint(MODBUS_SECTION, "PORT", fallback=502),
-        config.getint(MODBUS_SECTION, "UNIT_ID", fallback=1),
-        config.getint(MODBUS_SECTION, "ADDRESS", fallback=0),
-        config.getint(MODBUS_SECTION, "COUNT", fallback=1),
+        config.get(section, "HOST", fallback=""),
+        config.getint(section, "PORT", fallback=502),
+        config.getint(section, "UNIT_ID", fallback=1),
+        config.getint(section, "ADDRESS", fallback=0),
+        config.getint(section, "COUNT", fallback=1),
     )
 
 
-def create_esphome_powermeter(config):
+def create_esphome_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return ESPHome(
-        config.get(ESPHOME_SECTION, "IP", fallback=""),
-        config.get(ESPHOME_SECTION, "PORT", fallback=""),
-        config.get(ESPHOME_SECTION, "DOMAIN", fallback=""),
-        config.get(ESPHOME_SECTION, "ID", fallback=""),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "PORT", fallback=""),
+        config.get(section, "DOMAIN", fallback=""),
+        config.get(section, "ID", fallback=""),
     )
 
 
-def create_vzlogger_powermeter(config):
+def create_vzlogger_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return VZLogger(
-        config.get(VZLOGGER_SECTION, "IP", fallback=""),
-        config.get(VZLOGGER_SECTION, "PORT", fallback=""),
-        config.get(VZLOGGER_SECTION, "UUID", fallback=""),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "PORT", fallback=""),
+        config.get(section, "UUID", fallback=""),
     )
 
 
-def create_homeassistant_powermeter(config):
+def create_homeassistant_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return HomeAssistant(
-        config.get(HOMEASSISTANT_SECTION, "IP", fallback=""),
-        config.get(HOMEASSISTANT_SECTION, "PORT", fallback=""),
-        config.getboolean(HOMEASSISTANT_SECTION, "HTTPS", fallback=False),
-        config.get(HOMEASSISTANT_SECTION, "ACCESSTOKEN", fallback=""),
-        config.get(HOMEASSISTANT_SECTION, "CURRENT_POWER_ENTITY", fallback=""),
-        config.getboolean(HOMEASSISTANT_SECTION, "POWER_CALCULATE", fallback=False),
-        config.get(HOMEASSISTANT_SECTION, "POWER_INPUT_ALIAS", fallback=""),
-        config.get(HOMEASSISTANT_SECTION, "POWER_OUTPUT_ALIAS", fallback=""),
-        config.get(HOMEASSISTANT_SECTION, "API_PATH_PREFIX", fallback=None),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "PORT", fallback=""),
+        config.getboolean(section, "HTTPS", fallback=False),
+        config.get(section, "ACCESSTOKEN", fallback=""),
+        config.get(section, "CURRENT_POWER_ENTITY", fallback=""),
+        config.getboolean(section, "POWER_CALCULATE", fallback=False),
+        config.get(section, "POWER_INPUT_ALIAS", fallback=""),
+        config.get(section, "POWER_OUTPUT_ALIAS", fallback=""),
+        config.get(section, "API_PATH_PREFIX", fallback=None),
     )
 
 
-def create_iobroker_powermeter(config):
+def create_iobroker_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return IoBroker(
-        config.get(IOBROKER_SECTION, "IP", fallback=""),
-        config.get(IOBROKER_SECTION, "PORT", fallback=""),
-        config.get(IOBROKER_SECTION, "CURRENT_POWER_ALIAS", fallback=""),
-        config.getboolean(IOBROKER_SECTION, "POWER_CALCULATE", fallback=False),
-        config.get(IOBROKER_SECTION, "POWER_INPUT_ALIAS", fallback=""),
-        config.get(IOBROKER_SECTION, "POWER_OUTPUT_ALIAS", fallback=""),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "PORT", fallback=""),
+        config.get(section, "CURRENT_POWER_ALIAS", fallback=""),
+        config.getboolean(section, "POWER_CALCULATE", fallback=False),
+        config.get(section, "POWER_INPUT_ALIAS", fallback=""),
+        config.get(section, "POWER_OUTPUT_ALIAS", fallback=""),
     )
 
 
-def create_emlog_powermeter(config):
+def create_emlog_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return Emlog(
-        config.get(EMLOG_SECTION, "IP", fallback=""),
-        config.get(EMLOG_SECTION, "METER_INDEX", fallback=""),
-        config.getboolean(EMLOG_SECTION, "JSON_POWER_CALCULATE", fallback=False),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "METER_INDEX", fallback=""),
+        config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
     )
 
 
-def create_shrdzm_powermeter(config):
+def create_shrdzm_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return Shrdzm(
-        config.get(SHRDZM_SECTION, "IP", fallback=""),
-        config.get(SHRDZM_SECTION, "USER", fallback=""),
-        config.get(SHRDZM_SECTION, "PASS", fallback=""),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "USER", fallback=""),
+        config.get(section, "PASS", fallback=""),
     )
 
 
-def create_tasmota_powermeter(config):
+def create_tasmota_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
     return Tasmota(
-        config.get(TASMOTA_SECTION, "IP", fallback=""),
-        config.get(TASMOTA_SECTION, "USER", fallback=""),
-        config.get(TASMOTA_SECTION, "PASS", fallback=""),
-        config.get(TASMOTA_SECTION, "JSON_STATUS", fallback=""),
-        config.get(TASMOTA_SECTION, "JSON_PAYLOAD_MQTT_PREFIX", fallback=""),
-        config.get(TASMOTA_SECTION, "JSON_POWER_MQTT_LABEL", fallback=""),
-        config.get(TASMOTA_SECTION, "JSON_POWER_INPUT_MQTT_LABEL", fallback=""),
-        config.get(TASMOTA_SECTION, "JSON_POWER_OUTPUT_MQTT_LABEL", fallback=""),
-        config.getboolean(TASMOTA_SECTION, "JSON_POWER_CALCULATE", fallback=False),
+        config.get(section, "IP", fallback=""),
+        config.get(section, "USER", fallback=""),
+        config.get(section, "PASS", fallback=""),
+        config.get(section, "JSON_STATUS", fallback=""),
+        config.get(section, "JSON_PAYLOAD_MQTT_PREFIX", fallback=""),
+        config.get(section, "JSON_POWER_MQTT_LABEL", fallback=""),
+        config.get(section, "JSON_POWER_INPUT_MQTT_LABEL", fallback=""),
+        config.get(section, "JSON_POWER_OUTPUT_MQTT_LABEL", fallback=""),
+        config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
     )

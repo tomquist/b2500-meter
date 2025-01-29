@@ -2,18 +2,24 @@ import configparser
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
-from config.config_loader import create_powermeter
+from config.config_loader import read_all_powermeter_configs, ClientFilter
 from ct001 import CT001
+from powermeter import Powermeter
 from shelly import Shelly
+from collections import OrderedDict
 
 
-def test_powermeter(powermeter):
+def test_powermeter(powermeter, client_filter):
     try:
         print("Testing powermeter configuration...")
         powermeter.wait_for_message(timeout=120)
         value = powermeter.get_powermeter_watts()
         value_with_units = " | ".join([f"{v}W" for v in value])
-        print(f"Successfully fetched powermeter value: {value_with_units}")
+        powermeter_name = powermeter.__class__.__name__
+        filter_description = ", ".join([str(n) for n in client_filter.netmasks])
+        print(
+            f"Successfully fetched {powermeter_name} powermeter value (filter {filter_description}): {value_with_units}"
+        )
     except Exception as e:
         print(f"Error: {e}")
         exit(1)
@@ -23,7 +29,7 @@ def run_device(
     device_type: str,
     cfg: configparser.ConfigParser,
     args: argparse.Namespace,
-    powermeter,
+    powermeters: list[(Powermeter, ClientFilter)],
     device_id: Optional[str] = None,
 ):
     print(f"Starting device: {device_type}")
@@ -53,6 +59,15 @@ def run_device(
         device = CT001(poll_interval=poll_interval)
 
         def update_readings(addr):
+            powermeter = None
+            for pm, client_filter in powermeters:
+                if client_filter.matches(addr[0]):
+                    powermeter = pm
+                    break
+            if powermeter is None:
+                print(f"No powermeter found for client {addr[0]}")
+                device.value = None
+                return
             values = powermeter.get_powermeter_watts()
             value1 = values[0] if len(values) > 0 else 0
             value2 = values[1] if len(values) > 1 else 0
@@ -72,17 +87,17 @@ def run_device(
     elif device_type == "shellypro3em":
         print(f"Shelly Pro 3EM Settings:")
         print(f"Device ID: {device_id}")
-        device = Shelly(powermeter=powermeter, device_id=device_id, udp_port=1010)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=1010)
 
     elif device_type == "shellyemg3":
         print(f"Shelly EM Gen3 Settings:")
         print(f"Device ID: {device_id}")
-        device = Shelly(powermeter=powermeter, device_id=device_id, udp_port=2222)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2222)
 
     elif device_type == "shellyproem50":
         print(f"Shelly Pro EM 50 Settings:")
         print(f"Device ID: {device_id}")
-        device = Shelly(powermeter=powermeter, device_id=device_id, udp_port=2223)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2223)
 
     else:
         raise ValueError(f"Unsupported device type: {device_type}")
@@ -115,7 +130,7 @@ def main():
     parser.add_argument("-p", "--poll-interval", type=int)
 
     args = parser.parse_args()
-    cfg = configparser.ConfigParser()
+    cfg = configparser.ConfigParser(dict_type=OrderedDict)
     cfg.read(args.config)
 
     # Load general settings
@@ -147,9 +162,10 @@ def main():
     print(f"Skip Test: {skip_test}")
 
     # Create powermeter
-    powermeter = create_powermeter(cfg)
+    powermeters = read_all_powermeter_configs(cfg)
     if not skip_test:
-        test_powermeter(powermeter)
+        for powermeter, client_filter in powermeters:
+            test_powermeter(powermeter, client_filter)
 
     # Run devices in parallel
     with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
@@ -157,7 +173,7 @@ def main():
         for device_type, device_id in zip(device_types, device_ids):
             futures.append(
                 executor.submit(
-                    run_device, device_type, cfg, args, powermeter, device_id
+                    run_device, device_type, cfg, args, powermeters, device_id
                 )
             )
 
