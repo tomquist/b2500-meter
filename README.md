@@ -326,6 +326,7 @@ HTTPS = True
 ACCESSTOKEN = YOUR_ACCESS_TOKEN
 CURRENT_POWER_ENTITY = sensor.current_power
 # No NETMASK specified - will match all clients (0.0.0.0/0)
+```
 
 ## Home Assistant Add-on Installation
 
