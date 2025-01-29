@@ -1,20 +1,20 @@
 import socket
 import threading
 import json
-import time
-import math
+from config import ClientFilter
+from powermeter import Powermeter
 
 
 class Shelly:
     def __init__(
         self,
-        powermeter,
-        udp_port=1010,
-        device_id="shellypro3em-ec4609c439c1",
+        powermeters: list[(Powermeter, ClientFilter)],
+        udp_port,
+        device_id,
     ):
         self._udp_port = udp_port
         self._device_id = device_id
-        self._powermeter = powermeter
+        self._powermeters = powermeters
         self._udp_thread = None
         self._stop = False
         self._value_mutex = threading.Lock()
@@ -90,7 +90,16 @@ class Shelly:
                     request = json.loads(request_str)
                     print(f"Parsed request: {json.dumps(request, indent=2)}")
                     if isinstance(request.get("params", {}).get("id"), int):
-                        powers = self._powermeter.get_powermeter_watts()
+                        powermeter = None
+                        for pm, client_filter in self._powermeters:
+                            if client_filter.matches(addr[0]):
+                                powermeter = pm
+                                break
+                        if powermeter is None:
+                            print(f"No powermeter found for client {addr[0]}")
+                            continue
+
+                        powers = powermeter.get_powermeter_watts()
 
                         if request.get("method") == "EM.GetStatus":
                             response = self._create_em_response(request["id"], powers)
