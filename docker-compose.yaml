@@ -6,4 +6,4 @@ services:
     network_mode: host
     restart: unless-stopped
     volumes:
-      - ./config.ini:/app/config.ini
+      - './config.ini:/app/config.ini'
