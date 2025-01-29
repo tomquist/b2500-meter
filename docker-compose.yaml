@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  b2500-meter:
+    image: ghcr.io/tomquist/b2500-meter:latest
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - './config.ini:/app/config.ini'
