@@ -184,17 +184,43 @@ POWER_OUTPUT_ALIAS = Alias.0.power_out
 ```
 
 ### HomeAssistant
-
+```ini
+[HOMEASSISTANT]
+IP = 192.168.1.105
+PORT = 8123
+# Use HTTPS - if empty False is Fallback
+HTTPS = ""|True|False
+ACCESSTOKEN = YOUR_ACCESS_TOKEN
+# The alias of the sensor that provides both current power input & output
+CURRENT_POWER_ENTITY = ""|sensor.current_power
+# If False or Empty the power is not calculated - if empty False is Fallback
+POWER_CALCULATE = ""|True|False 
+# The alias of the sensor that provides the current power input.
+POWER_INPUT_ALIAS = ""|sensor.power_input
+# The alias of the sensor that provides the current power output.
+POWER_OUTPUT_ALIAS = ""|sensor.power_output
+# Is a Path Prefix needed?
+API_PATH_PREFIX = ""|/core
+```
+Example: Variant 1 with a combined input & output sensor
 ```ini
 [HOMEASSISTANT]
 IP = 192.168.1.105
 PORT = 8123
 HTTPS = True
 ACCESSTOKEN = YOUR_ACCESS_TOKEN
-CURRENT_POWER_ENTITY = sensor.current_power #only fill if combined sensor is available
-POWER_CALCULATE = True #False if CURRENT_POWER_ENTITY is provided
-POWER_INPUT_ALIAS = sensor.power_input #leave empty if CURRENT_POWER_ENTITY is provided
-POWER_OUTPUT_ALIAS = sensor.power_output #leave empty if CURRENT_POWER_ENTITY is provided
+CURRENT_POWER_ENTITY = sensor.current_power 
+```
+Example: Variant 2 with separate input & output sensors
+```ini
+[HOMEASSISTANT]
+IP = 192.168.1.105
+PORT = 8123
+HTTPS = True
+ACCESSTOKEN = YOUR_ACCESS_TOKEN
+POWER_CALCULATE = True
+POWER_INPUT_ALIAS = sensor.power_input
+POWER_OUTPUT_ALIAS = sensor.power_output
 ```
 
 ### VZLogger
