@@ -62,6 +62,10 @@ This project emulates Smart Meter devices for Marstek storages such as the B2500
    pipenv run python main.py
    ```
 
+### Docker
+
+See the `docker_compose.yaml` example.
+
 ### Additional Notes
 
 When the script is running, switch your B2500 to "Self-Adaptation" mode to enable the powermeter functionality.
