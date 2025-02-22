@@ -1,5 +1,6 @@
 from .base import Powermeter
 import requests
+from typing import Union, List
 
 
 class HomeAssistant(Powermeter):
@@ -9,20 +10,32 @@ class HomeAssistant(Powermeter):
         port: str,
         use_https: bool,
         access_token: str,
-        current_power_entity: str,
+        current_power_entity: Union[str, List[str]],
         power_calculate: bool,
-        power_input_alias: str,
-        power_output_alias: str,
+        power_input_alias: Union[str, List[str]],
+        power_output_alias: Union[str, List[str]],
         path_prefix: str,
     ):
         self.ip = ip
         self.port = port
         self.use_https = use_https
         self.access_token = access_token
-        self.current_power_entity = current_power_entity
+        self.current_power_entity = (
+            [current_power_entity]
+            if isinstance(current_power_entity, str)
+            else current_power_entity
+        )
         self.power_calculate = power_calculate
-        self.power_input_alias = power_input_alias
-        self.power_output_alias = power_output_alias
+        self.power_input_alias = (
+            [power_input_alias]
+            if isinstance(power_input_alias, str)
+            else power_input_alias
+        )
+        self.power_output_alias = (
+            [power_output_alias]
+            if isinstance(power_output_alias, str)
+            else power_output_alias
+        )
         self.path_prefix = path_prefix
         self.session = requests.Session()
 
@@ -41,12 +54,20 @@ class HomeAssistant(Powermeter):
 
     def get_powermeter_watts(self):
         if not self.power_calculate:
-            path = f"/api/states/{self.current_power_entity}"
-            response = self.get_json(path)
-            return [float(response["state"])]
+            results = []
+            for entity in self.current_power_entity:
+                path = f"/api/states/{entity}"
+                response = self.get_json(path)
+                results.append(float(response["state"]))
+            return results
         else:
-            response = self.get_json(f"/api/states/{self.power_input_alias}")
-            power_in = float(response["state"])
-            response = self.get_json(f"/api/states/{self.power_output_alias}")
-            power_out = float(response["state"])
-            return [power_in - power_out]
+            results = []
+            for in_entity, out_entity in zip(
+                self.power_input_alias, self.power_output_alias
+            ):
+                response = self.get_json(f"/api/states/{in_entity}")
+                power_in = float(response["state"])
+                response = self.get_json(f"/api/states/{out_entity}")
+                power_out = float(response["state"])
+                results.append(power_in - power_out)
+            return results

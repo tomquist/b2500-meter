@@ -51,10 +51,14 @@ POLL_INTERVAL = 1
 #PORT = 8123
 #HTTPS = True
 #ACCESSTOKEN = YOUR_ACCESS_TOKEN
-#CURRENT_POWER_ENTITY = sensor.current_power
+
+## Single sensor mode - comma-separated list for multiple phases
+#CURRENT_POWER_ENTITY = sensor.phase1_power, sensor.phase2_power, sensor.phase3_power
+
+## Or for separate input/output sensors
 #POWER_CALCULATE = True
-#POWER_INPUT_ALIAS = sensor.power_input
-#POWER_OUTPUT_ALIAS = sensor.power_output
+#POWER_INPUT_ALIAS = sensor.phase1_input, sensor.phase2_input, sensor.phase3_input
+#POWER_OUTPUT_ALIAS = sensor.phase1_output, sensor.phase2_output, sensor.phase3_output
 
 #[VZLOGGER]
 #IP = 192.168.1.106

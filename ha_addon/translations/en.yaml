@@ -1,10 +1,10 @@
 configuration:
   power_input_alias:
     name: Power Input Alias
-    description: "The alias of the sensor that provides the current power input."
+    description: "The alias of the sensor(s) that provide the current power input. For multi-phase setups, enter multiple sensors separated by commas (e.g., 'sensor.phase1_in,sensor.phase2_in,sensor.phase3_in')."
   power_output_alias:
     name: Power Output Alias
-    description: "The alias of the sensor that provides the current power output. If you only have one sensor for both input and output, leave this empty."
+    description: "The alias of the sensor(s) that provide the current power output. For multi-phase setups, enter multiple sensors separated by commas (e.g., 'sensor.phase1_out,sensor.phase2_out,sensor.phase3_out'). If you only have one sensor for both input and output, leave this empty."
   poll_interval:
     name: Poll Interval
     description: "The interval in seconds at which the ct001 should poll the power input and output sensors. Usually you should leave this at 1 second. Ignore this if you are emulating a different device."
