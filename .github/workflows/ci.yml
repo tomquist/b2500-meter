@@ -65,7 +65,7 @@ jobs:
       context: .
       dockerfile: ./Dockerfile
       image-suffix: ""
-      digest-prefix: ""
+      digest-prefix: "digests-base-"
 
   merge:
     needs: [build]
@@ -73,7 +73,7 @@ jobs:
     with:
       registry: ghcr.io
       image-suffix: ""
-      digest-prefix: ""
+      digest-prefix: "digests-base-"
 
   build-addon:
     strategy:
@@ -93,7 +93,7 @@ jobs:
       build-args: |
         BUILD_FROM=ghcr.io/hassio-addons/base:14.2.2
       image-suffix: "-addon"
-      digest-prefix: "addon-"
+      digest-prefix: "digests-addon-"
 
   merge-addon:
     needs: [build-addon]
@@ -101,4 +101,4 @@ jobs:
     with:
       registry: ghcr.io
       image-suffix: "-addon"
-      digest-prefix: "addon-"
+      digest-prefix: "digests-addon-"
