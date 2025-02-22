@@ -1,6 +1,12 @@
 # B2500 Meter
 
-This project emulates Smart Meter devices for Marstek storages such as the B2500, Marstek Jupiter and Marstek Venus energy storage system while allowing integration with almost any smart meters.
+This project emulates Smart Meter devices for Marstek storages such as the B2500, Marstek Jupiter and Marstek Venus energy storage system while allowing integration with almost any smart meters. It does this by emulating one or more of the following devices:
+- CT001
+- Shelly Pro 3EM
+- Shelly EM gen3
+- Shelly Pro EM50
+
+Note that only Marstek storages are supported by the Shelly Emulators since the project only implements a minimal subset of Shelly's APIs.
 
 ## Getting Started
 
@@ -195,18 +201,19 @@ PORT = 8123
 # Use HTTPS - if empty False is Fallback
 HTTPS = ""|True|False
 ACCESSTOKEN = YOUR_ACCESS_TOKEN
-# The alias of the sensor that provides both current power input & output
-CURRENT_POWER_ENTITY = ""|sensor.current_power
+# The entity or entities (comma-separated for 3-phase) that provide current power
+CURRENT_POWER_ENTITY = ""|sensor.current_power|sensor.phase1,sensor.phase2,sensor.phase3
 # If False or Empty the power is not calculated - if empty False is Fallback
 POWER_CALCULATE = ""|True|False 
-# The alias of the sensor that provides the current power input.
-POWER_INPUT_ALIAS = ""|sensor.power_input
-# The alias of the sensor that provides the current power output.
-POWER_OUTPUT_ALIAS = ""|sensor.power_output
+# The entity or entities (comma-separated for 3-phase) that provide power input
+POWER_INPUT_ALIAS = ""|sensor.power_input|sensor.power_in_1,sensor.power_in_2,sensor.power_in_3
+# The entity or entities (comma-separated for 3-phase) that provide power output
+POWER_OUTPUT_ALIAS = ""|sensor.power_output|sensor.power_out_1,sensor.power_out_2,sensor.power_out_3
 # Is a Path Prefix needed?
 API_PATH_PREFIX = ""|/core
 ```
-Example: Variant 1 with a combined input & output sensor
+
+Example: Variant 1 with a single combined input & output sensor
 ```ini
 [HOMEASSISTANT]
 IP = 192.168.1.105
@@ -215,6 +222,7 @@ HTTPS = True
 ACCESSTOKEN = YOUR_ACCESS_TOKEN
 CURRENT_POWER_ENTITY = sensor.current_power 
 ```
+
 Example: Variant 2 with separate input & output sensors
 ```ini
 [HOMEASSISTANT]
@@ -225,6 +233,28 @@ ACCESSTOKEN = YOUR_ACCESS_TOKEN
 POWER_CALCULATE = True
 POWER_INPUT_ALIAS = sensor.power_input
 POWER_OUTPUT_ALIAS = sensor.power_output
+```
+
+Example: Variant 3 with three-phase power monitoring
+```ini
+[HOMEASSISTANT]
+IP = 192.168.1.105
+PORT = 8123
+HTTPS = True
+ACCESSTOKEN = YOUR_ACCESS_TOKEN
+CURRENT_POWER_ENTITY = sensor.phase1,sensor.phase2,sensor.phase3
+```
+
+Example: Variant 4 with three-phase power calculation
+```ini
+[HOMEASSISTANT]
+IP = 192.168.1.105
+PORT = 8123
+HTTPS = True
+ACCESSTOKEN = YOUR_ACCESS_TOKEN
+POWER_CALCULATE = True
+POWER_INPUT_ALIAS = sensor.power_in_1,sensor.power_in_2,sensor.power_in_3
+POWER_OUTPUT_ALIAS = sensor.power_out_1,sensor.power_out_2,sensor.power_out_3
 ```
 
 ### VZLogger
@@ -349,7 +379,12 @@ You can install the B2500 Meter add-on either through the Home Assistant reposit
 
 3. **Configure the Add-on**
    - After installation, go to the add-on's Configuration tab
-   - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors in Home Assistant
+   - For single-phase monitoring:
+     - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
+   - For three-phase monitoring:
+     - Set the `Power Input Alias` to a comma-separated list of three entity IDs (one for each phase)
+     - If using calculated power, also set the `Power Output Alias` to a comma-separated list of three entity IDs
+     - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
    - Click "Save" to apply the configuration
 

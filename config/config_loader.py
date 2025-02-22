@@ -1,5 +1,6 @@
 import configparser
 from ipaddress import IPv4Network, IPv4Address
+from typing import List
 
 from powermeter import (
     Powermeter,
@@ -182,15 +183,33 @@ def create_vzlogger_powermeter(
 def create_homeassistant_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
+    # Split entity strings on commas and strip whitespace
+    def parse_entities(value: str) -> str | List[str]:
+        if not value:
+            return ""
+        entities = [entity.strip() for entity in value.split(",")]
+        # Return single string if only one entity, otherwise return list
+        return entities[0] if len(entities) == 1 else entities
+
+    current_power_entity = parse_entities(
+        config.get(section, "CURRENT_POWER_ENTITY", fallback="")
+    )
+    power_input_alias = parse_entities(
+        config.get(section, "POWER_INPUT_ALIAS", fallback="")
+    )
+    power_output_alias = parse_entities(
+        config.get(section, "POWER_OUTPUT_ALIAS", fallback="")
+    )
+
     return HomeAssistant(
         config.get(section, "IP", fallback=""),
         config.get(section, "PORT", fallback=""),
         config.getboolean(section, "HTTPS", fallback=False),
         config.get(section, "ACCESSTOKEN", fallback=""),
-        config.get(section, "CURRENT_POWER_ENTITY", fallback=""),
+        current_power_entity,
         config.getboolean(section, "POWER_CALCULATE", fallback=False),
-        config.get(section, "POWER_INPUT_ALIAS", fallback=""),
-        config.get(section, "POWER_OUTPUT_ALIAS", fallback=""),
+        power_input_alias,
+        power_output_alias,
         config.get(section, "API_PATH_PREFIX", fallback=None),
     )
 
