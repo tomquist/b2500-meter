@@ -1,6 +1,6 @@
 # Changelog
 
-## Next
+## 1.0.3
 
 ### Added
 - Support for three-phase power monitoring in Home Assistant integration
