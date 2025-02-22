@@ -1,5 +1,6 @@
 from .base import Powermeter
 import requests
+from typing import Union, List
 
 
 class HomeAssistant(Powermeter):
@@ -9,10 +10,10 @@ class HomeAssistant(Powermeter):
         port: str,
         use_https: bool,
         access_token: str,
-        current_power_entity: str | list[str],
+        current_power_entity: Union[str, List[str]],
         power_calculate: bool,
-        power_input_alias: str | list[str],
-        power_output_alias: str | list[str],
+        power_input_alias: Union[str, List[str]],
+        power_output_alias: Union[str, List[str]],
         path_prefix: str,
     ):
         self.ip = ip
