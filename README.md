@@ -378,6 +378,9 @@ You can install the B2500 Meter add-on either through the Home Assistant reposit
    - Click on it and then click "Install"
 
 3. **Configure the Add-on**
+   You can configure the add-on in two ways:
+
+   A) Using the Add-on Configuration Interface:
    - After installation, go to the add-on's Configuration tab
    - For single-phase monitoring:
      - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
@@ -387,6 +390,12 @@ You can install the B2500 Meter add-on either through the Home Assistant reposit
      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
    - Click "Save" to apply the configuration
+
+   B) Using a Custom Configuration File:
+   - Create a `config.ini` file based on the examples in the [Configuration](#configuration) section
+   - Place the file in `/addon_configs/local_b2500_meter/` (for local installations) or `/addon_configs/<repo-hash>_b2500_meter/` (for repository installations)
+   - In the add-on configuration, set `Custom Config` to the filename (e.g., "config.ini")
+   - When using a custom configuration file, other configuration options will be ignored
 
 4. **Start the Add-on**
    - Go to the add-on's Info tab

@@ -14,3 +14,6 @@ configuration:
   device_types:
     name: Emulated Devices
     description: "Comma-separated list of devices to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)."
+  custom_config:
+    name: Custom Config
+    description: "Optional. Name of a custom config.ini file to use instead of the UI configuration. The file must be placed in the add-on's configuration directory."
