@@ -5,6 +5,7 @@
 ### Added
 - Support for three-phase power monitoring in Home Assistant integration
 - Support for multiple powermeters (not through the HomeAssistant addon at this point)
+- Allow providing custom config file in HA Addon
 
 ## 1.0.0 - Initial Release
 

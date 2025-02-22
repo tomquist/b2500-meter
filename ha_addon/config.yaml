@@ -22,6 +22,9 @@ ports:
   1010/udp: 1010
   2222/udp: 2222
   2223/udp: 2223
+map:
+  - type: addon_config
+    read_only: false
 options:
   power_input_alias: "sensor.current_power_in"
   power_output_alias: ""
@@ -34,3 +37,4 @@ schema:
   poll_interval: int(1,)
   disable_absolute_values: bool
   device_types: str
+  custom_config: str?
