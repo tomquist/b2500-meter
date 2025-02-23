@@ -1,47 +1,95 @@
 # B2500 Meter
 
-This project emulates Smart Meter devices for Marstek storages such as the B2500, Marstek Jupiter and Marstek Venus energy storage system while allowing integration with almost any smart meters. It does this by emulating one or more of the following devices:
+This project emulates Smart Meter devices for Marstek storage systems such as the B2500, Marstek Jupiter, and Marstek Venus energy storage systems while allowing integration with almost any smart meter. It does this by emulating one or more of the following devices:
 - CT001
 - Shelly Pro 3EM
 - Shelly EM gen3
 - Shelly Pro EM50
 
-Note that only Marstek storages are supported by the Shelly Emulators since the project only implements a minimal subset of Shelly's APIs.
-
 ## Getting Started
 
-### Prerequisites
+The B2500 Meter project can be installed and run in several ways depending on your needs and environment:
+
+1. **Home Assistant Add-on** (Recommended for Home Assistant users)
+   - Easiest installation method if you're using Home Assistant
+   - Provides a user-friendly interface for configuration
+   - Integrates seamlessly with your Home Assistant installation
+
+2. **Docker** (Recommended for standalone server deployment)
+   - Containerized solution that works on any Docker-compatible system
+   - Easy deployment and updates
+   - Consistent environment across different platforms
+
+3. **Direct Installation** (For development or custom setups)
+   - Manual installation on Windows, macOS, or Linux
+   - Requires Python environment setup
+   - More flexible for customization and development
+
+### Home Assistant Add-on Installation
+
+1. **Add the Repository to Home Assistant**
+
+   [![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftomquist%2Fb2500-meter)
+
+3. **Install the Add-on**
+   - Click on "Add-on Store" in the bottom right corner
+   - The B2500 Meter add-on should appear in the add-on store
+   - Click on it and then click "Install"
+
+4. **Configure the Add-on**
+   You can configure the add-on in two ways:
+
+   A) Using the Add-on Configuration Interface:
+   - After installation, go to the add-on's Configuration tab
+   - For single-phase monitoring:
+     - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
+   - For three-phase monitoring:
+     - Set the `Power Input Alias` to a comma-separated list of three entity IDs (one for each phase)
+     - If using calculated power, also set the `Power Output Alias` to a comma-separated list of three entity IDs
+     - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
+   - Set `Device Types` (comma-separated list) to the device types you want to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+   - Click "Save" to apply the configuration
+
+   B) Using a Custom Configuration File for Advanced Configuration:
+   - Create a `config.ini` file based on the examples in the [Configuration](#configuration) section
+   - Place the file in `/addon_configs/a0ef98c5_b2500_meter/`. You can do that via "File editor" Addon in Home Assistant. Make sure to disable the "Enforce Basepath" setting in the File editor Addon config to access the `/addon_configs` folder.
+   - In the add-on configuration, set `Custom Config` to the filename (e.g., "config.ini" without the path)
+   - When using a custom configuration file, other configuration options will be ignored
+
+5. **Start the Add-on**
+   - Go to the add-on's Info tab
+   - Click "Start" to run the add-on
+
+### Docker Installation
+
+#### Prerequisites
+- Docker installed on your system
+- Docker Compose (optional, but recommended)
+
+#### Installation Steps
+1. Create a directory for the project
+2. Create your `config.ini` file
+3. Use the provided `docker-compose.yaml` to start the container:
+   ```bash
+   docker-compose up -d
+   ```
+Note: Host network mode is required because the B2500 device uses UDP broadcasts for device discovery. Without host networking, the container won't be able to receive these broadcasts properly.
+
+### Direct Installation
+
+#### Prerequisites
 
 1. **Python Installation:** Make sure you have Python 3.7 or higher installed. You can download it from the [official Python website](https://www.python.org/downloads/).
-
 2. **Configuration:** Create a `config.ini` file in the root directory of the project and add the appropriate configuration as described in the [Configuration](#configuration) section.
 
-### Windows
+#### Installation Steps
 
-1. **Open Command Prompt**
-   - Press `Win + R`, type `cmd`, and hit Enter.
+1. **Open Terminal/Command Prompt**
+   - Windows: Press `Win + R`, type `cmd`, press Enter
+   - macOS: Press `Cmd + Space`, type `Terminal`, press Enter
+   - Linux: Use your preferred terminal emulator
 
-2. **Navigate to the Project Directory**
-   ```cmd
-   cd path\to\b2500-meter
-   ```
-
-3. **Install Dependencies**
-   ```cmd
-   pipenv install
-   ```
-
-4. **Run the Script**
-   ```cmd
-   pipenv run python main.py
-   ```
-
-### macOS
-
-1. **Open Terminal**
-   - Press `Cmd + Space`, type `Terminal`, and hit Enter.
-
-2. **Navigate to the Project Directory**
+2. **Navigate to Project Directory**
    ```bash
    cd path/to/b2500-meter
    ```
@@ -56,23 +104,9 @@ Note that only Marstek storages are supported by the Shelly Emulators since the 
    pipenv run python main.py
    ```
 
-### Linux
+All commands above work across Windows, macOS, and Linux. The only difference is how you open your terminal.
 
-1. **Install Dependencies**
-   ```bash
-   pipenv install
-   ```
-
-2. **Run the Script**
-   ```bash
-   pipenv run python main.py
-   ```
-
-### Docker
-
-See the `docker_compose.yaml` example.
-
-### Additional Notes
+## Additional Notes
 
 When the script is running, switch your B2500 to "Self-Adaptation" mode to enable the powermeter functionality.
 
@@ -358,78 +392,9 @@ CURRENT_POWER_ENTITY = sensor.current_power
 # No NETMASK specified - will match all clients (0.0.0.0/0)
 ```
 
-## Home Assistant Add-on Installation
-
-You can install the B2500 Meter add-on either through the Home Assistant repository or manually.
-
-### Option 1: Installation via Repository (Recommended)
-
-1. **Add the Repository to Home Assistant**
-   - Open your Home Assistant instance
-   - Go to Settings → Add-ons (or click here [![Open your Home Assistant instance and show the add-on store.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/))
-   - Click the three dots menu in the top right corner
-   - Select "Repositories"
-   - Add the following URL: `https://github.com/tomquist/b2500-meter`
-   - Click "Add"
-
-2. **Install the Add-on**
-   - Click on "Add-on Store" in the bottom right corner
-   - The B2500 Meter add-on should appear in the add-on store
-   - Click on it and then click "Install"
-
-3. **Configure the Add-on**
-   You can configure the add-on in two ways:
-
-   A) Using the Add-on Configuration Interface:
-   - After installation, go to the add-on's Configuration tab
-   - For single-phase monitoring:
-     - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
-   - For three-phase monitoring:
-     - Set the `Power Input Alias` to a comma-separated list of three entity IDs (one for each phase)
-     - If using calculated power, also set the `Power Output Alias` to a comma-separated list of three entity IDs
-     - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
-   - Set `Device Types` (comma-separated list) to the device types you want to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
-   - Click "Save" to apply the configuration
-
-   B) Using a Custom Configuration File:
-   - Create a `config.ini` file based on the examples in the [Configuration](#configuration) section
-   - Place the file in `/addon_configs/local_b2500_meter/` (for local installations) or `/addon_configs/<repo-hash>_b2500_meter/` (for repository installations)
-   - In the add-on configuration, set `Custom Config` to the filename (e.g., "config.ini")
-   - When using a custom configuration file, other configuration options will be ignored
-
-4. **Start the Add-on**
-   - Go to the add-on's Info tab
-   - Click "Start" to run the add-on
-
-### Option 2: Manual Installation
-
-If you prefer to install the add-on manually, you can do so using either the Samba or SSH add-ons:
-
-#### Using Samba:
-1. Enable and start the Samba add-on in Home Assistant
-2. Your Home Assistant instance will appear in your local network, sharing a folder called "addons"
-3. This "addons" folder is where you should store your custom add-ons
-
-   **Tip for macOS users:** If the folder doesn't show up automatically, go to Finder, press CMD+K, and enter `smb://homeassistant.local`
-
-#### Using SSH:
-1. Install the SSH add-on in Home Assistant
-2. Before starting it, you need to have a private/public key pair and store your public key in the add-on config (refer to the SSH add-on documentation for more details)
-3. Once started, you can SSH into Home Assistant
-4. Store your custom add-ons in the `/addons` directory
-
-#### Installation Steps:
-1. **Copy the add-on files**
-   - Copy the `ha_addon` folder from this repository into the `addons` directory you accessed via Samba or SSH
-   - The resulting path should look like: `/addons/ha_addon/`
-   - Rename the folder to `b2500_meter`
-
-2. **Install and run the add-on**
-   - Follow steps 2-4 from the repository installation method above
-
 ## Node-RED Implementation
 
-This project also provides a Node-RED implementation, allowing integration with various smart meters. The Node-RED flow is available in the `nodered.json` file.
+This project also provides a Node-RED implementation, allowing integration with various smart meters. The Node-RED flow is available in the `nodered.json` file. Note that the Node-RED implementation only supports emulating a CT001.
 
 ### Installation and Setup
 
