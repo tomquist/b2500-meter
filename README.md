@@ -366,7 +366,7 @@ You can install the B2500 Meter add-on either through the Home Assistant reposit
 
 1. **Add the Repository to Home Assistant**
    - Open your Home Assistant instance
-   - Go to Settings → Add-ons
+   - Go to Settings → Add-ons (or click here [![Open your Home Assistant instance and show the add-on store.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/))
    - Click the three dots menu in the top right corner
    - Select "Repositories"
    - Add the following URL: `https://github.com/tomquist/b2500-meter`
