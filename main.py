@@ -84,10 +84,15 @@ def run_device(
 
         device.before_send = update_readings
 
-    elif device_type == "shellypro3em":
+    elif device_type == "shellypro3em_old":
         print(f"Shelly Pro 3EM Settings:")
         print(f"Device ID: {device_id}")
         device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=1010)
+
+    elif device_type == "shellypro3em_new":
+        print(f"Shelly Pro 3EM Settings:")
+        print(f"Device ID: {device_id}")
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2220)
 
     elif device_type == "shellyemg3":
         print(f"Shelly EM Gen3 Settings:")
@@ -119,7 +124,7 @@ def main():
         "-d",
         "--device-types",
         nargs="+",
-        choices=["ct001", "shellypro3em", "shellyemg3", "shellyproem50"],
+        choices=["ct001", "shellypro3em", "shellyemg3", "shellyproem50", "shellypro3em_old", "shellypro3em_new"],
         help="List of device types to emulate",
     )
     parser.add_argument("--device-ids", nargs="+", help="List of device IDs")
@@ -156,6 +161,13 @@ def main():
             device_ids.append(f"{device_type}-ec4609c439c{len(device_ids) + 1}")
         else:
             device_ids.append(f"device-{len(device_ids) + 1}")
+
+    # For backward compatibility, replace shellypro3em with shellypro3em_old and shellypro3em_new
+    if "shellypro3em" in device_types:
+        shellypro3em_index = device_types.index("shellypro3em")
+        device_types[shellypro3em_index] = "shellypro3em_old"
+        device_types.append("shellypro3em_new")
+        device_ids.append(device_ids[shellypro3em_index])
 
     print(f"Device Types: {device_types}")
     print(f"Device IDs: {device_ids}")
