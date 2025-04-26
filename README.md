@@ -3,8 +3,12 @@
 This project emulates Smart Meter devices for Marstek storage systems such as the B2500, Marstek Jupiter, and Marstek Venus energy storage systems while allowing integration with almost any smart meter. It does this by emulating one or more of the following devices:
 - CT001
 - Shelly Pro 3EM
+  - Uses port 1010 (B2500 firmware up to version 224) and port 2220 (B2500 firmware version 226+)
+  - Can be specifically targeted with shellypro3em_old (port 1010) or shellypro3em_new (port 2220)
 - Shelly EM gen3
 - Shelly Pro EM50
+
+**Note:** If your B2500 or Marstek storage system supports it, always prefer a Shelly device type over CT001 for better compatibility and reliability.
 
 ## Getting Started
 
@@ -47,7 +51,15 @@ The B2500 Meter project can be installed and run in several ways depending on yo
      - Set the `Power Input Alias` to a comma-separated list of three entity IDs (one for each phase)
      - If using calculated power, also set the `Power Output Alias` to a comma-separated list of three entity IDs
      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
-   - Set `Device Types` (comma-separated list) to the device types you want to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+   - Set `Device Types` (comma-separated list) to the device types you want to emulate:
+     - `ct001`: CT001 emulator
+     - `shellypro3em`: Shelly Pro 3EM emulator (uses both ports 1010 and 2220 for compatibility with all B2500 firmware versions)
+     - `shellypro3em_old`: Shelly Pro 3EM emulator using port 1010 (for B2500 firmware up to v224)
+     - `shellypro3em_new`: Shelly Pro 3EM emulator using port 2220 (for B2500 firmware v226+)
+     - `shellyemg3`: Shelly EM gen3 emulator
+     - `shellyproem50`: Shelly Pro EM50 emulator
+     
+     **Important:** Always prefer a Shelly device type over CT001 if supported by your energy storage system.
    - Click "Save" to apply the configuration
 
    B) Using a Custom Configuration File for Advanced Configuration:
@@ -118,7 +130,7 @@ Configuration is managed via `config.ini`. Each powermeter type has specific set
 
 ```ini
 [GENERAL]
-# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
 DEVICE_TYPE = ct001
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False

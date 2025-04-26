@@ -20,6 +20,7 @@ ports:
   12345/tcp: 12345
   12345/udp: 12345
   1010/udp: 1010
+  2220/udp: 2220
   2222/udp: 2222
   2223/udp: 2223
 map:
@@ -30,7 +31,7 @@ options:
   power_output_alias: ""
   poll_interval: 1
   disable_absolute_values: false
-  device_types: "ct001"
+  device_types: "shellypro3em"
 schema:
   power_input_alias: str
   power_output_alias: str?

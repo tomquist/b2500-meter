@@ -13,7 +13,7 @@ configuration:
     description: "If enabled, the ct001 emulator will allow negative values. This is only compatible with newer versions of the B2500 firmware. Ignore this if you are emulating a different device."
   device_types:
     name: Emulated Devices
-    description: "Comma-separated list of devices to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)."
+    description: "Comma-separated list of devices to emulate (ct001, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new). The device type shellypro3em_old uses port 1010 (used up until B2500 firmware version 224). The device type shellypro3em_new uses the new port 2220 (used for B2500 firmare >=226). If you use shellypro3em, it will use shellypro3em_old and shellypro3em_new simultaneously for backwards compatibility. If possible, always prefer a Shelly device type over ct001."
   custom_config:
     name: Custom Config
     description: "Optional. Name of a custom config.ini file to use instead of the UI configuration. The file must be placed in the add-on's configuration directory."
