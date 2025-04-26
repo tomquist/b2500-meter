@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+### Added
+- Added support for Shelly Pro 3EM on port 2220 (B2500 firmware version >=226)
+- Added backward compatibility for Shelly Pro 3EM devices through shellypro3em_old (port 1010) and shellypro3em_new (port 2220) device types
+
 ## 1.0.3
 
 ### Added
