@@ -91,7 +91,7 @@ Note: Host network mode is required because the B2500 device uses UDP broadcasts
 
 #### Prerequisites
 
-1. **Python Installation:** Make sure you have Python 3.7 or higher installed. You can download it from the [official Python website](https://www.python.org/downloads/).
+1. **Python Installation:** Make sure you have Python 3.8 or higher installed. You can download it from the [official Python website](https://www.python.org/downloads/).
 2. **Configuration:** Create a `config.ini` file in the root directory of the project and add the appropriate configuration as described in the [Configuration](#configuration) section.
 
 #### Installation Steps
