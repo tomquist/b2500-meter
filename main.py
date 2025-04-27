@@ -124,7 +124,14 @@ def main():
         "-d",
         "--device-types",
         nargs="+",
-        choices=["ct001", "shellypro3em", "shellyemg3", "shellyproem50", "shellypro3em_old", "shellypro3em_new"],
+        choices=[
+            "ct001",
+            "shellypro3em",
+            "shellyemg3",
+            "shellyproem50",
+            "shellypro3em_old",
+            "shellypro3em_new",
+        ],
         help="List of device types to emulate",
     )
     parser.add_argument("--device-ids", nargs="+", help="List of device IDs")

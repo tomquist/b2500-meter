@@ -1,6 +1,6 @@
 import configparser
 from ipaddress import IPv4Network, IPv4Address
-from typing import List
+from typing import List, Union, Tuple
 
 from powermeter import (
     Powermeter,
@@ -36,7 +36,7 @@ MODBUS_SECTION = "MODBUS"
 
 
 class ClientFilter:
-    def __init__(self, netmasks: list[IPv4Network]):
+    def __init__(self, netmasks: List[IPv4Network]):
         self.netmasks = netmasks
 
     def matches(self, client_ip) -> bool:
@@ -52,7 +52,7 @@ class ClientFilter:
 
 def read_all_powermeter_configs(
     config: configparser.ConfigParser,
-) -> list[(Powermeter, ClientFilter)]:
+) -> List[Tuple[Powermeter, ClientFilter]]:
     powermeters = []
     for section in config.sections():
         powermeter = create_powermeter(section, config)
@@ -73,7 +73,7 @@ def create_client_filter(
 # Helper function to create a powermeter instance
 def create_powermeter(
     section: str, config: configparser.ConfigParser
-) -> Powermeter | None:
+) -> Union[Powermeter, None]:
     if section.startswith(SHELLY_SECTION):
         return create_shelly_powermeter(section, config)
     elif section.startswith(TASMOTA_SECTION):
@@ -184,7 +184,7 @@ def create_homeassistant_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
     # Split entity strings on commas and strip whitespace
-    def parse_entities(value: str) -> str | List[str]:
+    def parse_entities(value: str) -> Union[str, List[str]]:
         if not value:
             return ""
         entities = [entity.strip() for entity in value.split(",")]
