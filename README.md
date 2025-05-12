@@ -426,6 +426,109 @@ This project also provides a Node-RED implementation, allowing integration with 
    - Deploy the flow by clicking the "Deploy" button on the top right corner of the Node-RED dashboard.
    - The flow will now listen for powermeter readings and handle the UDP and TCP communications as configured.
 
+# Frequently Asked Questions (FAQ)
+
+## General Usage and Setup
+
+**Q: The emulator starts and shows "listening" message but nothing else happens. Is this a problem?**
+
+A: No, this is expected behavior. The emulator waits for the storage system to request data and only polls when requested. Without an active request from your Marstek device, you won't see further activity.
+
+**Q: My Marstek device can't find the emulated powermeter. What could be wrong?**
+
+A: Common causes include:
+- **Firmware issues:** See the firmware requirements in the Device section below
+- **Network setup:** Ensure both devices are on the same subnet (255.255.255.0)
+- **Bluetooth interference:** Disconnect any Bluetooth connections during setup
+- **Docker configuration:** When using Docker, set `network_mode: host` to enable UDP broadcast reception
+
+**Q: The emulator isn't visible in the Shelly app or network scanners. Is this normal?**
+
+A: Yes. The emulator only implements the minimal protocol needed for Marstek storage systems and is not a complete Shelly device emulation.
+
+**Q: How do I autostart the script on boot?**
+
+A: Use systemd to create a service:
+1. Create a unit file (e.g., `/etc/systemd/system/b2500-meter.service`)
+2. Set `ExecStart` to your startup command
+3. Enable and start: `sudo systemctl enable b2500-meter && sudo systemctl start b2500-meter`
+
+**Q: Can I run multiple instances for different storage devices?**
+
+A: Yes. Define multiple sections in `config.ini` (e.g., `[SHELLY_1]`, `[SHELLY_2]`) and use the `NETMASK` setting to assign each to specific client IPs.
+
+## Configuration & Integration
+
+**Q: What's the correct power value convention?**
+
+A: Power from grid to house (import): **positive**  
+Power from house to grid (export): **negative**
+
+**Q: How do I convert kW values to the required W?**
+
+A: Create a template sensor in Home Assistant:
+```jinja
+{{ states('sensor.power_in_kilowatts') | float * 1000 }}
+```
+
+**Q: How do I set up three-phase measurement in the Home Assistant Addon?**
+
+A: Use comma-separated entity IDs:
+```
+sensor.phase1,sensor.phase2,sensor.phase3
+```
+
+**Q: What's the difference between the power entity settings?**
+
+A: 
+- `CURRENT_POWER_ENTITY`: For a single bidirectional sensor (positive/negative values)
+- `POWER_INPUT_ALIAS`/`POWER_OUTPUT_ALIAS`: For separate import/export sensors (with `POWER_CALCULATE = True`)
+
+## Device and Firmware Specific
+
+**Q: What firmware do I need for my Marstek device?**
+
+A:
+- **Venus:** Firmware 120+ for Shelly support, 152+ for improved regulation
+- **B2500:** Firmware 108+ (HMJ devices) or 224+ (all others)
+
+**Q: How do I handle the different ports for Shelly Pro 3EM?**
+
+A: Use one of these device types:
+- `shellypro3em_old`: Port 1010 (B2500 firmware ≤224 or Jupiter & Venus)
+- `shellypro3em_new`: Port 2220 (B2500 firmware ≥226)
+- `shellypro3em`: Both ports (most compatible)
+
+**Q: Can I use this with non-Marstek storage systems (e.g., Zendure, Hoymiles)?**
+
+A: No, this project is Marstek-specific. For other brands, see [uni-meter](https://github.com/sdeigm/uni-meter).
+
+## Troubleshooting
+
+**Q: I get permission errors when binding to port 1010/2220.**
+
+A: Ports below 1024 require root privileges on Linux. Solutions:
+- Use Docker or Home Assistant Add-on (recommended)
+- Use `setcap` to grant permissions
+- Run as root (not recommended)
+
+**Q: I get parsing errors on startup or the add-on crashes.**
+
+A: Common causes:
+- Incorrect entity IDs or API access
+- Memory limitations (especially on RPi 2 or similar devices)
+- Check logs for specific error messages
+
+**Q: How can I test without a storage device?**
+
+A: You can only verify the initial configuration. Full testing requires a Marstek device in "self-adaptation" mode to request data.
+
+## Advanced
+
+**Q: How do I handle negative values for CT001?**
+
+A: The CT001 protocol can't handle negative values on some firmware versions. By default, the emulator sends absolute values or clamps negatives to zero, adjustable via `DISABLE_ABSOLUTE_VALUES`.
+
 ## License
 
 This project is licensed under the General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
