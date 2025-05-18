@@ -1,5 +1,6 @@
 import configparser
 import argparse
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from config.config_loader import read_all_powermeter_configs, ClientFilter
@@ -7,21 +8,22 @@ from ct001 import CT001
 from powermeter import Powermeter
 from shelly import Shelly
 from collections import OrderedDict
+from config.logger import logger, setLogLevel
 
 
-def test_powermeter(powermeter, client_filter):
+def test_powermeter(powermeter : Powermeter, client_filter : ClientFilter):
     try:
-        print("Testing powermeter configuration...")
+        logger.debug("Testing powermeter configuration...")
         powermeter.wait_for_message(timeout=120)
         value = powermeter.get_powermeter_watts()
         value_with_units = " | ".join([f"{v}W" for v in value])
         powermeter_name = powermeter.__class__.__name__
         filter_description = ", ".join([str(n) for n in client_filter.netmasks])
-        print(
+        logger.debug(
             f"Successfully fetched {powermeter_name} powermeter value (filter {filter_description}): {value_with_units}"
         )
     except Exception as e:
-        print(f"Error: {e}")
+        logger.debug(f"Error: {e}")
         exit(1)
 
 
@@ -32,7 +34,7 @@ def run_device(
     powermeters: list[(Powermeter, ClientFilter)],
     device_id: Optional[str] = None,
 ):
-    print(f"Starting device: {device_type}")
+    logger.debug(f"Starting device: {device_type}")
 
     if device_type == "ct001":
         disable_sum = (
@@ -51,10 +53,10 @@ def run_device(
             else cfg.getint("GENERAL", "POLL_INTERVAL", fallback=1)
         )
 
-        print(f"CT001 Settings for {device_id}:")
-        print(f"Disable Sum Phases: {disable_sum}")
-        print(f"Disable Absolute Values: {disable_absolute}")
-        print(f"Poll Interval: {poll_interval}")
+        logger.debug(f"CT001 Settings for {device_id}:")
+        logger.debug(f"Disable Sum Phases: {disable_sum}")
+        logger.debug(f"Disable Absolute Values: {disable_absolute}")
+        logger.debug(f"Poll Interval: {poll_interval}")
 
         device = CT001(poll_interval=poll_interval)
 
@@ -65,7 +67,7 @@ def run_device(
                     powermeter = pm
                     break
             if powermeter is None:
-                print(f"No powermeter found for client {addr[0]}")
+                logger.debug(f"No powermeter found for client {addr[0]}")
                 device.value = None
                 return
             values = powermeter.get_powermeter_watts()
@@ -85,23 +87,23 @@ def run_device(
         device.before_send = update_readings
 
     elif device_type == "shellypro3em_old":
-        print(f"Shelly Pro 3EM Settings:")
-        print(f"Device ID: {device_id}")
+        logger.debug(f"Shelly Pro 3EM Settings:")
+        logger.debug(f"Device ID: {device_id}")
         device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=1010)
 
     elif device_type == "shellypro3em_new":
-        print(f"Shelly Pro 3EM Settings:")
-        print(f"Device ID: {device_id}")
+        logger.debug(f"Shelly Pro 3EM Settings:")
+        logger.debug(f"Device ID: {device_id}")
         device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2220)
 
     elif device_type == "shellyemg3":
-        print(f"Shelly EM Gen3 Settings:")
-        print(f"Device ID: {device_id}")
+        logger.debug(f"Shelly EM Gen3 Settings:")
+        logger.debug(f"Device ID: {device_id}")
         device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2222)
 
     elif device_type == "shellyproem50":
-        print(f"Shelly Pro EM 50 Settings:")
-        print(f"Device ID: {device_id}")
+        logger.debug(f"Shelly Pro EM 50 Settings:")
+        logger.debug(f"Device ID: {device_id}")
         device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2223)
 
     else:
@@ -135,6 +137,7 @@ def main():
         help="List of device types to emulate",
     )
     parser.add_argument("--device-ids", nargs="+", help="List of device IDs")
+    parser.add_argument('-log', '--loglevel', default='warning', help='Provide logging level. Example --loglevel debug, default=warning')
 
     # B2500-specific arguments
     parser.add_argument("-s", "--disable-sum", type=bool)
@@ -145,6 +148,10 @@ def main():
     cfg = configparser.ConfigParser(dict_type=OrderedDict)
     cfg.read(args.config)
 
+    # configure logger
+    setLogLevel(args.loglevel)
+    logger.info('startet b2500-meter application')
+    
     # Load general settings
     device_types = (
         args.device_types
@@ -176,9 +183,9 @@ def main():
         device_types.append("shellypro3em_new")
         device_ids.append(device_ids[shellypro3em_index])
 
-    print(f"Device Types: {device_types}")
-    print(f"Device IDs: {device_ids}")
-    print(f"Skip Test: {skip_test}")
+    logger.info(f"Device Types: {device_types}")
+    logger.info(f"Device IDs: {device_ids}")
+    logger.info(f"Skip Test: {skip_test}")
 
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
@@ -195,11 +202,13 @@ def main():
                     run_device, device_type, cfg, args, powermeters, device_id
                 )
             )
+        # end for
 
         # Wait for all devices to complete
         for future in futures:
             future.result()
 
+# end main    
 
 if __name__ == "__main__":
     main()
