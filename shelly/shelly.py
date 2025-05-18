@@ -3,14 +3,15 @@ import threading
 import json
 from config import ClientFilter
 from powermeter import Powermeter
+from config.logger import logger
 
 
 class Shelly:
     def __init__(
         self,
         powermeters: list[(Powermeter, ClientFilter)],
-        udp_port,
-        device_id,
+        udp_port : int,
+        device_id
     ):
         self._udp_port = udp_port
         self._device_id = device_id
@@ -77,18 +78,18 @@ class Shelly:
     def udp_server(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("", self._udp_port))
-        print(f"Shelly emulator listening on UDP port {self._udp_port}...")
+        logger.info(f"Shelly emulator listening on UDP port {self._udp_port}...")
 
         try:
             while not self._stop:
                 data, addr = sock.recvfrom(1024)
                 request_str = data.decode()
-                print(f"Received UDP message: {request_str}")
-                print(f"From: {addr[0]}:{addr[1]}")
+                logger.debug(f"Received UDP message: {request_str}")
+                logger.debug(f"From: {addr[0]}:{addr[1]}")
 
                 try:
                     request = json.loads(request_str)
-                    print(f"Parsed request: {json.dumps(request, indent=2)}")
+                    logger.debug(f"Parsed request: {json.dumps(request, indent=2)}")
                     if isinstance(request.get("params", {}).get("id"), int):
                         powermeter = None
                         for pm, client_filter in self._powermeters:
@@ -96,7 +97,7 @@ class Shelly:
                                 powermeter = pm
                                 break
                         if powermeter is None:
-                            print(f"No powermeter found for client {addr[0]}")
+                            logger.warning(f"No powermeter found for client {addr[0]}")
                             continue
 
                         powers = powermeter.get_powermeter_watts()
@@ -109,13 +110,13 @@ class Shelly:
                             continue
 
                         response_json = json.dumps(response, separators=(",", ":"))
-                        print(f"Sending response: {response_json}")
+                        logger.debug(f"Sending response: {response_json}")
                         response_data = response_json.encode()
                         sock.sendto(response_data, addr)
                 except json.JSONDecodeError:
-                    print(f"Error: Invalid JSON")
+                    logger.error(f"Error: Invalid JSON")
                 except Exception as e:
-                    print(f"Error processing message: {e}")
+                    logger.error(f"Error processing message: {e}")
 
         finally:
             sock.close()
