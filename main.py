@@ -7,6 +7,7 @@ from ct001 import CT001
 from powermeter import Powermeter
 from shelly import Shelly
 from collections import OrderedDict
+from ct002 import CTEmulator
 
 
 def test_powermeter(powermeter, client_filter):
@@ -84,6 +85,47 @@ def run_device(
 
         device.before_send = update_readings
 
+    elif device_type == "ct002":
+        # CT002-specific config (can be extended to use config/args)
+        device_type_str = cfg.get("GENERAL", "CT002_DEVICE_TYPE", fallback="HMG-50")
+        battery_mac = cfg.get("GENERAL", "CT002_BATTERY_MAC", fallback="001122334455")
+        ct_mac = cfg.get("GENERAL", "CT002_CT_MAC", fallback="009c17abcdef")
+        ct_type = cfg.get("GENERAL", "CT002_CT_TYPE", fallback="HME-4")
+        poll_interval = (
+            args.poll_interval
+            if args.poll_interval is not None
+            else cfg.getint("GENERAL", "POLL_INTERVAL", fallback=1)
+        )
+        print(f"CT002 Settings for {device_id}:")
+        print(f"Device Type: {device_type_str}")
+        print(f"Battery MAC: {battery_mac}")
+        print(f"CT MAC: {ct_mac}")
+        print(f"CT Type: {ct_type}")
+        print(f"Poll Interval: {poll_interval}")
+        device = CTEmulator(
+            device_type=device_type_str,
+            battery_mac=battery_mac,
+            ct_mac=ct_mac,
+            ct_type=ct_type,
+            poll_interval=poll_interval,
+        )
+        def update_readings(addr):
+            powermeter = None
+            for pm, client_filter in powermeters:
+                if client_filter.matches(addr[0]):
+                    powermeter = pm
+                    break
+            if powermeter is None:
+                print(f"No powermeter found for client {addr[0]}")
+                device.value = None
+                return
+            values = powermeter.get_powermeter_watts()
+            value1 = values[0] if len(values) > 0 else 0
+            value2 = values[1] if len(values) > 1 else 0
+            value3 = values[2] if len(values) > 2 else 0
+            device.value = [value1, value2, value3]
+        device.before_send = update_readings
+
     elif device_type == "shellypro3em_old":
         print(f"Shelly Pro 3EM Settings:")
         print(f"Device ID: {device_id}")
@@ -126,6 +168,7 @@ def main():
         nargs="+",
         choices=[
             "ct001",
+            "ct002",
             "shellypro3em",
             "shellyemg3",
             "shellyproem50",
