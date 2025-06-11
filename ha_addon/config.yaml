@@ -33,6 +33,7 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
+  log_level: "info"
 schema:
   power_input_alias: str
   power_output_alias: str?
@@ -40,4 +41,5 @@ schema:
   disable_absolute_values: bool
   device_types: str
   throttle_interval: float(0,)
+  log_level: list(critical|error|warning|info|debug)
   custom_config: str?
