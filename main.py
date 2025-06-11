@@ -140,6 +140,11 @@ def main():
     parser.add_argument("-s", "--disable-sum", type=bool)
     parser.add_argument("-a", "--disable-absolute", type=bool)
     parser.add_argument("-p", "--poll-interval", type=int)
+    parser.add_argument(
+        "--throttle-interval",
+        type=float,
+        help="Throttling interval in seconds to prevent B2500 control instability",
+    )
 
     args = parser.parse_args()
     cfg = configparser.ConfigParser(dict_type=OrderedDict)
@@ -179,6 +184,12 @@ def main():
     print(f"Device Types: {device_types}")
     print(f"Device IDs: {device_ids}")
     print(f"Skip Test: {skip_test}")
+
+    # Apply command line throttling override if specified
+    if args.throttle_interval is not None:
+        if not cfg.has_section("GENERAL"):
+            cfg.add_section("GENERAL")
+        cfg.set("GENERAL", "THROTTLE_INTERVAL", str(args.throttle_interval))
 
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
