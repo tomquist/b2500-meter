@@ -22,4 +22,4 @@ EXPOSE 12345/tcp
 EXPOSE 12345/udp
 
 # Run the SmartMeter script when the container starts
-CMD ["pipenv", "run", "python", "main.py"]
+CMD ["pipenv", "run", "python", "main.py", "--loglevel", "info"]

@@ -66,9 +66,11 @@ jobs:
       dockerfile: ./Dockerfile
       image-suffix: ""
       digest-prefix: "digests-base-"
+      push: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
 
   merge:
     needs: [build]
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/merge-manifests.yml
     with:
       registry: ghcr.io
@@ -94,9 +96,11 @@ jobs:
         BUILD_FROM=ghcr.io/hassio-addons/base:14.2.2
       image-suffix: "-addon"
       digest-prefix: "digests-addon-"
+      push: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
 
   merge-addon:
     needs: [build-addon]
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/merge-manifests.yml
     with:
       registry: ghcr.io
