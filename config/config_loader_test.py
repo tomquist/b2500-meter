@@ -19,6 +19,9 @@ from config.config_loader import (
     create_modbus_powermeter,
     create_mqtt_powermeter,
 )
+import unittest
+from unittest.mock import patch, Mock
+from powermeter import ThrottledPowermeter
 
 
 def test_client_filter():

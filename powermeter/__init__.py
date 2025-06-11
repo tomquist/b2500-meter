@@ -11,3 +11,4 @@ from .amisreader import AmisReader
 from .modbus import ModbusPowermeter
 from .mqtt import MqttPowermeter
 from .script import Script
+from .throttling import ThrottledPowermeter

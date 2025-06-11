@@ -9,6 +9,13 @@ DISABLE_SUM_PHASES = False
 DISABLE_ABSOLUTE_VALUES = False
 # Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
+# Global throttling configuration (in seconds) - applies to all powermeters unless overridden
+# Enforces minimum time between power meter readings by waiting when called too frequently
+# This helps prevent instability or oscillation for slower data sources
+# Set to 0 to disable throttling (default)
+# Recommended values: 1-3 seconds for slower data sources
+# Can be overridden per powermeter section
+THROTTLE_INTERVAL = 0
 
 #[SHELLY]
 #TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO
@@ -16,6 +23,9 @@ POLL_INTERVAL = 1
 #USER = username
 #PASS = password
 #METER_INDEX = meter1
+## Per-powermeter throttling override (optional)
+## Shelly devices are typically fast, so throttling may not be needed
+#THROTTLE_INTERVAL = 0
 
 #[TASMOTA]
 #IP = 192.168.1.101
@@ -27,16 +37,22 @@ POLL_INTERVAL = 1
 #JSON_POWER_INPUT_MQTT_LABEL = Power1
 #JSON_POWER_OUTPUT_MQTT_LABEL = Power2
 #JSON_POWER_CALCULATE = True
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[SHRDZM]
 #IP = 192.168.1.102
 #USER = shrdzm_user
 #PASS = shrdzm_pass
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[EMLOG]
 #IP = 192.168.1.103
 #METER_INDEX = 0
 #JSON_POWER_CALCULATE = True
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[IOBROKER]
 #IP = 192.168.1.104
@@ -45,6 +61,8 @@ POLL_INTERVAL = 1
 #POWER_CALCULATE = True
 #POWER_INPUT_ALIAS = Alias.0.power_in
 #POWER_OUTPUT_ALIAS = Alias.0.power_out
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[HOMEASSISTANT]
 #IP = 192.168.1.105
@@ -60,19 +78,32 @@ POLL_INTERVAL = 1
 #POWER_INPUT_ALIAS = sensor.phase1_input, sensor.phase2_input, sensor.phase3_input
 #POWER_OUTPUT_ALIAS = sensor.phase1_output, sensor.phase2_output, sensor.phase3_output
 
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
+
+## Per-powermeter throttling override (optional)
+## HomeAssistant typically needs 2-3 seconds due to network latency
+#THROTTLE_INTERVAL = 2
+
 #[VZLOGGER]
 #IP = 192.168.1.106
 #PORT = 8080
 #UUID = your-uuid
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[ESPHOME]
 #IP = 192.168.1.107
 #PORT = 6052
 #DOMAIN = your_domain
 #ID = your_id
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[AMIS_READER]
 #IP = 192.168.1.108
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[MODBUS]
 #HOST = 192.168.1.100
@@ -80,6 +111,8 @@ POLL_INTERVAL = 1
 #UNIT_ID = 1
 #ADDRESS = 0
 #COUNT = 1
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
 
 #[MQTT]
 #BROKER = broker.example.com
@@ -88,6 +121,11 @@ POLL_INTERVAL = 1
 #JSON_PATH = path.to.value (Optional)
 #USERNAME = mqtt_user (Optional)
 #PASSWORD = mqtt_pass (Optional)
+## Per-powermeter throttling override (optional)
+## MQTT can have variable latency depending on broker and network
+#THROTTLE_INTERVAL = 1
 
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1

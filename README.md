@@ -140,6 +140,10 @@ DISABLE_SUM_PHASES = False
 DISABLE_ABSOLUTE_VALUES = False
 # Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
+# Global throttling interval in seconds to prevent control instability or oscillation
+# Set to 0 to disable throttling (default). Recommended: 1-3 seconds for slow data sources
+# Can be overridden per powermeter section
+THROTTLE_INTERVAL = 0
 ```
 
 ### Shelly
@@ -257,6 +261,8 @@ POWER_INPUT_ALIAS = ""|sensor.power_input|sensor.power_in_1,sensor.power_in_2,se
 POWER_OUTPUT_ALIAS = ""|sensor.power_output|sensor.power_out_1,sensor.power_out_2,sensor.power_out_3
 # Is a Path Prefix needed?
 API_PATH_PREFIX = ""|/core
+# Per-powermeter throttling override (recommended: 2-3 seconds for HomeAssistant)
+THROTTLE_INTERVAL = 2
 ```
 
 Example: Variant 1 with a single combined input & output sensor
@@ -301,6 +307,8 @@ ACCESSTOKEN = YOUR_ACCESS_TOKEN
 POWER_CALCULATE = True
 POWER_INPUT_ALIAS = sensor.power_in_1,sensor.power_in_2,sensor.power_in_3
 POWER_OUTPUT_ALIAS = sensor.power_out_1,sensor.power_out_2,sensor.power_out_3
+# Per-powermeter throttling override (recommended: 2-3 seconds for HomeAssistant)
+# THROTTLE_INTERVAL = 2
 ```
 
 ### VZLogger
@@ -350,6 +358,8 @@ TOPIC = home/powermeter
 JSON_PATH = $.path.to.value (Optional for JSON payloads)
 USERNAME = mqtt_user (Optional)
 PASSWORD = mqtt_pass (Optional)
+# Per-powermeter throttling override
+# THROTTLE_INTERVAL = 2
 ```
 
 The `JSON_PATH` option is used to extract the power value from a JSON payload. The path must be a [valid JSONPath expression](https://goessner.net/articles/JsonPath/). 
