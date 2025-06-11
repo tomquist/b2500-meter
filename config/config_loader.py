@@ -21,6 +21,7 @@ from powermeter import (
     MqttPowermeter,
     Script,
     ESPHome,
+    ThrottledPowermeter,
 )
 
 SHELLY_SECTION = "SHELLY"
@@ -55,9 +56,28 @@ def read_all_powermeter_configs(
     config: configparser.ConfigParser,
 ) -> List[Tuple[Powermeter, ClientFilter]]:
     powermeters = []
+    global_throttle_interval = config.getfloat(
+        "GENERAL", "THROTTLE_INTERVAL", fallback=0.0
+    )
+
     for section in config.sections():
         powermeter = create_powermeter(section, config)
         if powermeter is not None:
+            section_throttle_interval = config.getfloat(
+                section, "THROTTLE_INTERVAL", fallback=global_throttle_interval
+            )
+
+            if section_throttle_interval > 0:
+                throttle_source = (
+                    "section-specific"
+                    if config.has_option(section, "THROTTLE_INTERVAL")
+                    else "global"
+                )
+                print(
+                    f"Applying {throttle_source} throttling ({section_throttle_interval}s) to {section}"
+                )
+                powermeter = ThrottledPowermeter(powermeter, section_throttle_interval)
+
             client_filter = create_client_filter(section, config)
             powermeters.append((powermeter, client_filter))
     return powermeters

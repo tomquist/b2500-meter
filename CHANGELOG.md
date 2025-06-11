@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.5
+- Added throttling of powermeter readings for slow data sources to prevent oscillation.
+
 ## 1.0.4
 
 ### Added
