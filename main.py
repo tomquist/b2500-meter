@@ -11,7 +11,7 @@ from collections import OrderedDict
 from config.logger import logger, setLogLevel
 
 
-def test_powermeter(powermeter : Powermeter, client_filter : ClientFilter):
+def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
     try:
         logger.debug("Testing powermeter configuration...")
         powermeter.wait_for_message(timeout=120)
@@ -137,7 +137,12 @@ def main():
         help="List of device types to emulate",
     )
     parser.add_argument("--device-ids", nargs="+", help="List of device IDs")
-    parser.add_argument('-log', '--loglevel', default='warning', help='Provide logging level. Example --loglevel debug, default=warning')
+    parser.add_argument(
+        "-log",
+        "--loglevel",
+        default="warning",
+        help="Provide logging level. Example --loglevel debug, default=warning",
+    )
 
     # B2500-specific arguments
     parser.add_argument("-s", "--disable-sum", type=bool)
@@ -150,8 +155,8 @@ def main():
 
     # configure logger
     setLogLevel(args.loglevel)
-    logger.info('startet b2500-meter application')
-    
+    logger.info("startet b2500-meter application")
+
     # Load general settings
     device_types = (
         args.device_types
@@ -208,7 +213,8 @@ def main():
         for future in futures:
             future.result()
 
-# end main    
+
+# end main
 
 if __name__ == "__main__":
     main()

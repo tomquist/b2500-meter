@@ -14,7 +14,7 @@ class CT001:
         on_disconnect=None,
         before_send=None,
         after_send=None,
-        poll_interval=1
+        poll_interval=1,
     ):
         self.dedupe_time_window = dedupe_time_window
         self.poll_interval = poll_interval
