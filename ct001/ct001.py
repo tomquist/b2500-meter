@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from config.logger import logger
 
 
 class CT001:
@@ -74,7 +75,7 @@ class CT001:
     def udp_server(self):
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_sock.bind(("", self._udp_port))
-        print("UDP server is listening...")
+        logger.info("UDP server is listening...")
 
         try:
             while not self._stop:
@@ -82,35 +83,35 @@ class CT001:
                 decoded = data.decode()
                 current_time = time.time()
 
-                print(f"Received '{decoded}' ({data.hex()}) from {addr}")
+                logger.debug(f"Received '{decoded}' ({data.hex()}) from {addr}")
                 if decoded == "hame":
                     if (
                         addr not in self._last_response_time
                         or (current_time - self._last_response_time[addr])
                         > self.dedupe_time_window
                     ):
-                        print(f"Received 'hame' from {addr}")
+                        logger.debug(f"Received 'hame' from {addr}")
                         udp_sock.sendto(b"ack", addr)
 
                         self._last_response_time[addr] = current_time
-                        print(f"Received 'hame' from {addr}, sent 'ack'")
+                        logger.debug(f"Received 'hame' from {addr}, sent 'ack'")
                     else:
-                        print(
+                        logger.debug(
                             f"Received 'hame' from {addr} but ignored due to dedupe window"
                         )
                 else:
-                    print(f"Ignoring unknown message")
+                    logger.debug(f"Ignoring unknown message")
 
         finally:
             udp_sock.close()
 
     def handle_tcp_client(self, conn, addr):
-        print(f"TCP connection established with {addr}")
+        logger.info(f"TCP connection established with {addr}")
         try:
             data = conn.recv(1024)
             decoded = data.decode()
             if decoded == "hello":
-                print("Received 'hello'")
+                logger.debug("Received 'hello'")
 
                 if self.on_connect:
                     self.on_connect(addr)
@@ -126,7 +127,7 @@ class CT001:
 
                         with self._value_mutex:
                             if self.value is None:
-                                print(f"No value to send to {addr}")
+                                logger.debug(f"No value to send to {addr}")
                                 break
                             value1, value2, value3 = self.value
 
@@ -138,27 +139,27 @@ class CT001:
                         try:
                             conn.send(message.encode())
                             last_send_time = current_time
-                            print(f"Sent message to {addr}: {message}")
+                            logger.debug(f"Sent message to {addr}: {message}")
                             if self.after_send:
                                 self.after_send(addr)
 
                             time.sleep(self.poll_interval)
                         except BrokenPipeError:
-                            print(
+                            logger.warning(
                                 f"Connection with {addr} broken. Waiting for a new connection."
                             )
                             break
                     else:
-                        print(
+                        logger.debug(
                             f"Waiting for {self.poll_interval - time_since_last_send} seconds"
                         )
                         # Sleep a small amount to prevent busy waiting
                         time.sleep(0.01)
             else:
-                print(f"Received unknown TCP message: {decoded}")
+                logger.warning(f"Received unknown TCP message: {decoded}")
         finally:
             conn.close()
-            print(f"Connection with {addr} closed")
+            logger.info(f"Connection with {addr} closed")
             if self.on_disconnect:
                 self.on_disconnect(addr)
 
@@ -166,7 +167,7 @@ class CT001:
         tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp_sock.bind(("", self._tcp_port))
         tcp_sock.listen(5)
-        print("TCP server is listening...")
+        logger.info("TCP server is listening...")
 
         try:
             while not self._stop:
@@ -176,7 +177,7 @@ class CT001:
                 )
                 client_thread.start()
         finally:
-            print("Stop listening for TCP connections")
+            logger.info("Stop listening for TCP connections")
             tcp_sock.close()
 
     def start(self):

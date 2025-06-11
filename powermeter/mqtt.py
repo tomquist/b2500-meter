@@ -3,6 +3,7 @@ import json
 import paho.mqtt.client as mqtt
 from jsonpath_ng import parse
 import time
+from config.logger import logger
 
 
 def extract_json_value(data, path):
@@ -44,7 +45,7 @@ class MqttPowermeter(Powermeter):
         self.client.loop_start()
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
-        print(f"Connected with result code {reason_code}")
+        logger.info(f"Connected with result code {reason_code}")
         # Subscribe to the topic
         client.subscribe(self.topic)
 
@@ -55,7 +56,7 @@ class MqttPowermeter(Powermeter):
                 data = json.loads(payload)
                 self.value = extract_json_value(data, self.json_path)
             except json.JSONDecodeError:
-                print("Failed to decode JSON")
+                logger.error("Failed to decode JSON")
         else:
             self.value = float(payload)
 

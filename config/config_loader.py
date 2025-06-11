@@ -1,6 +1,7 @@
 import configparser
 from ipaddress import IPv4Network, IPv4Address
 from typing import List, Union, Tuple
+from config.logger import logger
 
 from powermeter import (
     Powermeter,
@@ -46,7 +47,7 @@ class ClientFilter:
                 if client_ip_addr in netmask:
                     return True
         except ValueError as e:
-            print(f"Error: {e}")
+            logger.error(f"Error: {e}")
             return False
 
 
