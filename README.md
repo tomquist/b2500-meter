@@ -369,10 +369,11 @@ If the payload is a simple integer value, you can omit this option.
 
 ```ini
 [MODBUS]
-IP =
+HOST =
 PORT =
 UNIT_ID =
-REGISTER =
+ADDRESS =
+COUNT =
 ```
 
 ### Script
