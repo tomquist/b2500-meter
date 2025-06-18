@@ -13,6 +13,7 @@ class TestPowermeters(unittest.TestCase):
 
         modbuspowermeter = ModbusPowermeter("192.168.1.14", 502, 1, 0, 1)
         self.assertEqual(modbuspowermeter.get_powermeter_watts(), [500])
+        MockModbusTcpClient.assert_called_with("192.168.1.14", port=502)
 
 
 if __name__ == "__main__":
