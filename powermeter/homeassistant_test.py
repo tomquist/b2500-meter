@@ -25,7 +25,7 @@ class TestPowermeters(unittest.TestCase):
         self.assertEqual(homeassistant.get_powermeter_watts(), [800])
 
     @patch("requests.Session.get")
-    def test_homeassistant_path_refix(self, mock_get):
+    def test_homeassistant_path_prefix(self, mock_get):
         mock_response = MagicMock()
         mock_response.json.side_effect = [{"state": 1000}]
         mock_get.return_value = mock_response
