@@ -9,7 +9,7 @@ class ModbusPowermeter(Powermeter):
         self.unit_id = unit_id
         self.address = address
         self.count = count
-        self.client = ModbusTcpClient(host, port)
+        self.client = ModbusTcpClient(host, port=port)
 
     def get_powermeter_watts(self):
         result = self.client.read_holding_registers(
