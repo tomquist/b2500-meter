@@ -121,7 +121,7 @@ def main():
     parser.add_argument(
         "-c", "--config", default="config.ini", help="Path to the configuration file"
     )
-    parser.add_argument("-t", "--skip-powermeter-test", type=bool)
+    parser.add_argument("-t", "--skip-powermeter-test", action="store_true", default=None)
     parser.add_argument(
         "-d",
         "--device-types",
@@ -145,8 +145,8 @@ def main():
     )
 
     # B2500-specific arguments
-    parser.add_argument("-s", "--disable-sum", type=bool)
-    parser.add_argument("-a", "--disable-absolute", type=bool)
+    parser.add_argument("-s", "--disable-sum", action="store_true", default=None)
+    parser.add_argument("-a", "--disable-absolute", action="store_true", default=None)
     parser.add_argument("-p", "--poll-interval", type=int)
     parser.add_argument(
         "--throttle-interval",
