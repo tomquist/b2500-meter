@@ -14,7 +14,7 @@ init: false
 startup: application
 boot: auto
 auto_restart: true
-watchdog: "http://localhost:8124/api/"
+watchdog: "http://[HOST]:[PORT:8124]/health/"
 homeassistant_api: true
 hassio_api: true
 hassio_role: homeassistant
