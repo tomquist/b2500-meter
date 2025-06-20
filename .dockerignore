@@ -6,4 +6,3 @@ __pycache__
 .env
 .git
 **/*_test.py
-ha_addon/

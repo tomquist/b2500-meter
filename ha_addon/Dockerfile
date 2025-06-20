@@ -5,16 +5,15 @@ ARG BUILD_VERSION
 FROM ${BUILD_FROM:-ghcr.io/hassio-addons/base:17.0.1} AS builder
 
 RUN apk add --no-cache \
-    git \
     python3 \
     py3-pip
 
 WORKDIR /app
 
-# Clone the repository and remove .git directory
-RUN git clone https://github.com/tomquist/b2500-meter.git . && \
-    rm -rf .git && \
-    rm -rf ha_addon
+# Copy the source code from build context (current checkout state)
+COPY . ./
+# Save run.sh before removing ha_addon directory and remove ha_addon directory to avoid conflicts
+RUN mv ha_addon/run.sh /tmp/run.sh && rm -rf ha_addon
 
 # Create a virtual environment and install dependencies
 RUN python3 -m venv /app/venv
@@ -40,7 +39,7 @@ COPY --from=builder /app /app
 
 ENV PATH="/app/venv/bin:$PATH"
 
-COPY run.sh /
+COPY --from=builder /tmp/run.sh /
 RUN chmod a+x /run.sh
 
 CMD [ "/run.sh" ]
