@@ -90,8 +90,8 @@ jobs:
     with:
       registry: ghcr.io
       platform: ${{ matrix.platform }}
-      context: ./ha_addon
-      dockerfile: ha_addon/Dockerfile
+      context: .
+      dockerfile: ./ha_addon/Dockerfile
       build-args: |
         BUILD_FROM=ghcr.io/hassio-addons/base:14.2.2
       image-suffix: "-addon"
