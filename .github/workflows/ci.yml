@@ -3,7 +3,7 @@ name: CI Pipeline
 on:
   push:
     branches: [ main ]
-    tags: [ "*.*.*" ]
+    tags: [ "*.*.*", "health-check-rc.*" ]
   pull_request:
     branches: [ main ]
 
