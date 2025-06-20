@@ -17,6 +17,9 @@ RUN pip install pipenv && pipenv install --deploy --ignore-pipfile
 # Copy the rest of the application code to the working directory
 COPY . /app/
 
+# Remove ha_addon directory to avoid conflicts
+RUN rm -rf /app/ha_addon
+
 # Expose the ports your application will be listening on
 EXPOSE 12345/tcp
 EXPOSE 12345/udp
