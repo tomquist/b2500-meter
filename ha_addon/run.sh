@@ -44,6 +44,7 @@ else
         echo "POLL_INTERVAL=$(bashio::config 'poll_interval')"
         echo "DISABLE_ABSOLUTE_VALUES=$(bashio::config 'disable_absolute_values')"
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
+        echo "ENABLE_HEALTH_CHECK=true"
         echo ""
         echo "[HOMEASSISTANT]"
         echo "IP=supervisor"
