@@ -183,14 +183,6 @@ def main():
     # configure logger
     setLogLevel(args.loglevel)
     logger.info("startet b2500-meter application")
-    
-    # Debug configuration loading
-    logger.debug(f"Config file: {args.config}")
-    logger.debug(f"Config sections: {cfg.sections()}")
-    if cfg.has_section("GENERAL"):
-        logger.debug(f"GENERAL section options: {dict(cfg.items('GENERAL'))}")
-    else:
-        logger.debug("No GENERAL section found in config")
 
     # Load general settings
     device_types = (
@@ -234,16 +226,12 @@ def main():
         cfg.set("GENERAL", "THROTTLE_INTERVAL", str(args.throttle_interval))
 
     # Start health check server for watchdog monitoring
-    health_check_enabled = cfg.getboolean("GENERAL", "ENABLE_HEALTH_CHECK", fallback=True)
-    logger.info(f"Health check enabled: {health_check_enabled}")
-    if health_check_enabled:
+    if cfg.getboolean("GENERAL", "ENABLE_HEALTH_CHECK", fallback=True):
         logger.info("Starting health check service...")
         if start_health_service():
             logger.info("Health check service started successfully")
         else:
             logger.error("Failed to start health check service")
-    else:
-        logger.info("Health check service is disabled in configuration")
     
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
