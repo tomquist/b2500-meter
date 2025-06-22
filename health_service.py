@@ -19,6 +19,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         # Normalize path to handle trailing slashes
         normalized_path = self.path.rstrip('/')
         if normalized_path in ['/health', '/api']:
+            logger.debug(f"Health check request received from {self.client_address[0]}:{self.client_address[1]}")
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Cache-Control', 'no-cache')
@@ -26,6 +27,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             response = b'{"status": "healthy", "service": "b2500-meter"}'
             self.wfile.write(response)
         else:
+            logger.debug(f"Invalid request {self.path} from {self.client_address[0]}:{self.client_address[1]}")
             self.send_response(404)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
