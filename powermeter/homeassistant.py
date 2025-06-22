@@ -1,6 +1,8 @@
 from .base import Powermeter
 import requests
+import json
 from typing import Union, List
+from config.logger import logger
 
 
 class HomeAssistant(Powermeter):
@@ -50,7 +52,23 @@ class HomeAssistant(Powermeter):
             "Authorization": "Bearer " + self.access_token,
             "content-type": "application/json",
         }
-        return self.session.get(url, headers=headers, timeout=10).json()
+
+        try:
+            response = self.session.get(url, headers=headers, timeout=10)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            return response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to decode JSON response from Home Assistant API: {e}")
+            logger.error(
+                f"Response content: {response.text[:200]}..."
+            )  # Log first 200 chars
+            raise ValueError(f"Home Assistant API returned invalid JSON: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to connect to Home Assistant API: {e}")
+            raise ValueError(f"Home Assistant API connection error: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error calling Home Assistant API: {e}")
+            raise ValueError(f"Home Assistant API error: {e}")
 
     def get_powermeter_watts(self):
         if not self.power_calculate:

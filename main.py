@@ -1,6 +1,7 @@
 import configparser
 import argparse
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List, Tuple
 from config.config_loader import read_all_powermeter_configs, ClientFilter
@@ -9,22 +10,43 @@ from powermeter import Powermeter
 from shelly import Shelly
 from collections import OrderedDict
 from config.logger import logger, setLogLevel
+from health_service import start_health_service, stop_health_service
 
 
 def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
-    try:
-        logger.debug("Testing powermeter configuration...")
-        powermeter.wait_for_message(timeout=120)
-        value = powermeter.get_powermeter_watts()
-        value_with_units = " | ".join([f"{v}W" for v in value])
-        powermeter_name = powermeter.__class__.__name__
-        filter_description = ", ".join([str(n) for n in client_filter.netmasks])
-        logger.debug(
-            f"Successfully fetched {powermeter_name} powermeter value (filter {filter_description}): {value_with_units}"
-        )
-    except Exception as e:
-        logger.debug(f"Error: {e}")
-        exit(1)
+    """Test powermeter configuration with minimal retry logic for edge cases."""
+    max_retries = 3
+    retry_delay = 5  # seconds
+
+    for attempt in range(max_retries + 1):
+        try:
+            logger.debug(
+                f"Testing powermeter configuration... (attempt {attempt + 1}/{max_retries + 1})"
+            )
+            powermeter.wait_for_message(
+                timeout=30
+            )  # Reduced timeout since HA should be ready
+            value = powermeter.get_powermeter_watts()
+            value_with_units = " | ".join([f"{v}W" for v in value])
+            powermeter_name = powermeter.__class__.__name__
+            filter_description = ", ".join([str(n) for n in client_filter.netmasks])
+            logger.debug(
+                f"Successfully fetched {powermeter_name} powermeter value (filter {filter_description}): {value_with_units}"
+            )
+            return  # Success, exit the function
+        except Exception as e:
+            logger.debug(f"Error on attempt {attempt + 1}: {e}")
+
+            if attempt < max_retries:
+                logger.info(f"Retrying powermeter test in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                # Last attempt failed
+                logger.error(
+                    f"Failed to test powermeter after {max_retries + 1} attempts: {e}"
+                )
+                exit(1)
 
 
 def run_device(
@@ -203,6 +225,14 @@ def main():
             cfg.add_section("GENERAL")
         cfg.set("GENERAL", "THROTTLE_INTERVAL", str(args.throttle_interval))
 
+    # Start health check server for watchdog monitoring
+    if cfg.getboolean("GENERAL", "ENABLE_HEALTH_CHECK", fallback=True):
+        logger.info("Starting health check service...")
+        if start_health_service():
+            logger.info("Health check service started successfully")
+        else:
+            logger.error("Failed to start health check service")
+    
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
     if not skip_test:
@@ -210,19 +240,24 @@ def main():
             test_powermeter(powermeter, client_filter)
 
     # Run devices in parallel
-    with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
-        futures = []
-        for device_type, device_id in zip(device_types, device_ids):
-            futures.append(
-                executor.submit(
-                    run_device, device_type, cfg, args, powermeters, device_id
+    try:
+        with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
+            futures = []
+            for device_type, device_id in zip(device_types, device_ids):
+                futures.append(
+                    executor.submit(
+                        run_device, device_type, cfg, args, powermeters, device_id
+                    )
                 )
-            )
-        # end for
+            # end for
 
-        # Wait for all devices to complete
-        for future in futures:
-            future.result()
+            # Wait for all devices to complete
+            for future in futures:
+                future.result()
+    finally:
+        # Ensure health service is properly stopped on exit
+        logger.info("Stopping health check service...")
+        stop_health_service()
 
 
 # end main
