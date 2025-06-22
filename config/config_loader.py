@@ -177,6 +177,9 @@ def create_modbus_powermeter(
         config.getint(section, "UNIT_ID", fallback=1),
         config.getint(section, "ADDRESS", fallback=0),
         config.getint(section, "COUNT", fallback=1),
+        config.get(section, "DATA_TYPE", fallback="UINT16"),
+        config.get(section, "BYTE_ORDER", fallback="BIG"),
+        config.get(section, "WORD_ORDER", fallback="BIG"),
     )
 
 
