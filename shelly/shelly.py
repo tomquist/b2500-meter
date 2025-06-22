@@ -1,6 +1,7 @@
 import socket
 import threading
 import json
+from typing import List, Tuple
 from config import ClientFilter
 from powermeter import Powermeter
 from config.logger import logger
@@ -8,7 +9,7 @@ from config.logger import logger
 
 class Shelly:
     def __init__(
-        self, powermeters: list[(Powermeter, ClientFilter)], udp_port: int, device_id
+        self, powermeters: List[Tuple[Powermeter, ClientFilter]], udp_port: int, device_id
     ):
         self._udp_port = udp_port
         self._device_id = device_id
