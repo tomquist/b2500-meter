@@ -14,7 +14,7 @@ init: false
 startup: application
 boot: auto
 auto_restart: true
-watchdog: "http://[HOST]:[PORT:8124]/health/"
+watchdog: "http://[HOST]:[PORT:52500]/health/"
 homeassistant_api: true
 hassio_api: true
 hassio_role: homeassistant
@@ -26,7 +26,6 @@ ports:
   2220/udp: 2220
   2222/udp: 2222
   2223/udp: 2223
-  8124/tcp: 8124
 map:
   - type: addon_config
     read_only: false
