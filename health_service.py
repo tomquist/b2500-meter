@@ -53,7 +53,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 class HealthCheckService:
     """Health check service manager."""
     
-    def __init__(self, port=52500, bind_address='0.0.0.0'):
+    def __init__(self, port=52500, bind_address='localhost'):
         self.port = port
         self.bind_address = bind_address
         self.server = None
@@ -149,7 +149,7 @@ class HealthCheckService:
 _health_service = None
 
 
-def start_health_service(port=52500, bind_address='0.0.0.0'):
+def start_health_service(port=52500, bind_address='localhost'):
     """
     Start the global health check service.
     
