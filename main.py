@@ -2,7 +2,7 @@ import configparser
 import argparse
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Optional, List, Tuple
 from config.config_loader import read_all_powermeter_configs, ClientFilter
 from ct001 import CT001
 from powermeter import Powermeter
@@ -31,7 +31,7 @@ def run_device(
     device_type: str,
     cfg: configparser.ConfigParser,
     args: argparse.Namespace,
-    powermeters: list[(Powermeter, ClientFilter)],
+    powermeters: List[Tuple[Powermeter, ClientFilter]],
     device_id: Optional[str] = None,
 ):
     logger.debug(f"Starting device: {device_type}")
