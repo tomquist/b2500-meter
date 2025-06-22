@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6
+- Modbus: Support powermeters spanning multiple registers
+- Modbus: Allow changing endianess
+- Add dedicated health service module with endpoints on port 52500
+- Implement multi-layer auto-restart: supervisor watchdog, startup retries, health checks
+
 ## 1.0.5
 - Added throttling of powermeter readings for slow data sources to prevent oscillation.
 
