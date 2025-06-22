@@ -227,7 +227,11 @@ def main():
 
     # Start health check server for watchdog monitoring
     if cfg.getboolean("GENERAL", "ENABLE_HEALTH_CHECK", fallback=True):
-        start_health_service()
+        logger.info("Starting health check service...")
+        if start_health_service():
+            logger.info("Health check service started successfully")
+        else:
+            logger.error("Failed to start health check service")
     
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
@@ -236,19 +240,24 @@ def main():
             test_powermeter(powermeter, client_filter)
 
     # Run devices in parallel
-    with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
-        futures = []
-        for device_type, device_id in zip(device_types, device_ids):
-            futures.append(
-                executor.submit(
-                    run_device, device_type, cfg, args, powermeters, device_id
+    try:
+        with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
+            futures = []
+            for device_type, device_id in zip(device_types, device_ids):
+                futures.append(
+                    executor.submit(
+                        run_device, device_type, cfg, args, powermeters, device_id
+                    )
                 )
-            )
-        # end for
+            # end for
 
-        # Wait for all devices to complete
-        for future in futures:
-            future.result()
+            # Wait for all devices to complete
+            for future in futures:
+                future.result()
+    finally:
+        # Ensure health service is properly stopped on exit
+        logger.info("Stopping health check service...")
+        stop_health_service()
 
 
 # end main

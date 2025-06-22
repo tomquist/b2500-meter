@@ -16,7 +16,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     
     def do_GET(self):
         """Handle GET requests to health check endpoints."""
-        if self.path in ['/health', '/api/', '/api']:
+        # Normalize path to handle trailing slashes
+        normalized_path = self.path.rstrip('/')
+        if normalized_path in ['/health', '/api']:
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Cache-Control', 'no-cache')
@@ -32,7 +34,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     
     def do_HEAD(self):
         """Handle HEAD requests (some health checkers use HEAD)."""
-        if self.path in ['/health', '/api/', '/api']:
+        # Normalize path to handle trailing slashes
+        normalized_path = self.path.rstrip('/')
+        if normalized_path in ['/health', '/api']:
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Cache-Control', 'no-cache')
@@ -49,7 +53,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 class HealthCheckService:
     """Health check service manager."""
     
-    def __init__(self, port=8124, bind_address='localhost'):
+    def __init__(self, port=8124, bind_address='0.0.0.0'):
         self.port = port
         self.bind_address = bind_address
         self.server = None
@@ -70,9 +74,29 @@ class HealthCheckService:
                 daemon=True
             )
             self.server_thread.start()
+            
+            # Give the server a moment to start and verify it's working
+            time.sleep(0.5)
+            if not self.server_thread.is_alive():
+                logger.error("Health check service thread failed to start")
+                return False
+                
             self._running = True
             logger.info(f"Health check service started on {self.bind_address}:{self.port}")
+            
+            # Test the endpoint to ensure it's working
+            if self.test_endpoint():
+                logger.debug("Health check endpoint test passed")
+            else:
+                logger.warning("Health check endpoint test failed, but service is running")
+                
             return True
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                logger.error(f"Port {self.port} is already in use. Health check service not started.")
+            else:
+                logger.error(f"Failed to bind to {self.bind_address}:{self.port}: {e}")
+            return False
         except Exception as e:
             logger.error(f"Failed to start health check service: {e}")
             return False
@@ -125,7 +149,7 @@ class HealthCheckService:
 _health_service = None
 
 
-def start_health_service(port=8124, bind_address='localhost'):
+def start_health_service(port=8124, bind_address='0.0.0.0'):
     """
     Start the global health check service.
     
