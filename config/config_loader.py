@@ -183,12 +183,22 @@ def create_json_http_powermeter(
         json_path_value,
         config.get(section, "USERNAME", fallback=None),
         config.get(section, "PASSWORD", fallback=None),
-        {
-            k.strip(): v.strip()
-            for k, v in (
-                [item.split(":", 1) for item in config.get(section, "HEADERS", fallback="").split(";") if ":" in item]
-            )
-        } if config.get(section, "HEADERS", fallback="") else None,
+        (
+            {
+                k.strip(): v.strip()
+                for k, v in (
+                    [
+                        item.split(":", 1)
+                        for item in config.get(section, "HEADERS", fallback="").split(
+                            ";"
+                        )
+                        if ":" in item
+                    ]
+                )
+            }
+            if config.get(section, "HEADERS", fallback="")
+            else None
+        ),
     )
 
 
