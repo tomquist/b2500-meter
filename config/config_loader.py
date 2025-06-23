@@ -21,6 +21,7 @@ from powermeter import (
     MqttPowermeter,
     Script,
     ESPHome,
+    JsonHttpPowermeter,
     ThrottledPowermeter,
 )
 
@@ -35,6 +36,7 @@ SCRIPT_SECTION = "SCRIPT"
 ESPHOME_SECTION = "ESPHOME"
 AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
+JSON_HTTP_SECTION = "JSON_HTTP"
 
 
 class ClientFilter:
@@ -117,6 +119,8 @@ def create_powermeter(
         return create_amisreader_powermeter(section, config)
     elif section.startswith(MODBUS_SECTION):
         return create_modbus_powermeter(section, config)
+    elif section.startswith(JSON_HTTP_SECTION):
+        return create_json_http_powermeter(section, config)
     elif section.startswith("MQTT"):
         return create_mqtt_powermeter(section, config)
     else:
@@ -165,6 +169,36 @@ def create_mqtt_powermeter(
         config.get(section, "JSON_PATH", fallback=None),
         config.get(section, "USERNAME", fallback=None),
         config.get(section, "PASSWORD", fallback=None),
+    )
+
+
+def create_json_http_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    json_paths = config.get(section, "JSON_PATHS", fallback="").split(",")
+    json_paths = [p.strip() for p in json_paths if p.strip()]
+    json_path_value = json_paths[0] if len(json_paths) == 1 else json_paths
+    return JsonHttpPowermeter(
+        config.get(section, "URL", fallback=""),
+        json_path_value,
+        config.get(section, "USERNAME", fallback=None),
+        config.get(section, "PASSWORD", fallback=None),
+        (
+            {
+                k.strip(): v.strip()
+                for k, v in (
+                    [
+                        item.split(":", 1)
+                        for item in config.get(section, "HEADERS", fallback="").split(
+                            ";"
+                        )
+                        if ":" in item
+                    ]
+                )
+            }
+            if config.get(section, "HEADERS", fallback="")
+            else None
+        ),
     )
 
 

@@ -365,8 +365,21 @@ PASSWORD = mqtt_pass (Optional)
 # THROTTLE_INTERVAL = 2
 ```
 
-The `JSON_PATH` option is used to extract the power value from a JSON payload. The path must be a [valid JSONPath expression](https://goessner.net/articles/JsonPath/). 
+The `JSON_PATH` option is used to extract the power value from a JSON payload. The path must be a [valid JSONPath expression](https://goessner.net/articles/JsonPath/).
 If the payload is a simple integer value, you can omit this option.
+
+### JSON HTTP
+
+```ini
+[JSON_HTTP]
+URL = http://example.com/api
+# Comma separated JSON paths - single path for 1-phase or three for 3-phase
+JSON_PATHS = $.power
+USERNAME = user (Optional)
+PASSWORD = pass (Optional)
+# Additional headers separated by ';' using 'Key: Value'
+HEADERS = Authorization: Bearer token
+```
 
 ### Modbus
 
