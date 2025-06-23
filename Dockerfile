@@ -28,11 +28,11 @@ RUN rm -rf /app/ha_addon
 # Expose the ports your application will be listening on
 EXPOSE 12345/tcp
 EXPOSE 12345/udp
-EXPOSE 8124/tcp
+EXPOSE 52500/tcp
 
 # Add health check that uses the same endpoint as HA addon
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8124/health || exit 1
+  CMD curl -f http://localhost:52500/health || exit 1
 
 # Run the SmartMeter script when the container starts
 CMD ["pipenv", "run", "python", "main.py", "--loglevel", "info"]

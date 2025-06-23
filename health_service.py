@@ -156,7 +156,7 @@ def start_health_service(port=52500, bind_address='0.0.0.0'):
     Start the global health check service.
     
     Args:
-        port (int): Port to bind to (default: 8124)
+        port (int): Port to bind to (default: 52500)
         bind_address (str): Address to bind to (default: 'localhost')
     
     Returns:
