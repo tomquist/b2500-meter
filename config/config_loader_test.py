@@ -18,6 +18,7 @@ from config.config_loader import (
     create_amisreader_powermeter,
     create_modbus_powermeter,
     create_mqtt_powermeter,
+    create_json_http_powermeter,
 )
 import unittest
 from unittest.mock import patch, Mock
@@ -219,6 +220,18 @@ def test_create_mqtt_powermeter():
             raise
 
 
+def test_create_json_http_powermeter():
+    """Test JSON HTTP powermeter creation."""
+    config = configparser.ConfigParser()
+    config["JSON_HTTP"] = {"URL": "http://localhost", "JSON_PATHS": "$.power"}
+
+    try:
+        create_json_http_powermeter("JSON_HTTP", config)
+    except Exception as e:
+        if "Connection" not in str(e):
+            raise
+
+
 def test_create_powermeter():
     """Test the main create_powermeter function."""
     config = configparser.ConfigParser()
@@ -236,6 +249,7 @@ def test_create_powermeter():
     config["AMIS_READER_TEST"] = {"IP": "127.0.0.1"}
     config["MODBUS_TEST"] = {"HOST": "127.0.0.1"}
     config["MQTT_TEST"] = {"BROKER": "127.0.0.1"}
+    config["JSON_HTTP_TEST"] = {"URL": "http://localhost", "JSON_PATHS": "$.power"}
     config["UNKNOWN_TEST"] = {"SOME_KEY": "some_value"}
 
     # Test each powermeter type
