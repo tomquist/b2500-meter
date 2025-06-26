@@ -13,3 +13,4 @@ from .mqtt import MqttPowermeter
 from .json_http import JsonHttpPowermeter
 from .script import Script
 from .throttling import ThrottledPowermeter
+from .tq_em import TQEnergyManager

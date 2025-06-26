@@ -19,6 +19,7 @@ from config.config_loader import (
     create_modbus_powermeter,
     create_mqtt_powermeter,
     create_json_http_powermeter,
+    create_tq_em_powermeter,
 )
 import unittest
 from unittest.mock import patch, Mock
@@ -232,6 +233,18 @@ def test_create_json_http_powermeter():
             raise
 
 
+def test_create_tq_em_powermeter():
+    """Test TQ Energy Manager powermeter creation."""
+    config = configparser.ConfigParser()
+    config["TQ_EM"] = {"IP": "127.0.0.1"}
+
+    try:
+        create_tq_em_powermeter("TQ_EM", config)
+    except Exception as e:
+        if "Connection" not in str(e):
+            raise
+
+
 def test_create_powermeter():
     """Test the main create_powermeter function."""
     config = configparser.ConfigParser()
@@ -250,6 +263,7 @@ def test_create_powermeter():
     config["MODBUS_TEST"] = {"HOST": "127.0.0.1"}
     config["MQTT_TEST"] = {"BROKER": "127.0.0.1"}
     config["JSON_HTTP_TEST"] = {"URL": "http://localhost", "JSON_PATHS": "$.power"}
+    config["TQ_EM_TEST"] = {"IP": "127.0.0.1"}
     config["UNKNOWN_TEST"] = {"SOME_KEY": "some_value"}
 
     # Test each powermeter type
