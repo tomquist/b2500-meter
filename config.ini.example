@@ -134,6 +134,11 @@ THROTTLE_INTERVAL = 0
 #USERNAME = user
 #PASSWORD = pass
 #HEADERS = Authorization: Bearer token
+
+#[TQ_EM]
+#IP = 192.168.1.100
+#PASSWORD = secret (Optional)
+#TIMEOUT = 5.0 (Optional)
 #THROTTLE_INTERVAL = 1
 
 #[SCRIPT]

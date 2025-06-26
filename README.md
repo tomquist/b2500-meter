@@ -381,6 +381,15 @@ PASSWORD = pass (Optional)
 HEADERS = Authorization: Bearer token
 ```
 
+### TQ Energy Manager
+
+```ini
+[TQ_EM]
+IP = 192.168.1.100
+#PASSWORD = pass
+#TIMEOUT = 5.0 (Optional)
+```
+
 ### Modbus
 
 ```ini

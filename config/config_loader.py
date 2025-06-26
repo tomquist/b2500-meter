@@ -22,6 +22,7 @@ from powermeter import (
     Script,
     ESPHome,
     JsonHttpPowermeter,
+    TQEnergyManager,
     ThrottledPowermeter,
 )
 
@@ -37,6 +38,7 @@ ESPHOME_SECTION = "ESPHOME"
 AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
 JSON_HTTP_SECTION = "JSON_HTTP"
+TQ_EM_SECTION = "TQ_EM"
 
 
 class ClientFilter:
@@ -119,6 +121,8 @@ def create_powermeter(
         return create_amisreader_powermeter(section, config)
     elif section.startswith(MODBUS_SECTION):
         return create_modbus_powermeter(section, config)
+    elif section.startswith(TQ_EM_SECTION):
+        return create_tq_em_powermeter(section, config)
     elif section.startswith(JSON_HTTP_SECTION):
         return create_json_http_powermeter(section, config)
     elif section.startswith("MQTT"):
@@ -318,4 +322,13 @@ def create_tasmota_powermeter(
         config.get(section, "JSON_POWER_INPUT_MQTT_LABEL", fallback=""),
         config.get(section, "JSON_POWER_OUTPUT_MQTT_LABEL", fallback=""),
         config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
+    )
+
+def create_tq_em_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return TQEnergyManager(
+        config.get(section, "IP", fallback=""),
+        config.get(section, "PASSWORD", fallback=""),
+        timeout=config.getfloat(section, "TIMEOUT", fallback=5.0),
     )
