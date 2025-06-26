@@ -13,6 +13,7 @@ from powermeter import (
     Shelly3EMPro,
     Shrdzm,
     Emlog,
+    Em300,
     IoBroker,
     HomeAssistant,
     VZLogger,
@@ -21,7 +22,6 @@ from powermeter import (
     MqttPowermeter,
     Script,
     ESPHome,
-    JsonHttpPowermeter,
     ThrottledPowermeter,
 )
 
@@ -29,6 +29,7 @@ SHELLY_SECTION = "SHELLY"
 TASMOTA_SECTION = "TASMOTA"
 SHRDZM_SECTION = "SHRDZM"
 EMLOG_SECTION = "EMLOG"
+EM300_SECTION = "EM300"
 IOBROKER_SECTION = "IOBROKER"
 HOMEASSISTANT_SECTION = "HOMEASSISTANT"
 VZLOGGER_SECTION = "VZLOGGER"
@@ -36,7 +37,6 @@ SCRIPT_SECTION = "SCRIPT"
 ESPHOME_SECTION = "ESPHOME"
 AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
-JSON_HTTP_SECTION = "JSON_HTTP"
 
 
 class ClientFilter:
@@ -105,6 +105,8 @@ def create_powermeter(
         return create_shrdzm_powermeter(section, config)
     elif section.startswith(EMLOG_SECTION):
         return create_emlog_powermeter(section, config)
+    elif section.startswith(EM300_SECTION):
+        return create_em300_powermeter(section, config)
     elif section.startswith(IOBROKER_SECTION):
         return create_iobroker_powermeter(section, config)
     elif section.startswith(HOMEASSISTANT_SECTION):
@@ -119,8 +121,6 @@ def create_powermeter(
         return create_amisreader_powermeter(section, config)
     elif section.startswith(MODBUS_SECTION):
         return create_modbus_powermeter(section, config)
-    elif section.startswith(JSON_HTTP_SECTION):
-        return create_json_http_powermeter(section, config)
     elif section.startswith("MQTT"):
         return create_mqtt_powermeter(section, config)
     else:
@@ -172,36 +172,6 @@ def create_mqtt_powermeter(
     )
 
 
-def create_json_http_powermeter(
-    section: str, config: configparser.ConfigParser
-) -> Powermeter:
-    json_paths = config.get(section, "JSON_PATHS", fallback="").split(",")
-    json_paths = [p.strip() for p in json_paths if p.strip()]
-    json_path_value = json_paths[0] if len(json_paths) == 1 else json_paths
-    return JsonHttpPowermeter(
-        config.get(section, "URL", fallback=""),
-        json_path_value,
-        config.get(section, "USERNAME", fallback=None),
-        config.get(section, "PASSWORD", fallback=None),
-        (
-            {
-                k.strip(): v.strip()
-                for k, v in (
-                    [
-                        item.split(":", 1)
-                        for item in config.get(section, "HEADERS", fallback="").split(
-                            ";"
-                        )
-                        if ":" in item
-                    ]
-                )
-            }
-            if config.get(section, "HEADERS", fallback="")
-            else None
-        ),
-    )
-
-
 def create_modbus_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
@@ -211,9 +181,6 @@ def create_modbus_powermeter(
         config.getint(section, "UNIT_ID", fallback=1),
         config.getint(section, "ADDRESS", fallback=0),
         config.getint(section, "COUNT", fallback=1),
-        config.get(section, "DATA_TYPE", fallback="UINT16"),
-        config.get(section, "BYTE_ORDER", fallback="BIG"),
-        config.get(section, "WORD_ORDER", fallback="BIG"),
     )
 
 
@@ -291,6 +258,17 @@ def create_emlog_powermeter(
     return Emlog(
         config.get(section, "IP", fallback=""),
         config.get(section, "METER_INDEX", fallback=""),
+        config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
+    )
+
+
+def create_em300_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return Em300(
+        config.get(section, "IP", fallback=""),
+        config.get(section, "USER", fallback=""),
+        config.get(section, "PASS", fallback=""),
         config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
     )
 
