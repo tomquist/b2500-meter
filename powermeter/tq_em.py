@@ -77,7 +77,9 @@ class TQEnergyManager(Powermeter):
             raise RuntimeError("Authentication failed")
 
     def _read_live_json(self) -> dict:
-        r = self._sess.get(f"http://{self._host}/mum-webservice/data.php", timeout=self._timeout)
+        r = self._sess.get(
+            f"http://{self._host}/mum-webservice/data.php", timeout=self._timeout
+        )
         if r.status_code in (401, 403):
             raise _SessionExpired
 
@@ -90,4 +92,5 @@ class TQEnergyManager(Powermeter):
 
 class _SessionExpired(RuntimeError):
     """Internal marker – triggers transparent re-login."""
+
     pass

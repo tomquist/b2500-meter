@@ -324,6 +324,7 @@ def create_tasmota_powermeter(
         config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
     )
 
+
 def create_tq_em_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
