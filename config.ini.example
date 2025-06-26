@@ -54,6 +54,14 @@ THROTTLE_INTERVAL = 0
 ## Per-powermeter throttling override (optional)
 #THROTTLE_INTERVAL = 1
 
+#[EM300]
+#IP = 192.168.010.100
+#USER = 70000598
+#PASS = test12345
+#JSON_POWER_CALCULATE = True
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 1
+
 #[IOBROKER]
 #IP = 192.168.1.104
 #PORT = 8087
@@ -111,9 +119,6 @@ THROTTLE_INTERVAL = 0
 #UNIT_ID = 1
 #ADDRESS = 0
 #COUNT = 1
-#DATA_TYPE = UINT16
-#BYTE_ORDER = BIG
-#WORD_ORDER = BIG
 ## Per-powermeter throttling override (optional)
 #THROTTLE_INTERVAL = 1
 
@@ -126,14 +131,6 @@ THROTTLE_INTERVAL = 0
 #PASSWORD = mqtt_pass (Optional)
 ## Per-powermeter throttling override (optional)
 ## MQTT can have variable latency depending on broker and network
-#THROTTLE_INTERVAL = 1
-
-# [JSON_HTTP]
-#URL = http://example.com/api
-#JSON_PATHS = $.power
-#USERNAME = user
-#PASSWORD = pass
-#HEADERS = Authorization: Bearer token
 #THROTTLE_INTERVAL = 1
 
 #[SCRIPT]
