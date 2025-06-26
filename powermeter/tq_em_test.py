@@ -27,7 +27,7 @@ class TestTQEnergyManager(unittest.TestCase):
         )
 
         meter = TQEnergyManager("192.168.0.10")
-        self.assertEqual(meter.get_powermeter_watts(), (1.0, 2.0, 3.0))
+        self.assertEqual(meter.get_powermeter_watts(), [1.0, 2.0, 3.0])
 
     @patch("requests.Session.post")
     @patch("requests.Session.get")
@@ -43,7 +43,7 @@ class TestTQEnergyManager(unittest.TestCase):
         )
 
         meter = TQEnergyManager("192.168.0.12")
-        self.assertEqual(meter.get_powermeter_watts(), (9.0,))
+        self.assertEqual(meter.get_powermeter_watts(), [9.0])
 
     @patch("requests.Session.post")
     @patch("requests.Session.get")
@@ -64,7 +64,7 @@ class TestTQEnergyManager(unittest.TestCase):
         ]
 
         meter = TQEnergyManager("192.168.0.11")
-        self.assertEqual(meter.get_powermeter_watts(), (5.0,))
+        self.assertEqual(meter.get_powermeter_watts(), [5.0])
 
 
 if __name__ == "__main__":

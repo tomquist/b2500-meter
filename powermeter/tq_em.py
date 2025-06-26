@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import List
 import time
 import requests
 
@@ -27,7 +27,7 @@ class TQEnergyManager(Powermeter):
     # ------------------------------------------------------------------ #
     # PUBLIC                                                             #
     # ------------------------------------------------------------------ #
-    def get_powermeter_watts(self) -> Tuple[float, ...]:
+    def get_powermeter_watts(self) -> List[float]:
         self._ensure_session()
 
         try:
@@ -37,9 +37,9 @@ class TQEnergyManager(Powermeter):
             data = self._read_live_json()
 
         if all(k in data for k in self._PHASE_KEYS):
-            return tuple(float(data[k]) for k in self._PHASE_KEYS)
+            return [float(data[k]) for k in self._PHASE_KEYS]
         if self._TOTAL_KEY in data:
-            return (float(data[self._TOTAL_KEY]),)
+            return [float(data[self._TOTAL_KEY])]
 
         raise RuntimeError("Required OBIS values missing in payload")
 
