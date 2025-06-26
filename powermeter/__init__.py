@@ -4,12 +4,12 @@ from .shelly import Shelly, Shelly1PM, ShellyPlus1PM, ShellyEM, Shelly3EM, Shell
 from .esphome import ESPHome
 from .shrdzm import Shrdzm
 from .emlog import Emlog
+from .em300 import Em300
 from .iobroker import IoBroker
 from .homeassistant import HomeAssistant
 from .vzlogger import VZLogger
 from .amisreader import AmisReader
 from .modbus import ModbusPowermeter
 from .mqtt import MqttPowermeter
-from .json_http import JsonHttpPowermeter
 from .script import Script
 from .throttling import ThrottledPowermeter
