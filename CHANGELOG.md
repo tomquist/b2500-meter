@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.7
+- Added support for TQ Energy Manager devices through new TQ EM powermeter integration
+- Added generic JSON HTTP powermeter integration with JSONPath support for flexible data extraction
+- Fixed health check service port from 8124 to 52500
+
 ## 1.0.6
 - Modbus: Support powermeters spanning multiple registers
 - Modbus: Allow changing endianess
