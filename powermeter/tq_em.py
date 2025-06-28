@@ -9,11 +9,26 @@ class TQEnergyManager(Powermeter):
     """Powermeter using the TQ Energy Manager JSON API."""
 
     # OBIS codes
-    _TOTAL_KEY = "1-0:1.4.0*255"  # Σ active power
+    _TOTAL_TO_GRID = 0
+    _TOTAL_FROM_GRID = 1
+    _TOTAL_KEYS = (
+        "1-0:1.4.0*255",  # Σ active power (from grid)
+        "1-0:2.4.0*255",  # Σ active power (to grid)
+    )
+
+    _TOTAL_TO_GRID_L1 = 0
+    _TOTAL_FROM_GRID_L1 = 1
+    _TOTAL_TO_GRID_L2 = 2
+    _TOTAL_FROM_GRID_L2 = 3
+    _TOTAL_TO_GRID_L3 = 4
+    _TOTAL_FROM_GRID_L3 = 5
     _PHASE_KEYS = (
-        "1-0:21.4.0*255",  # L1
-        "1-0:41.4.0*255",  # L2
-        "1-0:61.4.0*255",  # L3
+        "1-0:21.4.0*255",  # L1 active power (from grid)
+        "1-0:22.4.0*255",  # L1 active power (to grid)
+        "1-0:41.4.0*255",  # L2 active power (from grid)
+        "1-0:42.4.0*255",  # L2 active power (to grid)
+        "1-0:61.4.0*255",  # L3 active power (from grid)
+        "1-0:62.4.0*255",  # L3 active power (to grid)
     )
 
     _MAX_IDLE = 60 * 30  # 30 min
@@ -36,10 +51,21 @@ class TQEnergyManager(Powermeter):
             self._login()
             data = self._read_live_json()
 
-        if all(k in data for k in self._PHASE_KEYS):
-            return [float(data[k]) for k in self._PHASE_KEYS]
-        if self._TOTAL_KEY in data:
-            return [float(data[self._TOTAL_KEY])]
+        if any(k in data for k in self._PHASE_KEYS):
+            return [
+                float(data.get(self._PHASE_KEYS[self._TOTAL_TO_GRID_L1], 0))
+                - float(data.get(self._PHASE_KEYS[self._TOTAL_FROM_GRID_L1], 0)),
+                float(data.get(self._PHASE_KEYS[self._TOTAL_TO_GRID_L2], 0))
+                - float(data.get(self._PHASE_KEYS[self._TOTAL_FROM_GRID_L2], 0)),
+                float(data.get(self._PHASE_KEYS[self._TOTAL_TO_GRID_L3], 0))
+                - float(data.get(self._PHASE_KEYS[self._TOTAL_FROM_GRID_L3], 0)),
+            ]
+
+        if any(k in data for k in self._TOTAL_KEYS):
+            return [
+                float(data.get(self._TOTAL_KEYS[self._TOTAL_TO_GRID], 0))
+                - float(data.get(self._TOTAL_KEYS[self._TOTAL_FROM_GRID], 0))
+            ]
 
         raise RuntimeError("Required OBIS values missing in payload")
 
