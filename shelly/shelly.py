@@ -1,6 +1,7 @@
 import socket
 import threading
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple
 from config import ClientFilter
 from powermeter import Powermeter
@@ -20,6 +21,8 @@ class Shelly:
         self._udp_thread = None
         self._stop = False
         self._value_mutex = threading.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=5)
+        self._send_lock = threading.Lock()
 
     def _calculate_derived_values(self, power):
         decimal_point_enforcer = 0.001
@@ -76,6 +79,43 @@ class Shelly:
             },
         }
 
+    def _handle_request(self, sock, data, addr):
+        request_str = data.decode()
+        logger.debug(f"Received UDP message: {request_str}")
+        logger.debug(f"From: {addr[0]}:{addr[1]}")
+
+        try:
+            request = json.loads(request_str)
+            logger.debug(f"Parsed request: {json.dumps(request, indent=2)}")
+            if isinstance(request.get("params", {}).get("id"), int):
+                powermeter = None
+                for pm, client_filter in self._powermeters:
+                    if client_filter.matches(addr[0]):
+                        powermeter = pm
+                        break
+                if powermeter is None:
+                    logger.warning(f"No powermeter found for client {addr[0]}")
+                    return
+
+                powers = powermeter.get_powermeter_watts()
+
+                if request.get("method") == "EM.GetStatus":
+                    response = self._create_em_response(request["id"], powers)
+                elif request.get("method") == "EM1.GetStatus":
+                    response = self._create_em1_response(request["id"], powers)
+                else:
+                    return
+
+                response_json = json.dumps(response, separators=(",", ":"))
+                logger.debug(f"Sending response: {response_json}")
+                response_data = response_json.encode()
+                with self._send_lock:
+                    sock.sendto(response_data, addr)
+        except json.JSONDecodeError:
+            logger.error("Error: Invalid JSON")
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+
     def udp_server(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("", self._udp_port))
@@ -84,40 +124,7 @@ class Shelly:
         try:
             while not self._stop:
                 data, addr = sock.recvfrom(1024)
-                request_str = data.decode()
-                logger.debug(f"Received UDP message: {request_str}")
-                logger.debug(f"From: {addr[0]}:{addr[1]}")
-
-                try:
-                    request = json.loads(request_str)
-                    logger.debug(f"Parsed request: {json.dumps(request, indent=2)}")
-                    if isinstance(request.get("params", {}).get("id"), int):
-                        powermeter = None
-                        for pm, client_filter in self._powermeters:
-                            if client_filter.matches(addr[0]):
-                                powermeter = pm
-                                break
-                        if powermeter is None:
-                            logger.warning(f"No powermeter found for client {addr[0]}")
-                            continue
-
-                        powers = powermeter.get_powermeter_watts()
-
-                        if request.get("method") == "EM.GetStatus":
-                            response = self._create_em_response(request["id"], powers)
-                        elif request.get("method") == "EM1.GetStatus":
-                            response = self._create_em1_response(request["id"], powers)
-                        else:
-                            continue
-
-                        response_json = json.dumps(response, separators=(",", ":"))
-                        logger.debug(f"Sending response: {response_json}")
-                        response_data = response_json.encode()
-                        sock.sendto(response_data, addr)
-                except json.JSONDecodeError:
-                    logger.error(f"Error: Invalid JSON")
-                except Exception as e:
-                    logger.error(f"Error processing message: {e}")
+                self._executor.submit(self._handle_request, sock, data, addr)
 
         finally:
             sock.close()
@@ -138,3 +145,4 @@ class Shelly:
         if self._udp_thread:
             self._udp_thread.join()
             self._udp_thread = None
+        self._executor.shutdown(wait=True)
