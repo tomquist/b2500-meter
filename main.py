@@ -30,7 +30,7 @@ def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
             value_with_units = " | ".join([f"{v}W" for v in value])
             powermeter_name = powermeter.__class__.__name__
             filter_description = ", ".join([str(n) for n in client_filter.netmasks])
-            logger.debug(
+            logger.info(
                 f"Successfully fetched {powermeter_name} powermeter value (filter {filter_description}): {value_with_units}"
             )
             return  # Success, exit the function
