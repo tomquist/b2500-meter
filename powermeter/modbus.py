@@ -18,6 +18,12 @@ BYTE_ORDERS = {
 }
 
 
+REGISTER_TYPES = {
+    "HOLDING": "read_holding_registers",
+    "INPUT": "read_input_registers",
+}
+
+
 class ModbusPowermeter(Powermeter):
     def __init__(
         self,
@@ -29,6 +35,7 @@ class ModbusPowermeter(Powermeter):
         data_type="UINT16",
         byte_order="BIG",
         word_order="BIG",
+        register_type="HOLDING",
     ):
         self.host = host
         self.port = port
@@ -45,12 +52,16 @@ class ModbusPowermeter(Powermeter):
         if not self._decode_method:
             raise ValueError(f"Unsupported data type: {data_type}")
 
+        self.register_type = register_type.upper()
+        self._read_method = REGISTER_TYPES.get(self.register_type)
+        if not self._read_method:
+            raise ValueError(f"Unsupported register type: {register_type}")
+
         self.client = ModbusTcpClient(host, port=port)
 
     def get_powermeter_watts(self):
-        result = self.client.read_holding_registers(
-            self.address, self.count, unit=self.unit_id
-        )
+        read = getattr(self.client, self._read_method)
+        result = read(self.address, self.count, unit=self.unit_id)
         if result.isError():
             raise Exception("Error reading Modbus data")
         decoder = BinaryPayloadDecoder.fromRegisters(
