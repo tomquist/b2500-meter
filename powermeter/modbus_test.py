@@ -33,6 +33,18 @@ class TestPowermeters(unittest.TestCase):
         )
         self.assertEqual(modbuspowermeter.get_powermeter_watts(), [10.0])
 
+    @patch("powermeter.modbus.ModbusTcpClient")
+    def test_modbuspowermeter_input_registers(self, MockModbusTcpClient):
+        mock_client = MockModbusTcpClient.return_value
+        mock_client.read_input_registers.return_value.isError.return_value = False
+        mock_client.read_input_registers.return_value.registers = [500]
+
+        modbuspowermeter = ModbusPowermeter(
+            "192.168.1.14", 502, 1, 0, 1, register_type="INPUT"
+        )
+        self.assertEqual(modbuspowermeter.get_powermeter_watts(), [500.0])
+        mock_client.read_input_registers.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

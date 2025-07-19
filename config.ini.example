@@ -114,6 +114,7 @@ THROTTLE_INTERVAL = 0
 #DATA_TYPE = UINT16
 #BYTE_ORDER = BIG
 #WORD_ORDER = BIG
+#REGISTER_TYPE = HOLDING
 ## Per-powermeter throttling override (optional)
 #THROTTLE_INTERVAL = 1
 
