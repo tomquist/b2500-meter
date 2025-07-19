@@ -1,5 +1,5 @@
 name: "B2500 Meter"
-version: "1.0.8"
+version: "next"
 slug: b2500_meter
 description: >-
   "Replicates a Smart Meter device for a B2500 energy storage system while allowing integration with various smart meters."
