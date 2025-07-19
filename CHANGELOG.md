@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8
+- Added support for Modbus holding registers through new `REGISTER_TYPE` configuration option ([#173](https://github.com/tomquist/b2500-meter/pull/173))
+- Improved Shelly emulator with threaded UDP handling for better performance under concurrent requests when throttle interval is used ([#168](https://github.com/tomquist/b2500-meter/pull/168))
+- Enhanced TQ Energy Manager with signed power calculation using separate import/export OBIS codes ([#153](https://github.com/tomquist/b2500-meter/pull/153))
+- Fixed powermeter test results to log at info level instead of debug level ([#165](https://github.com/tomquist/b2500-meter/pull/165))
+
 ## 1.0.7
 - Added support for TQ Energy Manager devices through new TQ EM powermeter integration
 - Added generic JSON HTTP powermeter integration with JSONPath support for flexible data extraction
