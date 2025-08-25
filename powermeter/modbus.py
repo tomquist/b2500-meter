@@ -61,7 +61,7 @@ class ModbusPowermeter(Powermeter):
 
     def get_powermeter_watts(self):
         read = getattr(self.client, self._read_method)
-        result = read(self.address, self.count, unit=self.unit_id)
+        result = read(self.address, self.count, slave=self.unit_id)
         if result.isError():
             raise Exception("Error reading Modbus data")
         decoder = BinaryPayloadDecoder.fromRegisters(
