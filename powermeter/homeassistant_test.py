@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
+import requests
 from powermeter import HomeAssistant
 
 
@@ -23,6 +24,35 @@ class TestPowermeters(unittest.TestCase):
             None,
         )
         self.assertEqual(homeassistant.get_powermeter_watts(), [800])
+
+    @patch("requests.Session.get")
+    def test_homeassistant_sensor_not_found(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        homeassistant = HomeAssistant(
+            "192.168.1.8",
+            "8123",
+            False,
+            "token",
+            "sensor.current_power",
+            False,
+            "",
+            "",
+            None,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            homeassistant.get_powermeter_watts()
+
+        self.assertEqual(
+            str(context.exception),
+            "Home Assistant sensor sensor.current_power does not exist",
+        )
 
     @patch("requests.Session.get")
     def test_homeassistant_path_prefix(self, mock_get):
