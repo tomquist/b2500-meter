@@ -55,6 +55,58 @@ class TestPowermeters(unittest.TestCase):
         )
 
     @patch("requests.Session.get")
+    def test_homeassistant_sensor_has_no_state(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {}
+        mock_get.return_value = mock_response
+
+        homeassistant = HomeAssistant(
+            "192.168.1.8",
+            "8123",
+            False,
+            "token",
+            "sensor.current_power",
+            False,
+            "",
+            "",
+            None,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            homeassistant.get_powermeter_watts()
+
+        self.assertEqual(
+            str(context.exception),
+            "Home Assistant sensor sensor.current_power has no state",
+        )
+
+    @patch("requests.Session.get")
+    def test_homeassistant_sensor_state_not_numeric(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"state": "unavailable"}
+        mock_get.return_value = mock_response
+
+        homeassistant = HomeAssistant(
+            "192.168.1.8",
+            "8123",
+            False,
+            "token",
+            "sensor.current_power",
+            False,
+            "",
+            "",
+            None,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            homeassistant.get_powermeter_watts()
+
+        self.assertEqual(
+            str(context.exception),
+            "Home Assistant sensor sensor.current_power state 'unavailable' is not numeric",
+        )
+
+    @patch("requests.Session.get")
     def test_homeassistant_path_prefix(self, mock_get):
         mock_response = MagicMock()
         mock_response.json.side_effect = [{"state": 1000}]
