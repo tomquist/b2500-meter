@@ -81,6 +81,32 @@ class TestPowermeters(unittest.TestCase):
         )
 
     @patch("requests.Session.get")
+    def test_homeassistant_sensor_state_none(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"state": None}
+        mock_get.return_value = mock_response
+
+        homeassistant = HomeAssistant(
+            "192.168.1.8",
+            "8123",
+            False,
+            "token",
+            "sensor.current_power",
+            False,
+            "",
+            "",
+            None,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            homeassistant.get_powermeter_watts()
+
+        self.assertEqual(
+            str(context.exception),
+            "Home Assistant sensor sensor.current_power has no state",
+        )
+
+    @patch("requests.Session.get")
     def test_homeassistant_sensor_state_not_numeric(self, mock_get):
         mock_response = MagicMock()
         mock_response.json.return_value = {"state": "unavailable"}
@@ -104,6 +130,32 @@ class TestPowermeters(unittest.TestCase):
         self.assertEqual(
             str(context.exception),
             "Home Assistant sensor sensor.current_power state 'unavailable' is not numeric",
+        )
+
+    @patch("requests.Session.get")
+    def test_homeassistant_sensor_response_not_dict(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_get.return_value = mock_response
+
+        homeassistant = HomeAssistant(
+            "192.168.1.8",
+            "8123",
+            False,
+            "token",
+            "sensor.current_power",
+            False,
+            "",
+            "",
+            None,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            homeassistant.get_powermeter_watts()
+
+        self.assertEqual(
+            str(context.exception),
+            "Home Assistant sensor sensor.current_power returned non-object JSON",
         )
 
     @patch("requests.Session.get")
@@ -181,6 +233,27 @@ class TestPowermeters(unittest.TestCase):
             None,
         )
         self.assertEqual(homeassistant.get_powermeter_watts(), [800.0, 1700.0, 2600.0])
+
+    def test_homeassistant_power_alias_length_mismatch(self):
+        homeassistant = HomeAssistant(
+            "192.168.1.8",
+            "8123",
+            False,
+            "token",
+            "",
+            True,
+            ["sensor.power_in_1", "sensor.power_in_2"],
+            ["sensor.power_out_1"],
+            None,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            homeassistant.get_powermeter_watts()
+
+        self.assertEqual(
+            str(context.exception),
+            "Home Assistant power_input_alias and power_output_alias lengths differ",
+        )
 
 
 if __name__ == "__main__":

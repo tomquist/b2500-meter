@@ -81,15 +81,29 @@ class HomeAssistant(Powermeter):
         path = f"/api/states/{entity}"
         try:
             response = self.get_json(path)
+
+            if not isinstance(response, dict):
+                msg = (
+                    f"Home Assistant sensor {entity} returned non-object JSON"
+                )
+                logger.error(msg)
+                raise ValueError(msg)
+
             try:
                 val = response["state"]
             except KeyError as e:
                 msg = f"Home Assistant sensor {entity} has no state"
                 logger.error(msg)
                 raise ValueError(msg) from e
+
+            if val is None:
+                msg = f"Home Assistant sensor {entity} has no state"
+                logger.error(msg)
+                raise ValueError(msg)
+
             try:
                 return float(val)
-            except ValueError as e:
+            except (ValueError, TypeError) as e:
                 msg = (
                     f"Home Assistant sensor {entity} state '{val}' is not numeric"
                 )
@@ -107,6 +121,13 @@ class HomeAssistant(Powermeter):
         if not self.power_calculate:
             return [self.get_sensor_value(entity) for entity in self.current_power_entity]
         else:
+            if len(self.power_input_alias) != len(self.power_output_alias):
+                msg = (
+                    "Home Assistant power_input_alias and power_output_alias lengths differ"
+                )
+                logger.error(msg)
+                raise ValueError(msg)
+
             results = []
             for in_entity, out_entity in zip(
                 self.power_input_alias, self.power_output_alias
