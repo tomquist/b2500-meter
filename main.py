@@ -1,6 +1,7 @@
 import configparser
 import argparse
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List, Tuple
@@ -162,8 +163,8 @@ def main():
     parser.add_argument(
         "-log",
         "--loglevel",
-        default="warning",
-        help="Provide logging level. Example --loglevel debug, default=warning",
+        default=os.environ.get("LOG_LEVEL", "warning"),
+        help="Provide logging level. Example --loglevel debug. Can also be set via LOG_LEVEL env var",
     )
 
     # B2500-specific arguments

@@ -85,6 +85,9 @@ The B2500 Meter project can be installed and run in several ways depending on yo
    ```bash
    docker-compose up -d
    ```
+   You can control the verbosity by setting the `LOG_LEVEL` environment
+   variable (for example `-e LOG_LEVEL=debug`). If not set the container
+   defaults to `info`.
 Note: Host network mode is required because the B2500 device uses UDP broadcasts for device discovery. Without host networking, the container won't be able to receive these broadcasts properly.
 
 ### Direct Installation

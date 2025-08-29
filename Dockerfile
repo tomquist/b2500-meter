@@ -34,5 +34,8 @@ EXPOSE 52500/tcp
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:52500/health || exit 1
 
+# Default log level for container startup
+ENV LOG_LEVEL=info
+
 # Run the SmartMeter script when the container starts
-CMD ["pipenv", "run", "python", "main.py", "--loglevel", "info"]
+CMD ["pipenv", "run", "python", "main.py"]
