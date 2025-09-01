@@ -45,12 +45,12 @@ The B2500 Meter project can be installed and run in several ways depending on yo
 
    A) Using the Add-on Configuration Interface:
    - After installation, go to the add-on's Configuration tab
-    - For single-phase monitoring:
-      - Set the `Power Input Entity ID` and optionally the `Power Output Entity ID` to the entity IDs of your power sensors
-    - For three-phase monitoring:
-      - Set the `Power Input Entity ID` to a comma-separated list of three entity IDs (one for each phase)
-      - If using calculated power, also set the `Power Output Entity ID` to a comma-separated list of three entity IDs
-      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
+   - For single-phase monitoring:
+     - Set the `Power Input Entity ID` and optionally the `Power Output Entity ID` to the entity IDs of your power sensors
+   - For three-phase monitoring:
+     - Set the `Power Input Entity ID` to a comma-separated list of three entity IDs (one for each phase)
+     - If using calculated power, also set the `Power Output Entity ID` to a comma-separated list of three entity IDs
+     - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate:
      - `ct001`: CT001 emulator
      - `shellypro3em`: Shelly Pro 3EM emulator (uses both ports 1010 and 2220 for compatibility with all B2500 firmware versions)
