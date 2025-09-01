@@ -73,7 +73,7 @@ THROTTLE_INTERVAL = 0
 ## Single sensor mode - comma-separated list for multiple phases
 #CURRENT_POWER_ENTITY = sensor.phase1_power, sensor.phase2_power, sensor.phase3_power
 
-## Or for separate input/output sensors
+## Or for separate input/output sensors (use entity IDs)
 #POWER_CALCULATE = True
 #POWER_INPUT_ALIAS = sensor.phase1_input, sensor.phase2_input, sensor.phase3_input
 #POWER_OUTPUT_ALIAS = sensor.phase1_output, sensor.phase2_output, sensor.phase3_output

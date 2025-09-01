@@ -45,12 +45,12 @@ The B2500 Meter project can be installed and run in several ways depending on yo
 
    A) Using the Add-on Configuration Interface:
    - After installation, go to the add-on's Configuration tab
-   - For single-phase monitoring:
-     - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
-   - For three-phase monitoring:
-     - Set the `Power Input Alias` to a comma-separated list of three entity IDs (one for each phase)
-     - If using calculated power, also set the `Power Output Alias` to a comma-separated list of three entity IDs
-     - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
+    - For single-phase monitoring:
+      - Set the `Power Input Entity ID` and optionally the `Power Output Entity ID` to the entity IDs of your power sensors
+    - For three-phase monitoring:
+      - Set the `Power Input Entity ID` to a comma-separated list of three entity IDs (one for each phase)
+      - If using calculated power, also set the `Power Output Entity ID` to a comma-separated list of three entity IDs
+      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate:
      - `ct001`: CT001 emulator
      - `shellypro3em`: Shelly Pro 3EM emulator (uses both ports 1010 and 2220 for compatibility with all B2500 firmware versions)
@@ -258,9 +258,9 @@ ACCESSTOKEN = YOUR_ACCESS_TOKEN
 CURRENT_POWER_ENTITY = ""|sensor.current_power|sensor.phase1,sensor.phase2,sensor.phase3
 # If False or Empty the power is not calculated - if empty False is Fallback
 POWER_CALCULATE = ""|True|False 
-# The entity or entities (comma-separated for 3-phase) that provide power input
+# The entity ID or IDs (comma-separated for 3-phase) that provide power input
 POWER_INPUT_ALIAS = ""|sensor.power_input|sensor.power_in_1,sensor.power_in_2,sensor.power_in_3
-# The entity or entities (comma-separated for 3-phase) that provide power output
+# The entity ID or IDs (comma-separated for 3-phase) that provide power output
 POWER_OUTPUT_ALIAS = ""|sensor.power_output|sensor.power_out_1,sensor.power_out_2,sensor.power_out_3
 # Is a Path Prefix needed?
 API_PATH_PREFIX = ""|/core
@@ -526,7 +526,7 @@ sensor.phase1,sensor.phase2,sensor.phase3
 
 A: 
 - `CURRENT_POWER_ENTITY`: For a single bidirectional sensor (positive/negative values)
-- `POWER_INPUT_ALIAS`/`POWER_OUTPUT_ALIAS`: For separate import/export sensors (with `POWER_CALCULATE = True`)
+  - `POWER_INPUT_ALIAS`/`POWER_OUTPUT_ALIAS`: Entity IDs for separate import/export sensors (with `POWER_CALCULATE = True`)
 
 ## Device and Firmware Specific
 
