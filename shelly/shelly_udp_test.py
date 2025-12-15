@@ -5,7 +5,7 @@ import threading
 import time
 from ipaddress import IPv4Network
 
-from config import ClientFilter
+from config.config_loader import ClientFilter
 from powermeter import Powermeter, ThrottledPowermeter
 from shelly.shelly import Shelly
 

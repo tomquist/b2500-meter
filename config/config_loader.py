@@ -166,11 +166,35 @@ def create_script_powermeter(
 def create_mqtt_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
+    topics_str = config.get(section, "TOPIC", fallback="")
+    topics = [t.strip() for t in topics_str.split(",") if t.strip()]
+
+    json_paths_str = config.get(section, "JSON_PATH", fallback=None)
+    json_paths = None
+    if json_paths_str:
+        json_paths = []
+        for p in json_paths_str.split(","):
+            p = p.strip()
+            json_paths.append(p if p else None)
+
+    # Normalization logic
+    # Case 1: Single topic, multiple JSON paths
+    if len(topics) == 1 and json_paths and len(json_paths) > 1:
+        topics = topics * len(json_paths)
+
+    # Case 2: Multiple topics, single JSON path
+    if json_paths and len(json_paths) == 1 and len(topics) > 1:
+        json_paths = json_paths * len(topics)
+
+    # Case 3: Multiple topics, no JSON path provided
+    if not json_paths and len(topics) > 0:
+        json_paths = [None] * len(topics)
+
     return MqttPowermeter(
         config.get(section, "BROKER", fallback=""),
         config.getint(section, "PORT", fallback=1883),
-        config.get(section, "TOPIC", fallback=""),
-        config.get(section, "JSON_PATH", fallback=None),
+        topics,
+        json_paths,
         config.get(section, "USERNAME", fallback=None),
         config.get(section, "PASSWORD", fallback=None),
     )

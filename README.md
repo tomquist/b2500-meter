@@ -357,16 +357,55 @@ REGISTER_TYPE = HOLDING  # or INPUT
 
 ### MQTT
 
+MQTT configuration supports various scenarios, from single topic/single phase to multiple topics for different phases.
+
+**Basic Single Phase (Legacy):**
 ```ini
 [MQTT]
 BROKER = broker.example.com
 PORT = 1883
 TOPIC = home/powermeter
-JSON_PATH = $.path.to.value (Optional for JSON payloads)
+JSON_PATH = $.power
+# THROTTLE_INTERVAL = 2
+```
+
+**Single Topic, Three Phases (List of JSON paths):**
+```ini
+[MQTT]
+BROKER = broker.example.com
+PORT = 1883
+TOPIC = home/powermeter
+# Comma-separated list of JSON paths
+JSON_PATH = $.phase1, $.phase2, $.phase3
+```
+
+**Multiple Topics, Three Phases (List of topics):**
+```ini
+[MQTT]
+BROKER = broker.example.com
+PORT = 1883
+# Comma-separated list of topics
+TOPIC = home/phase1, home/phase2, home/phase3
+# Optional: JSON paths for each topic (or single path applied to all)
+JSON_PATH = $.power, $.power, $.power
+```
+
+**Mixed Configuration:**
+```ini
+[MQTT]
+BROKER = broker.example.com
+PORT = 1883
+# Topics for each phase
+TOPIC = home/phase1, home/combined, home/combined
+# JSON paths corresponding to topics
+# First topic uses raw value (no path), second and third use paths from same topic
+JSON_PATH = , $.phase2, $.phase3
+```
+
+Common options:
+```ini
 USERNAME = mqtt_user (Optional)
 PASSWORD = mqtt_pass (Optional)
-# Per-powermeter throttling override
-# THROTTLE_INTERVAL = 2
 ```
 
 The `JSON_PATH` option is used to extract the power value from a JSON payload. The path must be a [valid JSONPath expression](https://goessner.net/articles/JsonPath/).

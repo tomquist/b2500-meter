@@ -3,6 +3,7 @@ import json
 import paho.mqtt.client as mqtt
 from jsonpath_ng import parse
 import time
+from typing import List, Union, Optional
 from config.logger import logger
 
 
@@ -20,18 +21,41 @@ class MqttPowermeter(Powermeter):
         self,
         broker: str,
         port: int,
-        topic: str,
-        json_path: str = None,
+        topics: Union[str, List[str]],
+        json_paths: Union[str, List[Optional[str]], None] = None,
         username: str = None,
         password: str = None,
     ):
         self.broker = broker
         self.port = port
-        self.topic = topic
-        self.json_path = json_path
         self.username = username
         self.password = password
-        self.value = None
+
+        # Normalize inputs to lists
+        if isinstance(topics, str):
+            self.topics = [topics]
+        else:
+            self.topics = topics
+
+        if json_paths is None:
+            self.json_paths = [None] * len(self.topics)
+        elif isinstance(json_paths, str):
+            self.json_paths = [json_paths]
+        else:
+            self.json_paths = json_paths
+
+        # Ensure topics and json_paths have the same length
+        if len(self.topics) != len(self.json_paths):
+            raise ValueError("Number of topics and JSON paths must match")
+
+        self.values = [None] * len(self.topics)
+
+        # Map unique topics to phase indices
+        self.topic_map = {}
+        for idx, topic in enumerate(self.topics):
+            if topic not in self.topic_map:
+                self.topic_map[topic] = []
+            self.topic_map[topic].append(idx)
 
         # Initialize MQTT client
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -46,29 +70,43 @@ class MqttPowermeter(Powermeter):
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         logger.info(f"Connected with result code {reason_code}")
-        # Subscribe to the topic
-        client.subscribe(self.topic)
+        # Subscribe to all unique topics
+        for topic in self.topic_map.keys():
+            client.subscribe(topic)
 
     def on_message(self, client, userdata, msg):
         payload = msg.payload.decode()
-        if self.json_path:
-            try:
-                data = json.loads(payload)
-                self.value = extract_json_value(data, self.json_path)
-            except json.JSONDecodeError:
-                logger.error("Failed to decode JSON")
-        else:
-            self.value = float(payload)
+        topic = msg.topic
+
+        if topic in self.topic_map:
+            for idx in self.topic_map[topic]:
+                json_path = self.json_paths[idx]
+                if json_path:
+                    try:
+                        data = json.loads(payload)
+                        self.values[idx] = extract_json_value(data, json_path)
+                    except json.JSONDecodeError:
+                        logger.error("Failed to decode JSON")
+                    except Exception as e:
+                        logger.error(f"Error extracting value for index {idx}: {e}")
+                else:
+                    try:
+                        self.values[idx] = float(payload)
+                    except ValueError:
+                         logger.error(f"Failed to convert payload to float: {payload}")
+
 
     def get_powermeter_watts(self):
-        if self.value is not None:
-            return [self.value]
-        else:
-            raise ValueError("No value received from MQTT")
+        # Return list of values. If any is None, we might want to return 0 or handle it.
+        # Original behavior threw ValueError if self.value was None.
+        # Here we check if any value is None.
+        if any(v is None for v in self.values):
+             raise ValueError("Not all values received from MQTT yet")
+        return self.values
 
     def wait_for_message(self, timeout=5):
         start_time = time.time()
-        while self.value is None:
+        while any(v is None for v in self.values):
             if time.time() - start_time > timeout:
                 raise TimeoutError("Timeout waiting for MQTT message")
             time.sleep(1)

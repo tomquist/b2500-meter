@@ -3,7 +3,7 @@ import threading
 import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple
-from config import ClientFilter
+from config.config_loader import ClientFilter
 from powermeter import Powermeter
 from config.logger import logger
 

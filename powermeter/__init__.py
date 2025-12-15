@@ -8,7 +8,10 @@ from .iobroker import IoBroker
 from .homeassistant import HomeAssistant
 from .vzlogger import VZLogger
 from .amisreader import AmisReader
-from .modbus import ModbusPowermeter
+try:
+    from .modbus import ModbusPowermeter
+except ImportError:
+    ModbusPowermeter = None
 from .mqtt import MqttPowermeter
 from .json_http import JsonHttpPowermeter
 from .script import Script
