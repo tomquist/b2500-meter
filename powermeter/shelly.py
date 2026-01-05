@@ -31,11 +31,6 @@ class Shelly(Powermeter):
     def get_powermeter_watts(self):
         raise NotImplementedError()
 
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()
-
 
 class Shelly1PM(Shelly):
     def get_powermeter_watts(self):

@@ -23,8 +23,3 @@ class Emlog(Powermeter):
             power_in = response["Leistung170"]
             power_out = response["Leistung270"]
             return [int(power_in) - int(power_out)]
-
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()

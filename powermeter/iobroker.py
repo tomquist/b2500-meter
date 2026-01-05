@@ -42,8 +42,3 @@ class IoBroker(Powermeter):
                 if item["id"] == self.power_output_alias:
                     power_out = int(item["val"])
             return [power_in - power_out]
-
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()

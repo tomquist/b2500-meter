@@ -17,8 +17,3 @@ class ESPHome(Powermeter):
     def get_powermeter_watts(self):
         ParsedData = self.get_json(f"/{self.domain}/{self.id}")
         return [int(ParsedData["value"])]
-
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()

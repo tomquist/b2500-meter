@@ -18,8 +18,3 @@ class Shrdzm(Powermeter):
             f"/getLastData?user={self.user}&password={self.password}"
         )
         return [int(int(response["1.7.0"]) - int(response["2.7.0"]))]
-
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()

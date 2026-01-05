@@ -79,7 +79,3 @@ class ThrottledPowermeter(Powermeter):
                     )
                     return self.last_values
                 raise
-
-    def close(self):
-        """Close the wrapped powermeter to prevent memory leaks"""
-        self.wrapped_powermeter.close()

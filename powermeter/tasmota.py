@@ -47,8 +47,3 @@ class Tasmota(Powermeter):
             power_in = value[self.json_power_input_mqtt_label]
             power_out = value[self.json_power_output_mqtt_label]
             return [int(power_in) - int(power_out)]
-
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()

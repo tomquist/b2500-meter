@@ -52,8 +52,3 @@ class JsonHttpPowermeter(Powermeter):
         for path in self.json_paths:
             values.append(extract_json_value(data, path))
         return values
-
-    def close(self):
-        """Close the HTTP session to prevent memory leaks"""
-        if self.session:
-            self.session.close()
