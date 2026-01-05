@@ -255,6 +255,14 @@ def main():
             for future in futures:
                 future.result()
     finally:
+        # Close all powermeters to prevent memory leaks
+        logger.info("Closing powermeters...")
+        for powermeter, _ in powermeters:
+            try:
+                powermeter.close()
+            except Exception as e:
+                logger.error(f"Error closing powermeter: {e}")
+
         # Ensure health service is properly stopped on exit
         logger.info("Stopping health check service...")
         stop_health_service()

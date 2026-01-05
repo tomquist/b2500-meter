@@ -115,6 +115,11 @@ class TQEnergyManager(Powermeter):
             raise _SessionExpired
         return data
 
+    def close(self):
+        """Close the HTTP session to prevent memory leaks"""
+        if self._sess:
+            self._sess.close()
+
 
 class _SessionExpired(RuntimeError):
     """Internal marker – triggers transparent re-login."""

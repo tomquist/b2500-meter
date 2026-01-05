@@ -89,3 +89,8 @@ class HomeAssistant(Powermeter):
                 power_out = float(response["state"])
                 results.append(power_in - power_out)
             return results
+
+    def close(self):
+        """Close the HTTP session to prevent memory leaks"""
+        if self.session:
+            self.session.close()

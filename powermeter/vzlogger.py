@@ -15,3 +15,8 @@ class VZLogger(Powermeter):
 
     def get_powermeter_watts(self):
         return [int(self.get_json()["data"][0]["tuples"][0][1])]
+
+    def close(self):
+        """Close the HTTP session to prevent memory leaks"""
+        if self.session:
+            self.session.close()

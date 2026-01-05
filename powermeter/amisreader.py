@@ -14,3 +14,8 @@ class AmisReader(Powermeter):
     def get_powermeter_watts(self):
         response = self.get_json("/rest")
         return [int(response["saldo"])]
+
+    def close(self):
+        """Close the HTTP session to prevent memory leaks"""
+        if self.session:
+            self.session.close()

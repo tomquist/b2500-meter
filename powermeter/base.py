@@ -6,3 +6,7 @@ class Powermeter:
 
     def get_powermeter_watts(self):
         raise NotImplementedError()
+
+    def close(self):
+        """Close any open resources (sessions, connections, etc.)"""
+        pass
