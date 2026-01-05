@@ -103,16 +103,22 @@ No response object is stored - it's immediately parsed and discarded.
 
 ## Test Scripts
 
-Three test scripts are provided:
+Six test scripts are provided:
 
 1. **test_memory_leak.py** - Basic reproduction test
 2. **investigate_leak_causes.py** - Tests 6 major leak scenarios
 3. **test_hidden_references.py** - Tests hidden reference leaks
+4. **test_dual_request_leak.py** - Tests fork's dual-request pattern
+5. **test_threadpool_leak.py** - Tests ThreadPoolExecutor pattern
+6. **test_throttling_leak.py** - Tests ThrottledPowermeter wrapper
 
 Run them with:
 ```bash
 python3 investigate_leak_causes.py
 python3 test_hidden_references.py
+python3 test_dual_request_leak.py
+python3 test_threadpool_leak.py
+python3 test_throttling_leak.py
 ```
 
 ## Additional Tests
@@ -145,6 +151,25 @@ self._executor.submit(self._handle_request, sock, data, addr)
 - +0.13 MB after `executor.shutdown(wait=True)`
 - **Conclusion: ThreadPoolExecutor does NOT cause the leak** ✅
 
+### ThrottledPowermeter Pattern
+
+The issue reporter mentioned using throttling, so tested the ThrottledPowermeter wrapper:
+
+```python
+class ThrottledPowermeter:
+    def __init__(self, wrapped_powermeter, throttle_interval):
+        self.wrapped_powermeter = wrapped_powermeter
+        self.throttle_interval = throttle_interval
+        self.last_values = None  # Caches floats, not response objects
+        self.lock = threading.Lock()
+```
+
+**Test Results (5000 polls):**
+- Throttled (0.01s interval): +0.13 MB → 11 MB projected over 5 days
+- No throttling: +0.01 MB → 1 MB projected over 5 days
+- Throttled fork pattern: +0.02 MB → 2 MB projected over 5 days
+- **Conclusion: Throttling does NOT cause the leak** ✅
+
 ## Conclusion
 
 The memory leak is **NOT caused by**:
@@ -154,6 +179,7 @@ The memory leak is **NOT caused by**:
 - ✅ JSON parsing
 - ✅ Threading (ThreadPoolExecutor)
 - ✅ The fork's dual-request pattern
+- ✅ ThrottledPowermeter wrapper
 
 The memory leak **IS caused by**:
 - ⚠️ Something storing response objects (36.78 MB per 5K requests → 3.1 GB over 5 days)
