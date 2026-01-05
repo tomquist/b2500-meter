@@ -115,6 +115,36 @@ python3 investigate_leak_causes.py
 python3 test_hidden_references.py
 ```
 
+## Additional Tests
+
+### Fork's Dual-Request Pattern
+
+The user's fork (`jwatzk/b2500-meter`) adds `POWER_CALCULATE` support, making **2 HTTP requests per poll** instead of 1:
+
+```python
+power_in = int(self.get_json(self.power_input_uuid)["data"][0]["tuples"][0][1])
+power_out = int(self.get_json(self.power_output_uuid)["data"][0]["tuples"][0][1])
+return [power_in - power_out]
+```
+
+**Test Results:**
+- Single request/poll: +0.12 MB per 5K polls → 10 MB over 5 days
+- Dual request/poll: +0.02 MB per 5K polls → 2 MB over 5 days
+- **Conclusion: Fork's pattern does NOT cause the leak** ✅
+
+### ThreadPoolExecutor Pattern
+
+The Shelly UDP server uses `ThreadPoolExecutor.submit()` without tracking futures:
+
+```python
+self._executor.submit(self._handle_request, sock, data, addr)
+```
+
+**Test Results:**
+- +17.57 MB while 10,000 tasks running
+- +0.13 MB after `executor.shutdown(wait=True)`
+- **Conclusion: ThreadPoolExecutor does NOT cause the leak** ✅
+
 ## Conclusion
 
 The memory leak is **NOT caused by**:
@@ -122,9 +152,36 @@ The memory leak is **NOT caused by**:
 - ✅ Connection pool accumulation
 - ✅ urllib3 internals
 - ✅ JSON parsing
-- ✅ Threading
+- ✅ Threading (ThreadPoolExecutor)
+- ✅ The fork's dual-request pattern
 
 The memory leak **IS caused by**:
-- ⚠️ Something storing response objects (36.78 MB per 5K requests)
+- ⚠️ Something storing response objects (36.78 MB per 5K requests → 3.1 GB over 5 days)
 
-**Next steps**: The issue reporter needs to check their modified vzlogger fork or provide access for debugging, as the leak cannot be reproduced with the base implementation.
+### Likely Culprits (External to Application Code)
+
+Since no leaks were found in the application code or fork:
+
+1. **Docker logging accumulation** - Container logs not being rotated
+   ```bash
+   # Check Docker logs
+   docker logs --tail 100 <container_id>
+   du -sh /var/lib/docker/containers/*/*-json.log
+   ```
+
+2. **Python DEBUG logging** - If logger level is DEBUG, it may retain references
+   ```python
+   # Check if this is in the config
+   [GENERAL]
+   LOGLEVEL = DEBUG  # Could cause accumulation
+   ```
+
+3. **External vzlogger server** - The actual vzlogger service (not this client) may have issues
+
+4. **Python/requests version bug** - Specific to user's environment
+   ```bash
+   python3 --version
+   pip freeze | grep requests
+   ```
+
+**Next steps**: The issue reporter needs to check Docker logging configuration and try running with minimal logging first. The application code itself is clean.
