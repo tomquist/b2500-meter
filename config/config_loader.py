@@ -20,6 +20,7 @@ from powermeter import (
     ModbusPowermeter,
     MqttPowermeter,
     Script,
+    Sml,
     ESPHome,
     JsonHttpPowermeter,
     TQEnergyManager,
@@ -34,6 +35,7 @@ IOBROKER_SECTION = "IOBROKER"
 HOMEASSISTANT_SECTION = "HOMEASSISTANT"
 VZLOGGER_SECTION = "VZLOGGER"
 SCRIPT_SECTION = "SCRIPT"
+SML_SECTION = "SML"
 ESPHOME_SECTION = "ESPHOME"
 AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
@@ -115,6 +117,8 @@ def create_powermeter(
         return create_vzlogger_powermeter(section, config)
     elif section.startswith(SCRIPT_SECTION):
         return create_script_powermeter(section, config)
+    elif section.startswith(SML_SECTION):
+        return create_sml_powermeter(section, config)
     elif section.startswith(ESPHOME_SECTION):
         return create_esphome_powermeter(section, config)
     elif section.startswith(AMIS_READER_SECTION):
@@ -161,6 +165,12 @@ def create_script_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
     return Script(config.get(section, "COMMAND", fallback=""))
+
+
+def create_sml_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return Sml(config.get(section, "SERIAL", fallback=""))
 
 
 def create_mqtt_powermeter(

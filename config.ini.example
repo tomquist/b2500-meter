@@ -146,3 +146,6 @@ THROTTLE_INTERVAL = 0
 #COMMAND = /path/to/your/script.sh
 ## Per-powermeter throttling override (optional)
 #THROTTLE_INTERVAL = 1
+
+#[SML]
+#SERIAL = /dev/ttyUSB0

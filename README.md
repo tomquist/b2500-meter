@@ -414,6 +414,15 @@ You can also use a custom script to get the power values. The script should outp
 COMMAND = /path/to/your/script.sh
 ```
 
+### SML
+
+```ini
+[SML]
+SERIAL = /dev/ttyUSB0
+```
+
+Read from a powermeter that is connected via usb and that transmits SML (Smart Message Language) data via a IR head.
+
 ### Multiple Powermeters
 
 You can configure multiple powermeters by adding additional sections with the same prefix (e.g. `[SHELLY<unique_suffix>]`). Each powermeter should specify which client IP addresses are allowed to access it using the NETMASK setting.
