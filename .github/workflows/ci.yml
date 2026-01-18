@@ -2,10 +2,10 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
     tags: [ "*.*.*" ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 permissions:
   packages: write
@@ -66,6 +66,12 @@ jobs:
       dockerfile: ./Dockerfile
       image-suffix: ""
       digest-prefix: "digests-base-"
+      tags: |
+        type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
       push: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
 
   merge:
@@ -76,6 +82,12 @@ jobs:
       registry: ghcr.io
       image-suffix: ""
       digest-prefix: "digests-base-"
+      tags: |
+        type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
 
   build-addon:
     strategy:
@@ -96,6 +108,12 @@ jobs:
         BUILD_FROM=ghcr.io/hassio-addons/base:14.2.2
       image-suffix: "-addon"
       digest-prefix: "digests-addon-"
+      tags: |
+        type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
       push: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
 
   merge-addon:
@@ -106,3 +124,9 @@ jobs:
       registry: ghcr.io
       image-suffix: "-addon"
       digest-prefix: "digests-addon-"
+      tags: |
+        type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}

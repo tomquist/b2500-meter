@@ -13,6 +13,11 @@ on:
       digest-prefix:
         required: true
         type: string
+      tags:
+        required: false
+        type: string
+        description: "Docker metadata tags to apply"
+        default: ""
 
 jobs:
   merge:
@@ -37,6 +42,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ steps.lower-repo.outputs.IMAGE_NAME }}
+          tags: ${{ inputs.tags }}
       - name: Log in to Container registry
         uses: docker/login-action@v3
         with:

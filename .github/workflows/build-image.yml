@@ -37,6 +37,11 @@ on:
         type: boolean
         description: "Whether to push the image to registry"
         default: true
+      tags:
+        required: false
+        type: string
+        description: "Docker metadata tags to apply"
+        default: ""
 
 jobs:
   build:
@@ -57,6 +62,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ steps.lower-repo.outputs.IMAGE_NAME }}
+          tags: ${{ inputs.tags }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to Container registry
