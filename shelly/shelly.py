@@ -23,6 +23,8 @@ class Shelly:
         self._value_mutex = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=5)
         self._send_lock = threading.Lock()
+        self._in_flight_lock = threading.Lock()
+        self._in_flight_senders = set()
 
     def _calculate_derived_values(self, power):
         decimal_point_enforcer = 0.001
@@ -116,6 +118,13 @@ class Shelly:
         except Exception as e:
             logger.error(f"Error processing message: {e}")
 
+    def _handle_request_with_tracking(self, sock, data, addr):
+        try:
+            self._handle_request(sock, data, addr)
+        finally:
+            with self._in_flight_lock:
+                self._in_flight_senders.discard(addr[0])
+
     def udp_server(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("", self._udp_port))
@@ -124,7 +133,17 @@ class Shelly:
         try:
             while not self._stop:
                 data, addr = sock.recvfrom(1024)
-                self._executor.submit(self._handle_request, sock, data, addr)
+                with self._in_flight_lock:
+                    if addr[0] in self._in_flight_senders:
+                        logger.debug(
+                            "Discarding request from %s; previous request still in progress",
+                            addr[0],
+                        )
+                        continue
+                    self._in_flight_senders.add(addr[0])
+                self._executor.submit(
+                    self._handle_request_with_tracking, sock, data, addr
+                )
 
         finally:
             sock.close()
