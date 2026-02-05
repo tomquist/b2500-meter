@@ -14,7 +14,8 @@ This project emulates Smart Meter devices for Marstek storage systems such as th
 
 The B2500 Meter project can be installed and run in several ways depending on your needs and environment:
 
-1. **Home Assistant Add-on** (Recommended for Home Assistant users)
+1. **Home Assistant App (formerly known as add-on)** (Recommended for Home Assistant users)
+   - Home Assistant uses **Apps (formerly known as add-ons)** to install and manage Supervisor-managed software
    - Easiest installation method if you're using Home Assistant
    - Provides a user-friendly interface for configuration
    - Integrates seamlessly with your Home Assistant installation
@@ -29,22 +30,22 @@ The B2500 Meter project can be installed and run in several ways depending on yo
    - Requires Python environment setup
    - More flexible for customization and development
 
-### Home Assistant Add-on Installation
+### Home Assistant App Installation
 
 1. **Add the Repository to Home Assistant**
 
    [![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftomquist%2Fb2500-meter)
 
-3. **Install the Add-on**
-   - Click on "Add-on Store" in the bottom right corner
-   - The B2500 Meter add-on should appear in the add-on store
+3. **Install the App**
+   - Click on "App Store" in the bottom right corner
+   - The B2500 Meter app should appear in the app store
    - Click on it and then click "Install"
 
-4. **Configure the Add-on**
-   You can configure the add-on in two ways:
+4. **Configure the App**
+   You can configure the app in two ways:
 
-   A) Using the Add-on Configuration Interface:
-   - After installation, go to the add-on's Configuration tab
+   A) Using the App Configuration Interface:
+   - After installation, go to the app's Configuration tab
    - For single-phase monitoring:
      - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
    - For three-phase monitoring:
@@ -64,13 +65,13 @@ The B2500 Meter project can be installed and run in several ways depending on yo
 
    B) Using a Custom Configuration File for Advanced Configuration:
    - Create a `config.ini` file based on the examples in the [Configuration](#configuration) section
-   - Place the file in `/addon_configs/a0ef98c5_b2500_meter/`. You can do that via "File editor" Addon in Home Assistant. Make sure to disable the "Enforce Basepath" setting in the File editor Addon config to access the `/addon_configs` folder.
-   - In the add-on configuration, set `Custom Config` to the filename (e.g., "config.ini" without the path)
+   - Place the file in `/addon_configs/a0ef98c5_b2500_meter/`. You can do that via the "File editor" App in Home Assistant. Make sure to disable the "Enforce Basepath" setting in the File editor App config to access the `/addon_configs` folder.
+   - In the app configuration, set `Custom Config` to the filename (e.g., "config.ini" without the path)
    - When using a custom configuration file, other configuration options will be ignored
 
-5. **Start the Add-on**
-   - Go to the add-on's Info tab
-   - Click "Start" to run the add-on
+5. **Start the App**
+   - Go to the app's Info tab
+   - Click "Start" to run the app
 
 ### Docker Installation
 
@@ -512,7 +513,7 @@ A: Create a template sensor in Home Assistant:
 {{ states('sensor.power_in_kilowatts') | float * 1000 }}
 ```
 
-### How do I set up three-phase measurement in the Home Assistant Addon?
+### How do I set up three-phase measurement in the Home Assistant App?
 
 A: Use comma-separated entity IDs:
 ```
@@ -549,11 +550,11 @@ A: No, this project is Marstek-specific. For other brands, see [uni-meter](https
 ### I get permission errors when binding to port 1010/2220.
 
 A: Ports below 1024 require root privileges on Linux. Solutions:
-- Use Docker or Home Assistant Add-on (recommended)
+- Use Docker or the Home Assistant App (recommended)
 - Use `setcap` to grant permissions
 - Run as root (not recommended)
 
-### I get parsing errors on startup or the add-on crashes.
+### I get parsing errors on startup or the app crashes.
 
 A: Common causes:
 - Incorrect entity IDs or API access
