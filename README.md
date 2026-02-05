@@ -36,12 +36,12 @@ The B2500 Meter project can be installed and run in several ways depending on yo
 
    [![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftomquist%2Fb2500-meter)
 
-3. **Install the App**
+2. **Install the App**
    - Click on "App Store" in the bottom right corner
    - The B2500 Meter app should appear in the app store
    - Click on it and then click "Install"
 
-4. **Configure the App**
+3. **Configure the App**
    You can configure the app in two ways:
 
    A) Using the App Configuration Interface:
@@ -69,7 +69,7 @@ The B2500 Meter project can be installed and run in several ways depending on yo
    - In the app configuration, set `Custom Config` to the filename (e.g., "config.ini" without the path)
    - When using a custom configuration file, other configuration options will be ignored
 
-5. **Start the App**
+4. **Start the App**
    - Go to the app's Info tab
    - Click "Start" to run the app
 
