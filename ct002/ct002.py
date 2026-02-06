@@ -252,6 +252,7 @@ class CT002:
         return self.allow_any_ct_mac
 
     def _handle_request(self, data, addr):
+        logger.debug("CT002 request from %s: %s", addr, data.hex())
         fields, error = parse_request(data)
         if error:
             logger.debug("Invalid CT002 request from %s: %s", addr, error)
@@ -260,11 +261,28 @@ class CT002:
             logger.debug("CT002 request from %s missing required fields", addr)
             return None
         if not self._validate_ct_mac(fields):
-            logger.debug("Ignoring CT002 request from %s due to CT MAC mismatch", addr)
+            logger.debug(
+                "Ignoring CT002 request from %s due to CT MAC mismatch (req=%s, cfg=%s, allow_any=%s)",
+                addr,
+                fields[3] if len(fields) > 3 else None,
+                self.ct_mac,
+                self.allow_any_ct_mac,
+            )
             return None
         consumer_id = self._consumer_key(addr, fields)
         reported_charge = parse_int(fields[4] if len(fields) > 4 else 0)
         reported_discharge = parse_int(fields[5] if len(fields) > 5 else 0)
+        logger.debug(
+            "CT002 parsed fields from %s: meter_dev_type=%s meter_mac=%s ct_type=%s ct_mac=%s charge=%s discharge=%s consumer_id=%s",
+            addr,
+            fields[0] if len(fields) > 0 else None,
+            fields[1] if len(fields) > 1 else None,
+            fields[2] if len(fields) > 2 else None,
+            fields[3] if len(fields) > 3 else None,
+            reported_charge,
+            reported_discharge,
+            consumer_id,
+        )
         self._update_consumer_report(consumer_id, reported_charge, reported_discharge)
 
         updated = self._call_before_send(addr, fields, consumer_id)
@@ -281,7 +299,12 @@ class CT002:
         except Exception as exc:
             logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
             return None
-        logger.debug("CT002 response to %s: %s", addr, response.hex())
+        logger.debug(
+            "CT002 response to %s: %s (fields=%s)",
+            addr,
+            response.hex(),
+            response_fields,
+        )
         return response
 
     def udp_server(self):
