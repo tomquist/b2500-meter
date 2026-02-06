@@ -144,9 +144,9 @@ DEVICE_TYPE = ct001
 #DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# Sum power values of all phases and report on phase 1 (ct001 only and default is False)
+# Sum power values of all phases and report on phase 1 (ct001/ct002/ct003 only and default is False)
 DISABLE_SUM_PHASES = False
-# Send absolute values (necessary for storage system) (ct001 only and default is False)
+# Send absolute values (necessary for storage system) (ct001/ct002/ct003 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
 # Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
@@ -171,6 +171,8 @@ CT_TYPE = HME-4
 CT_MAC = 001122334455
 # Allow any CT MAC (permissive mode). Set to False to strictly require CT_MAC.
 ALLOW_ANY_CT_MAC = True
+# UDP port to bind for CT002/CT003 (default 12345).
+UDP_PORT = 12345
 # WiFi RSSI reported to the storage system
 WIFI_RSSI = -50
 # Info index reported to the storage system
