@@ -158,6 +158,7 @@ class CT002:
         ct_type="HME-4",
         wifi_rssi=-50,
         info_idx=0,
+        discharge_from_total=False,
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -168,6 +169,7 @@ class CT002:
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
+        self.discharge_from_total = discharge_from_total
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -255,6 +257,13 @@ class CT002:
         response_fields += ["0"] * 4
         response_fields.append(str(self.wifi_rssi))
         response_fields.append(str(self.info_idx))
+        if self.discharge_from_total:
+            response_fields.append("0")
+            response_fields += ["0"] * 4
+            response_fields.append("0")
+            response_fields.append(str(round(total_power)))
+            response_fields += ["0"] * 4
+            response_fields.append(str(round(total_power)))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
