@@ -146,7 +146,7 @@ DEVICE_TYPE = ct001
 SKIP_POWERMETER_TEST = False
 # Sum power values of all phases and report on phase 1 (ct001/ct002/ct003 only and default is False)
 DISABLE_SUM_PHASES = False
-# Send absolute values (necessary for storage system) (ct001 default False; ct002/ct003 default True)
+# Send absolute values (necessary for storage system) (ct001 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
 # Interval for sending power values in seconds (ct001 only and default is 1)
 POLL_INTERVAL = 1
