@@ -9,7 +9,7 @@ This project emulates Smart Meter devices for Marstek storage systems such as th
 - Shelly EM gen3
 - Shelly Pro EM50
 
-**Note:** If your B2500 or Marstek storage system supports it, always prefer a Shelly device type over CT001/CT002/CT003 for better compatibility and reliability.
+**Note:** If your B2500 or Marstek storage system supports it, always prefer a Shelly device type over CT001 for better compatibility and reliability.
 
 ## Getting Started
 
@@ -62,7 +62,7 @@ The B2500 Meter project can be installed and run in several ways depending on yo
      - `shellyemg3`: Shelly EM gen3 emulator
      - `shellyproem50`: Shelly Pro EM50 emulator
      
-     **Important:** Always prefer a Shelly device type over CT001/CT002/CT003 if supported by your energy storage system.
+     **Important:** Always prefer a Shelly device type over CT001 if supported by your energy storage system.
    - Click "Save" to apply the configuration
 
    B) Using a Custom Configuration File for Advanced Configuration:
