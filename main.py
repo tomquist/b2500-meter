@@ -16,6 +16,19 @@ from health_service import start_health_service, stop_health_service
 from marstek_api import MarstekConfig, ensure_managed_fake_device, MarstekApiError
 
 
+def parse_phase_map(value):
+    mapping = {}
+    if not value:
+        return mapping
+    for entry in value.split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        mac, phase = entry.split(":", 1)
+        mapping[mac.strip().lower()] = phase.strip().upper()
+    return mapping
+
+
 def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
     """Test powermeter configuration with minimal retry logic for edge cases."""
     max_retries = 3
@@ -127,6 +140,7 @@ def run_device(
         discharge_from_total = cfg.getboolean(
             ct_section, "DISCHARGE_FROM_TOTAL", fallback=False
         )
+        phase_map = cfg.get(ct_section, "PHASE_MAP", fallback="")
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
         allow_any_ct_mac = cfg.getboolean(
@@ -143,6 +157,7 @@ def run_device(
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
         logger.debug(f"Discharge From Total: {discharge_from_total}")
+        logger.debug(f"Phase Map: {phase_map}")
 
         device = CT002(
             udp_port=ct_udp_port,
@@ -152,6 +167,7 @@ def run_device(
             wifi_rssi=wifi_rssi,
             info_idx=info_idx,
             discharge_from_total=discharge_from_total,
+            phase_map=parse_phase_map(phase_map),
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
             allow_any_ct_mac=allow_any_ct_mac,
