@@ -45,6 +45,7 @@ options:
   ct_info_idx: 0
   ct_auto_info_idx: false
   ct_echo_charge_discharge: false
+  ct_checksum_mode: "full"
   log_level: "info"
 schema:
   power_input_alias: str
@@ -61,5 +62,6 @@ schema:
   ct_info_idx: int?
   ct_auto_info_idx: bool?
   ct_echo_charge_discharge: bool?
+  ct_checksum_mode: str?
   log_level: list(critical|error|warning|info|debug)
   custom_config: str?
