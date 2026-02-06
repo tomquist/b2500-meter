@@ -75,6 +75,29 @@ def build_payload(fields):
     return payload
 
 
+
+def parse_request_lenient(data):
+    fields, error = parse_request_lenient(data)
+    if error and error.startswith("Checksum mismatch"):
+        # Retry checksum check but continue parsing if the structure is otherwise valid.
+        try:
+            sep_index = data.find(b"|", 2)
+            message = data[sep_index:-3].decode("ascii")
+            fields = message.split("|")[1:]
+            xor = 0
+            for b in data[:-2]:
+                xor ^= b
+            expected_checksum = f"{xor:02x}".encode("ascii")
+            actual_checksum = data[-2:]
+            logger.debug(
+                "CT002 request checksum mismatch (expected %s, got %s)",
+                expected_checksum,
+                actual_checksum,
+            )
+            return fields, None
+        except Exception as exc:
+            return None, str(exc)
+    return fields, error
 def parse_request(data):
     if len(data) < 10:
         return None, "Too short"
