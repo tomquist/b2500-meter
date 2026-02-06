@@ -124,6 +124,8 @@ def run_device(
         )
 
         ct_section = "CT002"
+        if device_type == "ct003" and cfg.has_section("CT003"):
+            ct_section = "CT003"
         ct_device_type = cfg.get(ct_section, "DEVICE_TYPE", fallback="HMG-50")
         ct_type_default = "HME-4" if device_type == "ct002" else "HME-3"
         ct_type = cfg.get(ct_section, "CT_TYPE", fallback=ct_type_default)

@@ -18,7 +18,7 @@ The CT002 and CT003 share the **same protocol**. The only difference is the CT t
 
 All messages (request and response) are ASCII payloads wrapped with control bytes and a checksum.
 
-```
+```text
 SOH (0x01)
 STX (0x02)
 <LENGTH ASCII digits>
@@ -61,7 +61,7 @@ are connected (see “Multi‑consumer behavior”).
 
 ### Example Request (human readable)
 
-```
+```text
 <SOH><STX>56|HMG-50|AABBCCDDEEFF|HME-4|112233445566|0|0<ETX>3a
 ```
 
@@ -106,7 +106,7 @@ The emulator therefore:
 - Tracks per‑consumer `charge_power` and `discharge_power` from the request fields.
 - When responding to consumer **X**, it adjusts the response by:
 
-```
+```text
 adjustment = sum(other.discharge_power) - sum(other.charge_power)
 ```
 

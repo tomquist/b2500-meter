@@ -18,6 +18,15 @@ def test_parse_request_checksum_error():
     assert "Checksum" in error
 
 
+def test_parse_request_checksum_space_tolerance():
+    fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
+    payload = bytearray(build_payload(fields))
+    payload[-2] = ord(" ")
+    parsed, error = parse_request(payload)
+    assert error is None
+    assert parsed == fields
+
+
 def test_build_payload_length_and_checksum():
     fields = ["HMG-50", "AABBCCDDEEFF", "HME-3", "112233445566", "0", "0"]
     payload = build_payload(fields)
@@ -38,3 +47,5 @@ def test_checksum_matches_helper():
     payload = bytearray([SOH, STX, 0x30, 0x30, ETX])
     checksum = calculate_checksum(payload)
     assert isinstance(checksum, int)
+    expected = SOH ^ STX ^ 0x30 ^ 0x30 ^ ETX
+    assert checksum == expected

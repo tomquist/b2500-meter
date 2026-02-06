@@ -103,6 +103,8 @@ def parse_request(data):
     expected_checksum = f"{xor:02x}".encode("ascii")
     actual_checksum = data[-2:]
     if actual_checksum.lower() != expected_checksum:
+        # Tolerate a leading space in the checksum: some firmware versions
+        # emit a space instead of the high hex nibble.
         if actual_checksum[0:1] == b" " and actual_checksum[1:2].lower() == expected_checksum[1:2]:
             pass
         else:
@@ -195,7 +197,7 @@ class CT002:
 
     def _build_response_fields(self, request_fields, values, adjustment):
         phase_a, phase_b, phase_c = values
-        if adjustment:
+        if adjustment != 0:
             phase_a += adjustment
         total_power = phase_a + phase_b + phase_c
         meter_dev_type = request_fields[0] if len(request_fields) > 0 else self.device_type
@@ -207,10 +209,10 @@ class CT002:
             meter_mac,
             ct_type,
             ct_mac,
-            str(int(round(phase_a))),
-            str(int(round(phase_b))),
-            str(int(round(phase_c))),
-            str(int(round(total_power))),
+            str(round(phase_a)),
+            str(round(phase_b)),
+            str(round(phase_c)),
+            str(round(total_power)),
         ]
         response_fields += ["0"] * 4
         response_fields.append(str(self.wifi_rssi))
@@ -238,13 +240,13 @@ class CT002:
         fields, error = parse_request(data)
         if error:
             logger.debug("Invalid CT002 request from %s: %s", addr, error)
-            return
+            return None
         if len(fields) < 4:
             logger.debug("CT002 request from %s missing required fields", addr)
-            return
+            return None
         if not self._validate_ct_mac(fields):
             logger.debug("Ignoring CT002 request from %s due to CT MAC mismatch", addr)
-            return
+            return None
         consumer_id = self._consumer_key(addr, fields)
         reported_charge = parse_int(fields[4] if len(fields) > 4 else 0)
         reported_discharge = parse_int(fields[5] if len(fields) > 5 else 0)
@@ -269,15 +271,16 @@ class CT002:
 
     def udp_server(self):
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         udp_sock.bind(("", self.udp_port))
+        udp_sock.settimeout(1.0)
         logger.info("CT002 UDP server listening on port %s", self.udp_port)
         try:
             while not self._stop:
-                udp_sock.settimeout(1.0)
+                self._cleanup_consumers()
                 try:
                     data, addr = udp_sock.recvfrom(1024)
                 except socket.timeout:
-                    self._cleanup_consumers()
                     continue
                 current_time = time.time()
                 last_time = self._last_response_time.get(addr)
@@ -292,7 +295,7 @@ class CT002:
             udp_sock.close()
 
     def start(self):
-        if self._udp_thread:
+        if self._udp_thread and self._udp_thread.is_alive():
             return
         self._stop = False
         self._udp_thread = threading.Thread(target=self.udp_server)
