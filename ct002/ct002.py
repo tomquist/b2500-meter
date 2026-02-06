@@ -2,6 +2,7 @@ import socket
 import threading
 import time
 import inspect
+import json
 from typing import Optional
 from config.logger import logger
 
@@ -163,6 +164,7 @@ class CT002:
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
+        override_path=None,
     ):
         self.udp_port = udp_port
         self.device_type = device_type
@@ -177,6 +179,7 @@ class CT002:
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
         self.before_send = None
+        self.override_path = override_path
         self._stop = False
         self._udp_thread = None
         self._values_by_consumer = {}
@@ -260,6 +263,18 @@ class CT002:
                 total_discharge += report.get("discharge", 0)
         return total_discharge - total_charge
 
+    def _load_override(self):
+        if not self.override_path:
+            return None
+        try:
+            with open(self.override_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                return data
+        except Exception as exc:
+            logger.debug("CT002 override load failed: %s", exc)
+        return None
+
     def _build_response_fields(self, request_fields, values, adjustment, reported_charge=0, reported_discharge=0, consumer_id=None):
         if not values or len(values) != 3:
             values = [0, 0, 0]
@@ -303,6 +318,11 @@ class CT002:
                 response_fields[8 + phase_idx] = "1"
                 response_fields[15 + phase_idx] = str(round(total_power))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
+        override = self._load_override()
+        if override:
+            for idx, label in enumerate(RESPONSE_LABELS[4:], start=4):
+                if label in override:
+                    response_fields[idx] = str(override[label])
         return response_fields
 
     def _call_before_send(self, addr, fields, consumer_id):
