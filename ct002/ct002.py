@@ -159,6 +159,7 @@ class CT002:
         wifi_rssi=-50,
         info_idx=0,
         discharge_from_total=False,
+        phase_map=None,
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -170,6 +171,8 @@ class CT002:
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
         self.discharge_from_total = discharge_from_total
+        self.phase_map = phase_map or {}
+        self._phase_assignments = {}
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -222,6 +225,26 @@ class CT002:
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
 
+    def _assign_phase(self, consumer_id):
+        if consumer_id in self.phase_map:
+            return self.phase_map[consumer_id]
+        if consumer_id in self._phase_assignments:
+            return self._phase_assignments[consumer_id]
+        phases = ["A", "B", "C"]
+        assigned = set(self._phase_assignments.values())
+        for phase in phases:
+            if phase not in assigned:
+                self._phase_assignments[consumer_id] = phase
+                return phase
+        # fallback round-robin
+        phase = phases[len(self._phase_assignments) % len(phases)]
+        self._phase_assignments[consumer_id] = phase
+        return phase
+
+    def _phase_index(self, phase):
+        mapping = {"A": 0, "B": 1, "C": 2}
+        return mapping.get(phase, 0)
+
     def _get_adjustment_for_consumer(self, consumer_id):
         with self._values_lock:
             total_charge = 0
@@ -258,12 +281,18 @@ class CT002:
         response_fields.append(str(self.wifi_rssi))
         response_fields.append(str(self.info_idx))
         if self.discharge_from_total:
+            phase = self._assign_phase(meter_mac)
+            phase_idx = self._phase_index(phase)
             response_fields.append("0")
             response_fields += ["0"] * 4
             response_fields.append("0")
-            response_fields.append(str(round(total_power)))
+            response_fields.append("0")
             response_fields += ["0"] * 4
-            response_fields.append(str(round(total_power)))
+            response_fields.append("0")
+            # set chrg_nb flag for selected phase
+            response_fields[8 + phase_idx] = "1"
+            # set dchrg power for selected phase
+            response_fields[20 + phase_idx] = str(round(total_power))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
