@@ -263,10 +263,10 @@ class CT002:
         ct_type = self.ct_type
         ct_mac = self.ct_mac if self.ct_mac else (request_fields[3] if len(request_fields) > 3 else "")
         response_fields = [
-            meter_dev_type,
-            meter_mac,
             ct_type,
             ct_mac,
+            meter_dev_type,
+            meter_mac,
             str(round(phase_a)),
             str(round(phase_b)),
             str(round(phase_c)),
