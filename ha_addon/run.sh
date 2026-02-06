@@ -52,6 +52,15 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
+        echo "[CT002]"
+        echo "DEVICE_TYPE=$(bashio::config 'ct_device_type')"
+        echo "CT_TYPE=$(bashio::config 'ct_type')"
+        echo "CT_MAC=$(bashio::config 'ct_mac')"
+        echo "ALLOW_ANY_CT_MAC=$(bashio::config 'ct_allow_any_mac')"
+        echo "WIFI_RSSI=$(bashio::config 'ct_wifi_rssi')"
+        echo "INFO_IDX=$(bashio::config 'ct_info_idx')"
+        echo ""
+
         marstek_auto_register_ct_device="false"
         if bashio::config.has_value 'marstek_auto_register_ct_device'; then
             marstek_auto_register_ct_device="$(bashio::config 'marstek_auto_register_ct_device')"
