@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List, Tuple
 from config.config_loader import read_all_powermeter_configs, ClientFilter
 from ct001 import CT001
+from ct002 import CT002
 from powermeter import Powermeter
 from shelly import Shelly
 from collections import OrderedDict
@@ -110,6 +111,77 @@ def run_device(
 
         device.before_send = update_readings
 
+    elif device_type in ["ct002", "ct003"]:
+        disable_sum = (
+            args.disable_sum
+            if args.disable_sum is not None
+            else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
+        )
+        disable_absolute = (
+            args.disable_absolute
+            if args.disable_absolute is not None
+            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=False)
+        )
+
+        ct_section = "CT002"
+        ct_device_type = cfg.get(ct_section, "DEVICE_TYPE", fallback="HMG-50")
+        ct_type_default = "HME-4" if device_type == "ct002" else "HME-3"
+        ct_type = cfg.get(ct_section, "CT_TYPE", fallback=ct_type_default)
+        ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
+        wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
+        info_idx = cfg.getint(ct_section, "INFO_IDX", fallback=0)
+        dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
+        consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
+        allow_any_ct_mac = cfg.getboolean(
+            ct_section, "ALLOW_ANY_CT_MAC", fallback=True
+        )
+
+        logger.debug(f"CT002 Settings for {device_id}:")
+        logger.debug(f"Device Type: {ct_device_type}")
+        logger.debug(f"CT Type: {ct_type}")
+        logger.debug(f"CT MAC: {ct_mac}")
+        logger.debug(f"Allow Any CT MAC: {allow_any_ct_mac}")
+        logger.debug(f"Disable Sum Phases: {disable_sum}")
+        logger.debug(f"Disable Absolute Values: {disable_absolute}")
+        logger.debug(f"WiFi RSSI: {wifi_rssi}")
+        logger.debug(f"Info IDX: {info_idx}")
+
+        device = CT002(
+            device_type=ct_device_type,
+            ct_type=ct_type,
+            ct_mac=ct_mac,
+            wifi_rssi=wifi_rssi,
+            info_idx=info_idx,
+            dedupe_time_window=dedupe_time_window,
+            consumer_ttl=consumer_ttl,
+            allow_any_ct_mac=allow_any_ct_mac,
+        )
+
+        def update_readings(addr, _fields=None, _consumer_id=None):
+            powermeter = None
+            for pm, client_filter in powermeters:
+                if client_filter.matches(addr[0]):
+                    powermeter = pm
+                    break
+            if powermeter is None:
+                logger.debug(f"No powermeter found for client {addr[0]}")
+                return None
+            values = powermeter.get_powermeter_watts()
+            value1 = values[0] if len(values) > 0 else 0
+            value2 = values[1] if len(values) > 1 else 0
+            value3 = values[2] if len(values) > 2 else 0
+
+            if not disable_sum:
+                value1 = value1 + value2 + value3
+                value2 = value3 = 0
+
+            if not disable_absolute:
+                value1, value2, value3 = map(abs, (value1, value2, value3))
+
+            return [value1, value2, value3]
+
+        device.before_send = update_readings
+
     elif device_type == "shellypro3em_old":
         logger.debug(f"Shelly Pro 3EM Settings:")
         logger.debug(f"Device ID: {device_id}")
@@ -154,6 +226,8 @@ def main():
         nargs="+",
         choices=[
             "ct001",
+            "ct002",
+            "ct003",
             "shellypro3em",
             "shellyemg3",
             "shellyproem50",

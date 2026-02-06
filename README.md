@@ -2,6 +2,7 @@
 
 This project emulates Smart Meter devices for Marstek storage systems such as the B2500, Marstek Jupiter, and Marstek Venus energy storage systems while allowing integration with almost any smart meter. It does this by emulating one or more of the following devices:
 - CT001
+- CT002 / CT003
 - Shelly Pro 3EM
   - Uses port 1010 (B2500 firmware up to version 224) and port 2220 (B2500 firmware version 226+)
   - Can be specifically targeted with shellypro3em_old (port 1010) or shellypro3em_new (port 2220)
@@ -53,13 +54,15 @@ The B2500 Meter project can be installed and run in several ways depending on yo
      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate:
      - `ct001`: CT001 emulator
+     - `ct002`: CT002 emulator (Marstek CT002 protocol)
+     - `ct003`: CT003 emulator (same protocol as CT002)
      - `shellypro3em`: Shelly Pro 3EM emulator (uses both ports 1010 and 2220 for compatibility with all B2500 firmware versions)
      - `shellypro3em_old`: Shelly Pro 3EM emulator using port 1010 (for B2500 firmware up to v224)
      - `shellypro3em_new`: Shelly Pro 3EM emulator using port 2220 (for B2500 firmware v226+)
      - `shellyemg3`: Shelly EM gen3 emulator
      - `shellyproem50`: Shelly Pro EM50 emulator
      
-     **Important:** Always prefer a Shelly device type over CT001 if supported by your energy storage system.
+     **Important:** Always prefer a Shelly device type over CT001/CT002/CT003 if supported by your energy storage system.
    - Click "Save" to apply the configuration
 
    B) Using a Custom Configuration File for Advanced Configuration:
@@ -125,6 +128,8 @@ All commands above work across Windows, macOS, and Linux. The only difference is
 
 When the script is running, switch your B2500 to "Self-Adaptation" mode to enable the powermeter functionality.
 
+For details on the CT002/CT003 UDP protocol used by Marstek storage systems, see [docs/ct002-ct003-protocol.md](docs/ct002-ct003-protocol.md).
+
 ## Configuration
 
 Configuration is managed via `config.ini`. Each powermeter type has specific settings.
@@ -133,7 +138,7 @@ Configuration is managed via `config.ini`. Each powermeter type has specific set
 
 ```ini
 [GENERAL]
-# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
+# Comma-separated list of device types to emulate (ct001, ct002, ct003, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
 DEVICE_TYPE = ct001
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
@@ -147,6 +152,31 @@ POLL_INTERVAL = 1
 # Set to 0 to disable throttling (default). Recommended: 1-3 seconds for slow data sources
 # Can be overridden per powermeter section
 THROTTLE_INTERVAL = 0
+```
+
+### CT002 / CT003
+
+```ini
+[CT002]
+# Device type reported by the CT (typically HMG-50 for Marstek Venus/B2500)
+DEVICE_TYPE = HMG-50
+# CT type: HME-4 (CT002) or HME-3 (CT003)
+CT_TYPE = HME-4
+# CT MAC (12 hex digits, from Marstek app). If empty and ALLOW_ANY_CT_MAC=true,
+# the emulator accepts any CT MAC and echoes the request’s CT MAC in responses.
+# If set, the emulator will respond only to the configured MAC (optionally also
+# 000000000000 when permissive).
+CT_MAC = 001122334455
+# Allow any CT MAC (permissive mode). Set to False to strictly require CT_MAC.
+ALLOW_ANY_CT_MAC = True
+# WiFi RSSI reported to the storage system
+WIFI_RSSI = -50
+# Info index reported to the storage system
+INFO_IDX = 0
+# Ignore repeated requests from the same client within this window (seconds)
+DEDUPE_TIME_WINDOW = 10
+# Forget consumers after this many seconds without updates (multi-consumer support)
+CONSUMER_TTL = 120
 ```
 
 Optional Marstek cloud auto-registration:
