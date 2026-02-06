@@ -25,8 +25,8 @@ def parse_phase_map(value):
         if not entry or ":" not in entry:
             continue
         mac, phase = entry.split(":", 1)
-        clean_mac = mac.strip().strip("'"")
-        clean_phase = phase.strip().strip("'"")
+        clean_mac = mac.strip().strip("'").strip('"')
+        clean_phase = phase.strip().strip("'").strip('"')
         mapping[clean_mac.lower()] = clean_phase.upper()
     return mapping
 
