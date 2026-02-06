@@ -287,15 +287,20 @@ class CT002:
         if self.discharge_from_total:
             phase = self._assign_phase(consumer_id or meter_mac.lower())
             phase_idx = self._phase_index(phase)
-            logger.debug("CT002 discharge phase for %s: %s", consumer_id, phase)
+            logger.debug("CT002 phase for %s: %s", consumer_id, phase)
             response_fields.append("0")
             response_fields += ["0"] * 4
             response_fields.append("0")
             response_fields.append("0")
             response_fields += ["0"] * 4
             response_fields.append("0")
-            # set discharge power only (no chrg_nb flags)
-            response_fields[20 + phase_idx] = str(round(total_power))
+            if total_power < 0:
+                # charging: mark phase and set negative charge power
+                response_fields[8 + phase_idx] = "1"
+                response_fields[15 + phase_idx] = str(round(total_power))
+            elif total_power > 0:
+                # discharging: set discharge power only
+                response_fields[20 + phase_idx] = str(round(total_power))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
