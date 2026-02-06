@@ -123,6 +123,7 @@ class CT002:
         ct_type="HME-4",
         wifi_rssi=-50,
         info_idx=0,
+        auto_info_idx=False,
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -133,9 +134,11 @@ class CT002:
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
+        self.auto_info_idx = auto_info_idx
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
+        self._info_idx_lock = threading.Lock()
         self.before_send = None
         self._stop = False
         self._udp_thread = None
@@ -185,6 +188,16 @@ class CT002:
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
 
+    def _get_info_idx(self):
+        with self._info_idx_lock:
+            return self.info_idx
+
+    def _bump_info_idx(self):
+        if not self.auto_info_idx:
+            return
+        with self._info_idx_lock:
+            self.info_idx = (self.info_idx + 1) % 10000
+
     def _get_adjustment_for_consumer(self, consumer_id):
         with self._values_lock:
             total_charge = 0
@@ -219,7 +232,7 @@ class CT002:
         ]
         response_fields += ["0"] * 4
         response_fields.append(str(self.wifi_rssi))
-        response_fields.append(str(self.info_idx))
+        response_fields.append(str(self._get_info_idx()))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
@@ -305,6 +318,7 @@ class CT002:
             response.hex(),
             response_fields,
         )
+        self._bump_info_idx()
         return response
 
     def udp_server(self):
