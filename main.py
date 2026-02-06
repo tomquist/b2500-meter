@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List, Tuple
 from config.config_loader import read_all_powermeter_configs, ClientFilter
 from ct001 import CT001
-from ct002 import CT002
+from ct002 import CT002, UDP_PORT
 from powermeter import Powermeter
 from shelly import Shelly
 from collections import OrderedDict
@@ -130,6 +130,7 @@ def run_device(
         ct_type_default = "HME-4" if device_type == "ct002" else "HME-3"
         ct_type = cfg.get(ct_section, "CT_TYPE", fallback=ct_type_default)
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
+        ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
         info_idx = cfg.getint(ct_section, "INFO_IDX", fallback=0)
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
@@ -138,10 +139,11 @@ def run_device(
             ct_section, "ALLOW_ANY_CT_MAC", fallback=True
         )
 
-        logger.debug(f"CT002 Settings for {device_id}:")
+        logger.debug(f"{device_type.upper()} Settings for {device_id}:")
         logger.debug(f"Device Type: {ct_device_type}")
         logger.debug(f"CT Type: {ct_type}")
         logger.debug(f"CT MAC: {ct_mac}")
+        logger.debug(f"CT UDP Port: {ct_udp_port}")
         logger.debug(f"Allow Any CT MAC: {allow_any_ct_mac}")
         logger.debug(f"Disable Sum Phases: {disable_sum}")
         logger.debug(f"Disable Absolute Values: {disable_absolute}")
@@ -149,6 +151,7 @@ def run_device(
         logger.debug(f"Info IDX: {info_idx}")
 
         device = CT002(
+            udp_port=ct_udp_port,
             device_type=ct_device_type,
             ct_type=ct_type,
             ct_mac=ct_mac,
@@ -294,6 +297,23 @@ def main():
         device_types[shellypro3em_index] = "shellypro3em_old"
         device_types.append("shellypro3em_new")
         device_ids.append(device_ids[shellypro3em_index])
+
+    def get_ct_section(device_type):
+        section = "CT002"
+        if device_type == "ct003" and cfg.has_section("CT003"):
+            section = "CT003"
+        return section
+
+    ct_ports = []
+    for device_type in device_types:
+        if device_type in ["ct002", "ct003"]:
+            section = get_ct_section(device_type)
+            ct_ports.append(cfg.getint(section, "UDP_PORT", fallback=UDP_PORT))
+    if len(ct_ports) != len(set(ct_ports)):
+        raise ValueError(
+            "Multiple CT002/CT003 devices are configured with the same UDP port. "
+            "Set UDP_PORT in [CT002]/[CT003] to avoid conflicts."
+        )
 
     logger.info(f"Device Types: {device_types}")
     logger.info(f"Device IDs: {device_ids}")
