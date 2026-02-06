@@ -1,5 +1,5 @@
 [GENERAL]
-# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+# Comma-separated list of device types to emulate (ct001, ct002, ct003, shellypro3em, shellyemg3, shellyproem50)
 DEVICE_TYPE = ct001
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
@@ -16,6 +16,27 @@ POLL_INTERVAL = 1
 # Recommended values: 1-3 seconds for slower data sources
 # Can be overridden per powermeter section
 THROTTLE_INTERVAL = 0
+
+#[CT002]
+## Device type reported by the CT (typically HMG-50 for Marstek Venus/B2500)
+#DEVICE_TYPE = HMG-50
+## CT type: HME-4 (CT002) or HME-3 (CT003)
+#CT_TYPE = HME-4
+## CT MAC (12 hex digits, from Marstek app). If empty and ALLOW_ANY_CT_MAC=true,
+## the emulator accepts any CT MAC and echoes the request’s CT MAC in responses.
+## If set, the emulator will respond only to the configured MAC (optionally also
+## 000000000000 when permissive).
+#CT_MAC = 001122334455
+## Allow any CT MAC (permissive mode). Set to False to strictly require CT_MAC.
+#ALLOW_ANY_CT_MAC = True
+## WiFi RSSI reported to the storage system
+#WIFI_RSSI = -50
+## Info index reported to the storage system
+#INFO_IDX = 0
+## Ignore repeated requests from the same client within this window (seconds)
+#DEDUPE_TIME_WINDOW = 10
+## Forget consumers after this many seconds without updates (multi-consumer support)
+#CONSUMER_TTL = 120
 
 #[SHELLY]
 #TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO
