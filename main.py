@@ -120,7 +120,7 @@ def run_device(
         disable_absolute = (
             args.disable_absolute
             if args.disable_absolute is not None
-            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=False)
+            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=True)
         )
 
         ct_section = "CT002"
