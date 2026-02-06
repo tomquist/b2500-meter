@@ -1,7 +1,7 @@
 import socket
 import threading
 import time
-import re
+import inspect
 from typing import Optional
 from config.logger import logger
 
@@ -44,12 +44,6 @@ def calculate_checksum(data_bytes):
     for b in data_bytes:
         xor ^= b
     return xor
-
-
-def validate_mac(mac):
-    if not mac:
-        return False
-    return re.fullmatch(r"[0-9a-fA-F]{12}", mac) is not None
 
 
 def parse_int(value, default=0):
@@ -183,6 +177,13 @@ class CT002:
             for key in stale:
                 self._reports_by_consumer.pop(key, None)
                 self._values_by_consumer.pop(key, None)
+        stale_addrs = [
+            addr
+            for addr, ts in self._last_response_time.items()
+            if now - ts > self.dedupe_time_window
+        ]
+        for addr in stale_addrs:
+            self._last_response_time.pop(addr, None)
 
     def _get_adjustment_for_consumer(self, consumer_id):
         with self._values_lock:
@@ -196,6 +197,8 @@ class CT002:
         return total_discharge - total_charge
 
     def _build_response_fields(self, request_fields, values, adjustment):
+        if not values or len(values) != 3:
+            values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
         if adjustment != 0:
             phase_a += adjustment
@@ -219,6 +222,18 @@ class CT002:
         response_fields.append(str(self.info_idx))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
+
+    def _call_before_send(self, addr, fields, consumer_id):
+        if not self.before_send:
+            return None
+        try:
+            params = inspect.signature(self.before_send).parameters
+            if len(params) >= 3:
+                return self.before_send(addr, fields, consumer_id)
+            return self.before_send(addr)
+        except Exception as exc:
+            logger.warning("before_send failed for %s: %s", addr, exc)
+            return None
 
     def _validate_ct_mac(self, request_fields):
         if self.allow_any_ct_mac and not self.ct_mac:
@@ -252,20 +267,20 @@ class CT002:
         reported_discharge = parse_int(fields[5] if len(fields) > 5 else 0)
         self._update_consumer_report(consumer_id, reported_charge, reported_discharge)
 
-        if self.before_send:
-            try:
-                updated = self.before_send(addr, fields, consumer_id)
-            except TypeError:
-                updated = self.before_send(addr)
-            if updated is not None:
-                self.set_consumer_value(consumer_id, updated)
+        updated = self._call_before_send(addr, fields, consumer_id)
+        if updated is not None:
+            self.set_consumer_value(consumer_id, updated)
 
         values = self._get_consumer_value(consumer_id)
         if values is None:
             values = [0, 0, 0]
         adjustment = self._get_adjustment_for_consumer(consumer_id)
-        response_fields = self._build_response_fields(fields, values, adjustment)
-        response = build_payload(response_fields)
+        try:
+            response_fields = self._build_response_fields(fields, values, adjustment)
+            response = build_payload(response_fields)
+        except Exception as exc:
+            logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
+            return None
         logger.debug("CT002 response to %s: %s", addr, response.hex())
         return response
 
