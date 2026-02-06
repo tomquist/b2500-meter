@@ -177,6 +177,8 @@ WIFI_RSSI = -50
 INFO_IDX = 0
 # Auto-increment info index on each response
 AUTO_INFO_IDX = False
+# Echo request charge/discharge into response fields
+ECHO_CHARGE_DISCHARGE = False
 # Ignore repeated requests from the same client within this window (seconds)
 DEDUPE_TIME_WINDOW = 10
 # Forget consumers after this many seconds without updates (multi-consumer support)
