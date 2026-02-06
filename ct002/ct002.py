@@ -294,14 +294,14 @@ class CT002:
             response_fields.append("0")
             response_fields += ["0"] * 4
             response_fields.append("0")
-            if total_power < 0:
-                # charging: mark phase and set negative charge power
-                response_fields[8 + phase_idx] = "1"
-                response_fields[15 + phase_idx] = str(round(total_power))
-            elif total_power > 0:
-                # discharging: mark phase and set discharge power
+            if total_power > 0:
+                # discharging (net import): mark phase and set discharge power
                 response_fields[8 + phase_idx] = "1"
                 response_fields[20 + phase_idx] = str(round(total_power))
+            elif total_power < 0:
+                # charging (net export): mark phase and set negative charge power
+                response_fields[8 + phase_idx] = "1"
+                response_fields[15 + phase_idx] = str(round(total_power))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
