@@ -124,6 +124,9 @@ def run_device(
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
         info_idx = cfg.getint(ct_section, "INFO_IDX", fallback=0)
+        discharge_from_total = cfg.getboolean(
+            ct_section, "DISCHARGE_FROM_TOTAL", fallback=False
+        )
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
         allow_any_ct_mac = cfg.getboolean(
@@ -139,6 +142,7 @@ def run_device(
         logger.debug(f"Disable Sum Phases: {disable_sum}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
+        logger.debug(f"Discharge From Total: {discharge_from_total}")
 
         device = CT002(
             udp_port=ct_udp_port,
@@ -147,6 +151,7 @@ def run_device(
             ct_mac=ct_mac,
             wifi_rssi=wifi_rssi,
             info_idx=info_idx,
+            discharge_from_total=discharge_from_total,
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
             allow_any_ct_mac=allow_any_ct_mac,
