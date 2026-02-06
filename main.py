@@ -133,11 +133,6 @@ def run_device(
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
         info_idx = cfg.getint(ct_section, "INFO_IDX", fallback=0)
-        auto_info_idx = cfg.getboolean(ct_section, "AUTO_INFO_IDX", fallback=False)
-        echo_charge_discharge = cfg.getboolean(
-            ct_section, "ECHO_CHARGE_DISCHARGE", fallback=False
-        )
-        checksum_mode = cfg.get(ct_section, "CHECKSUM_MODE", fallback="full")
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
         allow_any_ct_mac = cfg.getboolean(
@@ -154,9 +149,6 @@ def run_device(
         logger.debug(f"Disable Absolute Values: {disable_absolute}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
-        logger.debug(f"Auto Info IDX: {auto_info_idx}")
-        logger.debug(f"Echo Charge/Discharge: {echo_charge_discharge}")
-        logger.debug(f"Checksum Mode: {checksum_mode}")
 
         device = CT002(
             udp_port=ct_udp_port,
@@ -165,9 +157,6 @@ def run_device(
             ct_mac=ct_mac,
             wifi_rssi=wifi_rssi,
             info_idx=info_idx,
-            auto_info_idx=auto_info_idx,
-            echo_charge_discharge=echo_charge_discharge,
-            checksum_mode=checksum_mode,
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
             allow_any_ct_mac=allow_any_ct_mac,

@@ -73,7 +73,7 @@ def compute_length(payload_without_length):
     raise ValueError("Payload length too large")
 
 
-def build_payload(fields, checksum_mode="full"):
+def build_payload(fields):
     message_str = SEPARATOR + SEPARATOR.join(fields)
     message_bytes = message_str.encode("ascii")
     total_length = compute_length(message_bytes)
@@ -81,10 +81,7 @@ def build_payload(fields, checksum_mode="full"):
     payload.extend(str(total_length).encode("ascii"))
     payload.extend(message_bytes)
     payload.append(ETX)
-    if checksum_mode == "payload":
-        checksum_val = calculate_checksum_payload(payload)
-    else:
-        checksum_val = calculate_checksum(payload)
+    checksum_val = calculate_checksum(payload)
     checksum = f"{checksum_val:02x}".encode("ascii")
     payload.extend(checksum)
     return payload
@@ -92,7 +89,7 @@ def build_payload(fields, checksum_mode="full"):
 
 
 def parse_request_lenient(data):
-    fields, error = parse_request_lenient(data)
+    fields, error = parse_request(data)
     if error and error.startswith("Checksum mismatch"):
         # Retry checksum check but continue parsing if the structure is otherwise valid.
         try:
@@ -161,9 +158,6 @@ class CT002:
         ct_type="HME-4",
         wifi_rssi=-50,
         info_idx=0,
-        auto_info_idx=False,
-        echo_charge_discharge=False,
-        checksum_mode="full",
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -174,13 +168,9 @@ class CT002:
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
-        self.auto_info_idx = auto_info_idx
-        self.echo_charge_discharge = echo_charge_discharge
-        self.checksum_mode = checksum_mode
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
-        self._info_idx_lock = threading.Lock()
         self.before_send = None
         self._stop = False
         self._udp_thread = None
@@ -230,16 +220,6 @@ class CT002:
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
 
-    def _get_info_idx(self):
-        with self._info_idx_lock:
-            return self.info_idx
-
-    def _bump_info_idx(self):
-        if not self.auto_info_idx:
-            return
-        with self._info_idx_lock:
-            self.info_idx = (self.info_idx + 1) % 10000
-
     def _get_adjustment_for_consumer(self, consumer_id):
         with self._values_lock:
             total_charge = 0
@@ -274,14 +254,7 @@ class CT002:
         ]
         response_fields += ["0"] * 4
         response_fields.append(str(self.wifi_rssi))
-        response_fields.append(str(self._get_info_idx()))
-        if self.echo_charge_discharge:
-            response_fields.append(str(reported_charge))
-            response_fields += ["0"] * 4
-            response_fields.append(str(reported_charge))
-            response_fields.append(str(reported_discharge))
-            response_fields += ["0"] * 4
-            response_fields.append(str(reported_discharge))
+        response_fields.append(str(self.info_idx))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
@@ -357,18 +330,16 @@ class CT002:
         adjustment = self._get_adjustment_for_consumer(consumer_id)
         try:
             response_fields = self._build_response_fields(fields, values, adjustment, reported_charge, reported_discharge)
-            response = build_payload(response_fields, checksum_mode=self.checksum_mode)
+            response = build_payload(response_fields)
         except Exception as exc:
             logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
             return None
         logger.debug(
-            "CT002 response to %s: %s (fields=%s, checksum_mode=%s)",
+            "CT002 response to %s: %s (fields=%s)",
             addr,
             response.hex(),
-            response_fields,
-            self.checksum_mode,
+            response_fields
         )
-        self._bump_info_idx()
         return response
 
     def udp_server(self):
