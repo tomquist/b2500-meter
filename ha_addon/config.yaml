@@ -43,6 +43,7 @@ options:
   ct_allow_any_mac: true
   ct_wifi_rssi: -50
   ct_info_idx: 0
+  ct_discharge_from_total: false
   marstek_auto_register_ct_device: false
   marstek_mailbox: ""
   marstek_password: ""
@@ -60,6 +61,7 @@ schema:
   ct_allow_any_mac: bool?
   ct_wifi_rssi: int?
   ct_info_idx: int?
+  ct_discharge_from_total: bool?
   marstek_auto_register_ct_device: bool?
   marstek_mailbox: str?
   marstek_password: password?
