@@ -80,7 +80,6 @@ def run_device(
 
         logger.debug(f"CT001 Settings for {device_id}:")
         logger.debug(f"Disable Sum Phases: {disable_sum}")
-        logger.debug(f"Disable Absolute Values: {disable_absolute}")
         logger.debug(f"Poll Interval: {poll_interval}")
 
         device = CT001(poll_interval=poll_interval)
@@ -138,7 +137,6 @@ def run_device(
         logger.debug(f"CT UDP Port: {ct_udp_port}")
         logger.debug(f"Allow Any CT MAC: {allow_any_ct_mac}")
         logger.debug(f"Disable Sum Phases: {disable_sum}")
-        logger.debug(f"Disable Absolute Values: {disable_absolute}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
 
