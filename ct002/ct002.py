@@ -256,7 +256,7 @@ class CT002:
                 total_discharge += report.get("discharge", 0)
         return total_discharge - total_charge
 
-    def _build_response_fields(self, request_fields, values, adjustment, reported_charge=0, reported_discharge=0):
+    def _build_response_fields(self, request_fields, values, adjustment, reported_charge=0, reported_discharge=0, consumer_id=None):
         if not values or len(values) != 3:
             values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
@@ -281,7 +281,7 @@ class CT002:
         response_fields.append(str(self.wifi_rssi))
         response_fields.append(str(self.info_idx))
         if self.discharge_from_total:
-            phase = self._assign_phase(meter_mac)
+            phase = self._assign_phase(consumer_id or meter_mac.lower())
             phase_idx = self._phase_index(phase)
             response_fields.append("0")
             response_fields += ["0"] * 4
@@ -367,7 +367,7 @@ class CT002:
             values = [0, 0, 0]
         adjustment = self._get_adjustment_for_consumer(consumer_id)
         try:
-            response_fields = self._build_response_fields(fields, values, adjustment, reported_charge, reported_discharge)
+            response_fields = self._build_response_fields(fields, values, adjustment, reported_charge, reported_discharge, consumer_id)
             response = build_payload(response_fields)
         except Exception as exc:
             logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
