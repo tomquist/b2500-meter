@@ -24,6 +24,7 @@ THROTTLE_INTERVAL = 0
 #DEVICE_TYPE = HMG-50
 ## CT type: HME-4 (CT002) or HME-3 (CT003)
 #CT_TYPE = HME-4
+## Note: CT003 can optionally use its own [CT003] section with the same keys.
 ## CT MAC (12 hex digits, from Marstek app). If empty and ALLOW_ANY_CT_MAC=true,
 ## the emulator accepts any CT MAC and echoes the request’s CT MAC in responses.
 ## If set, the emulator will respond only to the configured MAC (optionally also
