@@ -24,7 +24,9 @@ def parse_phase_map(value):
         if not entry or ":" not in entry:
             continue
         mac, phase = entry.split(":", 1)
-        mapping[mac.strip().lower()] = phase.strip().upper()
+        clean_mac = mac.strip().strip("'"")
+        clean_phase = phase.strip().strip("'"")
+        mapping[clean_mac.lower()] = clean_phase.upper()
     return mapping
 
 
@@ -156,7 +158,7 @@ def run_device(
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
         logger.debug(f"Discharge From Total: {discharge_from_total}")
-        logger.debug(f"Phase Map: {phase_map}")
+        logger.debug(f"Phase Map: {parse_phase_map(phase_map)}")
 
         device = CT002(
             udp_port=ct_udp_port,
