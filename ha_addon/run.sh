@@ -53,6 +53,7 @@ else
         echo "ALLOW_ANY_CT_MAC=$(bashio::config 'ct_allow_any_mac')"
         echo "WIFI_RSSI=$(bashio::config 'ct_wifi_rssi')"
         echo "INFO_IDX=$(bashio::config 'ct_info_idx')"
+        echo "DISCHARGE_FROM_TOTAL=$(bashio::config 'ct_discharge_from_total')"
         echo ""
         echo "[HOMEASSISTANT]"
         echo "IP=supervisor"
