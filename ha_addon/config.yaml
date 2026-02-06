@@ -44,6 +44,7 @@ options:
   ct_wifi_rssi: -50
   ct_info_idx: 0
   ct_auto_info_idx: false
+  ct_echo_charge_discharge: false
   log_level: "info"
 schema:
   power_input_alias: str
@@ -59,5 +60,6 @@ schema:
   ct_wifi_rssi: int?
   ct_info_idx: int?
   ct_auto_info_idx: bool?
+  ct_echo_charge_discharge: bool?
   log_level: list(critical|error|warning|info|debug)
   custom_config: str?

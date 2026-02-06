@@ -147,6 +147,7 @@ class CT002:
         wifi_rssi=-50,
         info_idx=0,
         auto_info_idx=False,
+        echo_charge_discharge=False,
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -158,6 +159,7 @@ class CT002:
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
         self.auto_info_idx = auto_info_idx
+        self.echo_charge_discharge = echo_charge_discharge
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -232,7 +234,7 @@ class CT002:
                 total_discharge += report.get("discharge", 0)
         return total_discharge - total_charge
 
-    def _build_response_fields(self, request_fields, values, adjustment):
+    def _build_response_fields(self, request_fields, values, adjustment, reported_charge=0, reported_discharge=0):
         if not values or len(values) != 3:
             values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
@@ -256,6 +258,13 @@ class CT002:
         response_fields += ["0"] * 4
         response_fields.append(str(self.wifi_rssi))
         response_fields.append(str(self._get_info_idx()))
+        if self.echo_charge_discharge:
+            response_fields.append(str(reported_charge))
+            response_fields += ["0"] * 4
+            response_fields.append(str(reported_charge))
+            response_fields.append(str(reported_discharge))
+            response_fields += ["0"] * 4
+            response_fields.append(str(reported_discharge))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
 
@@ -330,7 +339,7 @@ class CT002:
             values = [0, 0, 0]
         adjustment = self._get_adjustment_for_consumer(consumer_id)
         try:
-            response_fields = self._build_response_fields(fields, values, adjustment)
+            response_fields = self._build_response_fields(fields, values, adjustment, reported_charge, reported_discharge)
             response = build_payload(response_fields)
         except Exception as exc:
             logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
