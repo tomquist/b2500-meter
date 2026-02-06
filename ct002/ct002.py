@@ -294,9 +294,7 @@ class CT002:
             response_fields.append("0")
             response_fields += ["0"] * 4
             response_fields.append("0")
-            # set chrg_nb flag for selected phase
-            response_fields[8 + phase_idx] = "1"
-            # set dchrg power for selected phase
+            # set discharge power only (no chrg_nb flags)
             response_fields[20 + phase_idx] = str(round(total_power))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         return response_fields
