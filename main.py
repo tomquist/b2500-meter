@@ -104,9 +104,6 @@ def run_device(
                 value1 = value1 + value2 + value3
                 value2 = value3 = 0
 
-            if not disable_absolute:
-                value1, value2, value3 = map(abs, (value1, value2, value3))
-
             device.value = [value1, value2, value3]
 
         device.before_send = update_readings
@@ -117,7 +114,6 @@ def run_device(
             if args.disable_sum is not None
             else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
         )
-        disable_absolute = True
 
         ct_section = "CT002"
         if device_type == "ct003" and cfg.has_section("CT003"):
@@ -175,9 +171,6 @@ def run_device(
             if not disable_sum:
                 value1 = value1 + value2 + value3
                 value2 = value3 = 0
-
-            if not disable_absolute:
-                value1, value2, value3 = map(abs, (value1, value2, value3))
 
             return [value1, value2, value3]
 
