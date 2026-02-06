@@ -148,6 +148,7 @@ def run_device(
         allow_any_ct_mac = cfg.getboolean(
             ct_section, "ALLOW_ANY_CT_MAC", fallback=True
         )
+        override_path = cfg.get(ct_section, "OVERRIDE_JSON", fallback="")
 
         logger.debug(f"{device_type.upper()} Settings for {device_id}:")
         logger.debug(f"Device Type: {ct_device_type}")
@@ -160,6 +161,7 @@ def run_device(
         logger.debug(f"Info IDX: {info_idx}")
         logger.debug(f"Discharge From Total: {discharge_from_total}")
         logger.debug(f"Phase Map: {parse_phase_map(phase_map)}")
+        logger.debug(f"Override JSON: {override_path}")
 
         device = CT002(
             udp_port=ct_udp_port,
@@ -173,6 +175,7 @@ def run_device(
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
             allow_any_ct_mac=allow_any_ct_mac,
+            override_path=override_path or None,
         )
 
         def update_readings(addr, _fields=None, _consumer_id=None):
