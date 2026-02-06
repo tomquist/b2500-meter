@@ -46,6 +46,17 @@ def calculate_checksum(data_bytes):
     return xor
 
 
+
+def calculate_checksum_payload(data_bytes):
+    if len(data_bytes) < 5:
+        return calculate_checksum(data_bytes)
+    sep_index = data_bytes.find(b"|", 2)
+    if sep_index == -1:
+        return calculate_checksum(data_bytes)
+    xor = 0
+    for b in data_bytes[sep_index:]:
+        xor ^= b
+    return xor
 def parse_int(value, default=0):
     try:
         return int(value)
@@ -62,7 +73,7 @@ def compute_length(payload_without_length):
     raise ValueError("Payload length too large")
 
 
-def build_payload(fields):
+def build_payload(fields, checksum_mode="full"):
     message_str = SEPARATOR + SEPARATOR.join(fields)
     message_bytes = message_str.encode("ascii")
     total_length = compute_length(message_bytes)
@@ -70,7 +81,11 @@ def build_payload(fields):
     payload.extend(str(total_length).encode("ascii"))
     payload.extend(message_bytes)
     payload.append(ETX)
-    checksum = f"{calculate_checksum(payload):02x}".encode("ascii")
+    if checksum_mode == "payload":
+        checksum_val = calculate_checksum_payload(payload)
+    else:
+        checksum_val = calculate_checksum(payload)
+    checksum = f"{checksum_val:02x}".encode("ascii")
     payload.extend(checksum)
     return payload
 
@@ -148,6 +163,7 @@ class CT002:
         info_idx=0,
         auto_info_idx=False,
         echo_charge_discharge=False,
+        checksum_mode="full",
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -160,6 +176,7 @@ class CT002:
         self.info_idx = info_idx
         self.auto_info_idx = auto_info_idx
         self.echo_charge_discharge = echo_charge_discharge
+        self.checksum_mode = checksum_mode
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -340,15 +357,16 @@ class CT002:
         adjustment = self._get_adjustment_for_consumer(consumer_id)
         try:
             response_fields = self._build_response_fields(fields, values, adjustment, reported_charge, reported_discharge)
-            response = build_payload(response_fields)
+            response = build_payload(response_fields, checksum_mode=self.checksum_mode)
         except Exception as exc:
             logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
             return None
         logger.debug(
-            "CT002 response to %s: %s (fields=%s)",
+            "CT002 response to %s: %s (fields=%s, checksum_mode=%s)",
             addr,
             response.hex(),
             response_fields,
+            self.checksum_mode,
         )
         self._bump_info_idx()
         return response
