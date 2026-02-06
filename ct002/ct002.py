@@ -227,7 +227,9 @@ class CT002:
 
     def _assign_phase(self, consumer_id):
         if consumer_id in self.phase_map:
-            return self.phase_map[consumer_id]
+            phase = self.phase_map[consumer_id]
+            logger.debug("CT002 phase map hit: %s -> %s", consumer_id, phase)
+            return phase
         if consumer_id in self._phase_assignments:
             return self._phase_assignments[consumer_id]
         phases = ["A", "B", "C"]
@@ -235,10 +237,12 @@ class CT002:
         for phase in phases:
             if phase not in assigned:
                 self._phase_assignments[consumer_id] = phase
+                logger.debug("CT002 phase auto-assign: %s -> %s", consumer_id, phase)
                 return phase
         # fallback round-robin
         phase = phases[len(self._phase_assignments) % len(phases)]
         self._phase_assignments[consumer_id] = phase
+        logger.debug("CT002 phase auto-assign (rr): %s -> %s", consumer_id, phase)
         return phase
 
     def _phase_index(self, phase):
@@ -283,6 +287,7 @@ class CT002:
         if self.discharge_from_total:
             phase = self._assign_phase(consumer_id or meter_mac.lower())
             phase_idx = self._phase_index(phase)
+            logger.debug("CT002 discharge phase for %s: %s", consumer_id, phase)
             response_fields.append("0")
             response_fields += ["0"] * 4
             response_fields.append("0")
