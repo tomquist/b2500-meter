@@ -116,11 +116,7 @@ def run_device(
             if args.disable_sum is not None
             else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
         )
-        disable_absolute = (
-            args.disable_absolute
-            if args.disable_absolute is not None
-            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=True)
-        )
+        disable_absolute = True
 
         ct_section = "CT002"
         if device_type == "ct003" and cfg.has_section("CT003"):
