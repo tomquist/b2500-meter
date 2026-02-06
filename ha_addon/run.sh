@@ -61,6 +61,7 @@ else
         echo "INFO_IDX=$(bashio::config 'ct_info_idx')"
         echo "AUTO_INFO_IDX=$(bashio::config 'ct_auto_info_idx')"
         echo "ECHO_CHARGE_DISCHARGE=$(bashio::config 'ct_echo_charge_discharge')"
+        echo "CHECKSUM_MODE=$(bashio::config 'ct_checksum_mode')"
         echo ""
 
         marstek_auto_register_ct_device="false"
