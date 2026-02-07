@@ -306,13 +306,13 @@ class CT002:
             # x/A/B/C/ABC charge + x/A/B/C/ABC discharge
             response_fields += ["0"] * 10
             if total_power > 0:
-                # discharging (net import): mark phase and set discharge power
+                # discharging (net import): mark phase and set discharge power magnitude
                 response_fields[8 + phase_idx] = "1"
-                response_fields[20 + phase_idx] = str(round(total_power))
+                response_fields[20 + phase_idx] = str(abs(round(total_power)))
             elif total_power < 0:
-                # charging (net export): mark phase and set negative charge power
+                # charging (net export): mark phase and set charge power magnitude
                 response_fields[8 + phase_idx] = "1"
-                response_fields[15 + phase_idx] = str(round(total_power))
+                response_fields[15 + phase_idx] = str(abs(round(total_power)))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         override = self._load_override()
         if override:
