@@ -143,6 +143,15 @@ def run_device(
             ct_section, "DISCHARGE_FROM_TOTAL", fallback=False
         )
         phase_map = cfg.get(ct_section, "PHASE_MAP", fallback="")
+        control_deadband_w = cfg.getint(
+            ct_section, "CONTROL_DEADBAND_W", fallback=50
+        )
+        control_hysteresis_on_w = cfg.getint(
+            ct_section, "CONTROL_HYSTERESIS_ON_W", fallback=70
+        )
+        control_hysteresis_off_w = cfg.getint(
+            ct_section, "CONTROL_HYSTERESIS_OFF_W", fallback=30
+        )
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
         allow_any_ct_mac = cfg.getboolean(
@@ -161,6 +170,9 @@ def run_device(
         logger.debug(f"Info IDX: {info_idx}")
         logger.debug(f"Discharge From Total: {discharge_from_total}")
         logger.debug(f"Phase Map: {parse_phase_map(phase_map)}")
+        logger.debug(f"Control Deadband W: {control_deadband_w}")
+        logger.debug(f"Control Hysteresis On W: {control_hysteresis_on_w}")
+        logger.debug(f"Control Hysteresis Off W: {control_hysteresis_off_w}")
         logger.debug(f"Override JSON: {override_path}")
 
         device = CT002(
@@ -172,6 +184,9 @@ def run_device(
             info_idx=info_idx,
             discharge_from_total=discharge_from_total,
             phase_map=parse_phase_map(phase_map),
+            control_deadband_w=control_deadband_w,
+            control_hysteresis_on_w=control_hysteresis_on_w,
+            control_hysteresis_off_w=control_hysteresis_off_w,
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
             allow_any_ct_mac=allow_any_ct_mac,
