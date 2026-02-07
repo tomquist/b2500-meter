@@ -303,12 +303,8 @@ class CT002:
             phase = self._assign_phase(consumer_id or meter_mac.lower())
             phase_idx = self._phase_index(phase)
             logger.debug("CT002 phase for %s: %s", consumer_id, phase)
-            response_fields.append("0")
-            response_fields += ["0"] * 4
-            response_fields.append("0")
-            response_fields.append("0")
-            response_fields += ["0"] * 4
-            response_fields.append("0")
+            # x/A/B/C/ABC charge + x/A/B/C/ABC discharge
+            response_fields += ["0"] * 10
             if total_power > 0:
                 # discharging (net import): mark phase and set discharge power
                 response_fields[8 + phase_idx] = "1"
