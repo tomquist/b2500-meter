@@ -1,4 +1,13 @@
-from ct002.ct002 import build_payload, parse_request, calculate_checksum, SOH, STX, ETX
+from ct002.ct002 import (
+    build_payload,
+    parse_request,
+    calculate_checksum,
+    SOH,
+    STX,
+    ETX,
+    CT002,
+    RESPONSE_LABELS,
+)
 
 
 def test_parse_request_roundtrip():
@@ -49,3 +58,17 @@ def test_checksum_matches_helper():
     assert isinstance(checksum, int)
     expected = SOH ^ STX ^ 0x30 ^ 0x30 ^ ETX
     assert checksum == expected
+
+
+def test_discharge_from_total_keeps_response_field_count_stable():
+    device = CT002(discharge_from_total=True)
+    request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
+
+    response_fields = device._build_response_fields(
+        request_fields=request_fields,
+        values=[500, 0, 0],
+        adjustment=0,
+        consumer_id="consumer-a",
+    )
+
+    assert len(response_fields) == len(RESPONSE_LABELS)
