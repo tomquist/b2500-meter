@@ -305,14 +305,21 @@ class CT002:
             logger.debug("CT002 phase for %s: %s", consumer_id, phase)
             # x/A/B/C/ABC charge + x/A/B/C/ABC discharge
             response_fields += ["0"] * 10
+            # Deadband around zero to reduce oscillation/chatter
+            if abs(total_power) < 50:
+                total_power = 0
+                response_fields[4] = "0"
+                response_fields[5] = "0"
+                response_fields[6] = "0"
+                response_fields[7] = "0"
             if total_power > 0:
-                # discharging (net import): mark phase and set discharge power magnitude
+                # discharging (net import): mark phase and set discharge power
                 response_fields[8 + phase_idx] = "1"
-                response_fields[20 + phase_idx] = str(abs(round(total_power)))
+                response_fields[20 + phase_idx] = str(round(total_power))
             elif total_power < 0:
-                # charging (net export): mark phase and set charge power magnitude
+                # charging (net export): mark phase and set negative charge power
                 response_fields[8 + phase_idx] = "1"
-                response_fields[15 + phase_idx] = str(abs(round(total_power)))
+                response_fields[15 + phase_idx] = str(round(total_power))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         override = self._load_override()
         if override:
