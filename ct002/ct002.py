@@ -161,6 +161,9 @@ class CT002:
         info_idx=0,
         discharge_from_total=False,
         phase_map=None,
+        control_deadband_w=50,
+        control_hysteresis_on_w=70,
+        control_hysteresis_off_w=30,
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -174,7 +177,15 @@ class CT002:
         self.info_idx = info_idx
         self.discharge_from_total = discharge_from_total
         self.phase_map = phase_map or {}
+        self.control_deadband_w = max(0, int(control_deadband_w))
+        self.control_hysteresis_on_w = max(
+            self.control_deadband_w, int(control_hysteresis_on_w)
+        )
+        self.control_hysteresis_off_w = max(
+            0, min(int(control_hysteresis_off_w), self.control_hysteresis_on_w)
+        )
         self._phase_assignments = {}
+        self._control_mode_by_consumer = {}
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -220,6 +231,7 @@ class CT002:
             for key in stale:
                 self._reports_by_consumer.pop(key, None)
                 self._values_by_consumer.pop(key, None)
+                self._control_mode_by_consumer.pop(key, None)
         stale_addrs = [
             addr
             for addr, ts in self._last_response_time.items()
@@ -252,6 +264,37 @@ class CT002:
         mapping = {"A": 0, "B": 1, "C": 2}
         return mapping.get(phase, 0)
 
+    def _select_control_mode(self, consumer_id, command_power):
+        prev = self._control_mode_by_consumer.get(consumer_id, 0)
+        p = command_power
+        on = self.control_hysteresis_on_w
+        off = self.control_hysteresis_off_w
+
+        if prev > 0:
+            if p <= -on:
+                mode = -1
+            elif p <= off:
+                mode = 0
+            else:
+                mode = 1
+        elif prev < 0:
+            if p >= on:
+                mode = 1
+            elif p >= -off:
+                mode = 0
+            else:
+                mode = -1
+        else:
+            if p >= on:
+                mode = 1
+            elif p <= -on:
+                mode = -1
+            else:
+                mode = 0
+
+        self._control_mode_by_consumer[consumer_id] = mode
+        return mode
+
     def _get_adjustment_for_consumer(self, consumer_id):
         with self._values_lock:
             total_charge = 0
@@ -279,9 +322,8 @@ class CT002:
         if not values or len(values) != 3:
             values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
-        if adjustment != 0:
-            phase_a += adjustment
-        total_power = phase_a + phase_b + phase_c
+        measured_total_power = phase_a + phase_b + phase_c
+        command_power = measured_total_power + adjustment
         meter_dev_type = request_fields[0] if len(request_fields) > 0 else self.device_type
         meter_mac = request_fields[1] if len(request_fields) > 1 else ""
         ct_type = self.ct_type
@@ -294,7 +336,7 @@ class CT002:
             str(round(phase_a)),
             str(round(phase_b)),
             str(round(phase_c)),
-            str(round(total_power)),
+            str(round(measured_total_power)),
         ]
         response_fields += ["0"] * 4
         response_fields.append(str(self.wifi_rssi))
@@ -305,21 +347,31 @@ class CT002:
             logger.debug("CT002 phase for %s: %s", consumer_id, phase)
             # x/A/B/C/ABC charge + x/A/B/C/ABC discharge
             response_fields += ["0"] * 10
-            # Deadband around zero to reduce oscillation/chatter
-            if abs(total_power) < 50:
-                total_power = 0
-                response_fields[4] = "0"
-                response_fields[5] = "0"
-                response_fields[6] = "0"
-                response_fields[7] = "0"
-            if total_power > 0:
-                # discharging (net import): mark phase and set discharge power
+
+            # Deadband first, then hysteresis state machine.
+            if abs(command_power) <= self.control_deadband_w:
+                mode = 0
+                self._control_mode_by_consumer[consumer_id] = 0
+            else:
+                mode = self._select_control_mode(consumer_id, command_power)
+
+            logger.debug(
+                "CT002 control for %s: measured_total=%s adjustment=%s command=%s mode=%s",
+                consumer_id,
+                round(measured_total_power),
+                round(adjustment),
+                round(command_power),
+                mode,
+            )
+
+            if mode > 0:
+                # discharge command
                 response_fields[8 + phase_idx] = "1"
-                response_fields[20 + phase_idx] = str(round(total_power))
-            elif total_power < 0:
-                # charging (net export): mark phase and set negative charge power
+                response_fields[20 + phase_idx] = str(max(0, round(command_power)))
+            elif mode < 0:
+                # charge command (negative by protocol convention)
                 response_fields[8 + phase_idx] = "1"
-                response_fields[15 + phase_idx] = str(round(total_power))
+                response_fields[15 + phase_idx] = str(min(0, round(command_power)))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         override = self._load_override()
         if override:

@@ -98,6 +98,53 @@ def test_discharge_from_total_applies_deadband_around_zero():
         consumer_id="consumer-a",
     )
 
-    assert response_fields[7] == "0"  # total_power
+    # Measurement fields stay untouched; only command fields are suppressed in deadband
+    assert response_fields[7] == "32"  # total_power
     assert response_fields[15] == "0"  # A_chrg_power
     assert response_fields[20] == "0"  # A_dchrg_power
+
+
+def test_discharge_from_total_hysteresis_prevents_chatter():
+    device = CT002(
+        discharge_from_total=True,
+        control_deadband_w=20,
+        control_hysteresis_on_w=70,
+        control_hysteresis_off_w=30,
+    )
+    request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
+
+    # below on-threshold: still off
+    r1 = device._build_response_fields(
+        request_fields=request_fields,
+        values=[60, 0, 0],
+        adjustment=0,
+        consumer_id="consumer-a",
+    )
+    assert r1[20] == "0"
+
+    # above on-threshold: turn on discharge
+    r2 = device._build_response_fields(
+        request_fields=request_fields,
+        values=[80, 0, 0],
+        adjustment=0,
+        consumer_id="consumer-a",
+    )
+    assert r2[20] == "80"
+
+    # between off and on: stay on due to hysteresis
+    r3 = device._build_response_fields(
+        request_fields=request_fields,
+        values=[40, 0, 0],
+        adjustment=0,
+        consumer_id="consumer-a",
+    )
+    assert r3[20] == "40"
+
+    # below off-threshold: turn off
+    r4 = device._build_response_fields(
+        request_fields=request_fields,
+        values=[25, 0, 0],
+        adjustment=0,
+        consumer_id="consumer-a",
+    )
+    assert r4[20] == "0"
