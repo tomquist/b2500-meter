@@ -159,11 +159,6 @@ class CT002:
         ct_type="HME-4",
         wifi_rssi=-50,
         info_idx=0,
-        discharge_from_total=False,
-        phase_map=None,
-        control_deadband_w=50,
-        control_hysteresis_on_w=70,
-        control_hysteresis_off_w=30,
         dedupe_time_window=10,
         consumer_ttl=120,
         allow_any_ct_mac=True,
@@ -175,17 +170,7 @@ class CT002:
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
-        self.discharge_from_total = discharge_from_total
-        self.phase_map = phase_map or {}
-        self.control_deadband_w = max(0, int(control_deadband_w))
-        self.control_hysteresis_on_w = max(
-            self.control_deadband_w, int(control_hysteresis_on_w)
-        )
-        self.control_hysteresis_off_w = max(
-            0, min(int(control_hysteresis_off_w), self.control_hysteresis_on_w)
-        )
         self._phase_assignments = {}
-        self._control_mode_by_consumer = {}
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -231,7 +216,7 @@ class CT002:
             for key in stale:
                 self._reports_by_consumer.pop(key, None)
                 self._values_by_consumer.pop(key, None)
-                self._control_mode_by_consumer.pop(key, None)
+                self._phase_assignments.pop(key, None)
         stale_addrs = [
             addr
             for addr, ts in self._last_response_time.items()
@@ -241,10 +226,6 @@ class CT002:
             self._last_response_time.pop(addr, None)
 
     def _assign_phase(self, consumer_id):
-        if consumer_id in self.phase_map:
-            phase = self.phase_map[consumer_id]
-            logger.debug("CT002 phase map hit: %s -> %s", consumer_id, phase)
-            return phase
         if consumer_id in self._phase_assignments:
             return self._phase_assignments[consumer_id]
         phases = ["A", "B", "C"]
@@ -264,47 +245,22 @@ class CT002:
         mapping = {"A": 0, "B": 1, "C": 2}
         return mapping.get(phase, 0)
 
-    def _select_control_mode(self, consumer_id, command_power):
-        prev = self._control_mode_by_consumer.get(consumer_id, 0)
-        p = command_power
-        on = self.control_hysteresis_on_w
-        off = self.control_hysteresis_off_w
-
-        if prev > 0:
-            if p <= -on:
-                mode = -1
-            elif p <= off:
-                mode = 0
-            else:
-                mode = 1
-        elif prev < 0:
-            if p >= on:
-                mode = 1
-            elif p >= -off:
-                mode = 0
-            else:
-                mode = -1
-        else:
-            if p >= on:
-                mode = 1
-            elif p <= -on:
-                mode = -1
-            else:
-                mode = 0
-
-        self._control_mode_by_consumer[consumer_id] = mode
-        return mode
-
-    def _get_adjustment_for_consumer(self, consumer_id):
+    def _collect_other_reports_by_phase(self, consumer_id):
+        by_phase = {
+            "A": {"charge": 0, "discharge": 0},
+            "B": {"charge": 0, "discharge": 0},
+            "C": {"charge": 0, "discharge": 0},
+        }
         with self._values_lock:
-            total_charge = 0
-            total_discharge = 0
-            for key, report in self._reports_by_consumer.items():
-                if key == consumer_id:
-                    continue
-                total_charge += report.get("charge", 0)
-                total_discharge += report.get("discharge", 0)
-        return total_discharge - total_charge
+            reports = list(self._reports_by_consumer.items())
+
+        for other_id, report in reports:
+            if other_id == consumer_id:
+                continue
+            phase = self._assign_phase(other_id)
+            by_phase[phase]["charge"] += parse_int(report.get("charge", 0))
+            by_phase[phase]["discharge"] += parse_int(report.get("discharge", 0))
+        return by_phase
 
     def _load_override(self):
         if not self.override_path:
@@ -318,12 +274,11 @@ class CT002:
             logger.debug("CT002 override load failed: %s", exc)
         return None
 
-    def _build_response_fields(self, request_fields, values, adjustment, reported_charge=0, reported_discharge=0, consumer_id=None):
+    def _build_response_fields(self, request_fields, values, consumer_id=None):
         if not values or len(values) != 3:
             values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
         measured_total_power = phase_a + phase_b + phase_c
-        command_power = measured_total_power + adjustment
         meter_dev_type = request_fields[0] if len(request_fields) > 0 else self.device_type
         meter_mac = request_fields[1] if len(request_fields) > 1 else ""
         ct_type = self.ct_type
@@ -337,41 +292,24 @@ class CT002:
             str(round(phase_b)),
             str(round(phase_c)),
             str(round(measured_total_power)),
+            "0", "0", "0", "0",  # A/B/C/ABC_chrg_nb
+            str(self.wifi_rssi),
+            str(self.info_idx),
+            "0", "0", "0", "0", "0",  # x/A/B/C/ABC_chrg_power
+            "0", "0", "0", "0", "0",  # x/A/B/C/ABC_dchrg_power
         ]
-        response_fields += ["0"] * 4
-        response_fields.append(str(self.wifi_rssi))
-        response_fields.append(str(self.info_idx))
-        if self.discharge_from_total:
-            phase = self._assign_phase(consumer_id or meter_mac.lower())
-            phase_idx = self._phase_index(phase)
-            logger.debug("CT002 phase for %s: %s", consumer_id, phase)
-            # x/A/B/C/ABC charge + x/A/B/C/ABC discharge
-            response_fields += ["0"] * 10
 
-            # Deadband first, then hysteresis state machine.
-            if abs(command_power) <= self.control_deadband_w:
-                mode = 0
-                self._control_mode_by_consumer[consumer_id] = 0
-            else:
-                mode = self._select_control_mode(consumer_id, command_power)
+        phase_values = self._collect_other_reports_by_phase(consumer_id)
+        for phase, idx in (("A", 0), ("B", 1), ("C", 2)):
+            charge = phase_values[phase]["charge"]
+            discharge = phase_values[phase]["discharge"]
+            if charge != 0 or discharge != 0:
+                response_fields[8 + idx] = "1"
+            if charge != 0:
+                response_fields[15 + idx] = str(charge)
+            if discharge != 0:
+                response_fields[20 + idx] = str(discharge)
 
-            logger.debug(
-                "CT002 control for %s: measured_total=%s adjustment=%s command=%s mode=%s",
-                consumer_id,
-                round(measured_total_power),
-                round(adjustment),
-                round(command_power),
-                mode,
-            )
-
-            if mode > 0:
-                # discharge command
-                response_fields[8 + phase_idx] = "1"
-                response_fields[20 + phase_idx] = str(max(0, round(command_power)))
-            elif mode < 0:
-                # charge command (negative by protocol convention)
-                response_fields[8 + phase_idx] = "1"
-                response_fields[15 + phase_idx] = str(min(0, round(command_power)))
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         override = self._load_override()
         if override:
@@ -449,9 +387,8 @@ class CT002:
         values = self._get_consumer_value(consumer_id)
         if values is None:
             values = [0, 0, 0]
-        adjustment = self._get_adjustment_for_consumer(consumer_id)
         try:
-            response_fields = self._build_response_fields(fields, values, adjustment, reported_charge, reported_discharge, consumer_id)
+            response_fields = self._build_response_fields(fields, values, consumer_id)
             response = build_payload(response_fields)
         except Exception as exc:
             logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
