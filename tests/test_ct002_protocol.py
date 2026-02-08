@@ -60,91 +60,49 @@ def test_checksum_matches_helper():
     assert checksum == expected
 
 
-def test_discharge_from_total_keeps_response_field_count_stable():
-    device = CT002(discharge_from_total=True)
+def test_ct002_response_field_count_stable():
+    device = CT002()
     request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
 
     response_fields = device._build_response_fields(
         request_fields=request_fields,
         values=[500, 0, 0],
-        adjustment=0,
         consumer_id="consumer-a",
     )
 
     assert len(response_fields) == len(RESPONSE_LABELS)
 
 
-def test_discharge_from_total_charge_power_stays_negative_for_export():
-    device = CT002(discharge_from_total=True)
+def test_ct002_relays_other_storage_reports_only():
+    device = CT002()
     request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
 
-    response_export = device._build_response_fields(
+    # consumer-a is on phase A, consumer-b on phase B
+    device._update_consumer_report("consumer-a", charge_power=0, discharge_power=180)
+    device._update_consumer_report("consumer-b", charge_power=-240, discharge_power=0)
+    device._assign_phase("consumer-a")
+    device._assign_phase("consumer-b")
+
+    response_for_a = device._build_response_fields(
         request_fields=request_fields,
-        values=[-80, 0, 0],
-        adjustment=0,
-        consumer_id="consumer-a",
-    )
-    assert response_export[15] == "-80"  # A_chrg_power
-
-
-def test_discharge_from_total_applies_deadband_around_zero():
-    device = CT002(discharge_from_total=True)
-    request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
-
-    response_fields = device._build_response_fields(
-        request_fields=request_fields,
-        values=[32, 0, 0],
-        adjustment=0,
+        values=[10, 20, 30],
         consumer_id="consumer-a",
     )
 
-    # Measurement fields stay untouched; only command fields are suppressed in deadband
-    assert response_fields[7] == "32"  # total_power
-    assert response_fields[15] == "0"  # A_chrg_power
-    assert response_fields[20] == "0"  # A_dchrg_power
+    # only consumer-b data is visible to consumer-a
+    assert response_for_a[16] == "-240"  # B_chrg_power
+    assert response_for_a[21] == "0"  # B_dchrg_power
+    assert response_for_a[9] == "1"  # B_chrg_nb
+    assert response_for_a[15] == "0"  # A_chrg_power
+    assert response_for_a[20] == "0"  # A_dchrg_power
 
-
-def test_discharge_from_total_hysteresis_prevents_chatter():
-    device = CT002(
-        discharge_from_total=True,
-        control_deadband_w=20,
-        control_hysteresis_on_w=70,
-        control_hysteresis_off_w=30,
-    )
-    request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "0", "0"]
-
-    # below on-threshold: still off
-    r1 = device._build_response_fields(
+    response_for_b = device._build_response_fields(
         request_fields=request_fields,
-        values=[60, 0, 0],
-        adjustment=0,
-        consumer_id="consumer-a",
+        values=[10, 20, 30],
+        consumer_id="consumer-b",
     )
-    assert r1[20] == "0"
 
-    # above on-threshold: turn on discharge
-    r2 = device._build_response_fields(
-        request_fields=request_fields,
-        values=[80, 0, 0],
-        adjustment=0,
-        consumer_id="consumer-a",
-    )
-    assert r2[20] == "80"
-
-    # between off and on: stay on due to hysteresis
-    r3 = device._build_response_fields(
-        request_fields=request_fields,
-        values=[40, 0, 0],
-        adjustment=0,
-        consumer_id="consumer-a",
-    )
-    assert r3[20] == "40"
-
-    # below off-threshold: turn off
-    r4 = device._build_response_fields(
-        request_fields=request_fields,
-        values=[25, 0, 0],
-        adjustment=0,
-        consumer_id="consumer-a",
-    )
-    assert r4[20] == "0"
+    # only consumer-a data is visible to consumer-b
+    assert response_for_b[20] == "180"  # A_dchrg_power
+    assert response_for_b[8] == "1"  # A_chrg_nb
+    assert response_for_b[16] == "0"  # B_chrg_power

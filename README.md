@@ -175,8 +175,6 @@ UDP_PORT = 12345
 WIFI_RSSI = -50
 # Info index reported to the storage system
 INFO_IDX = 0
-# Set discharge power fields based on total power
-DISCHARGE_FROM_TOTAL = False
 # Ignore repeated requests from the same client within this window (seconds)
 DEDUPE_TIME_WINDOW = 10
 # Forget consumers after this many seconds without updates (multi-consumer support)
