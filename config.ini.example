@@ -36,14 +36,6 @@ THROTTLE_INTERVAL = 0
 #WIFI_RSSI = -50
 ## Info index reported to the storage system
 #INFO_IDX = 0
-## Set discharge/charge command fields based on measured total power + multi-consumer adjustment
-#DISCHARGE_FROM_TOTAL = False
-## Control deadband in watts (inside this range -> no charge/discharge command)
-#CONTROL_DEADBAND_W = 50
-## Hysteresis enter threshold in watts (must be >= deadband)
-#CONTROL_HYSTERESIS_ON_W = 70
-## Hysteresis exit threshold in watts (must be <= on threshold)
-#CONTROL_HYSTERESIS_OFF_W = 30
 ## Ignore repeated requests from the same client within this window (seconds)
 #DEDUPE_TIME_WINDOW = 10
 ## Forget consumers after this many seconds without updates (multi-consumer support)
