@@ -15,19 +15,7 @@ from config.logger import logger, setLogLevel
 from health_service import start_health_service, stop_health_service
 
 
-def parse_phase_map(value):
-    mapping = {}
-    if not value:
-        return mapping
-    for entry in value.split(","):
-        entry = entry.strip()
-        if not entry or ":" not in entry:
-            continue
-        mac, phase = entry.split(":", 1)
-        clean_mac = mac.strip().strip("'").strip('"')
-        clean_phase = phase.strip().strip("'").strip('"')
-        mapping[clean_mac.lower()] = clean_phase.upper()
-    return mapping
+# CT002/CT003 phase assignment is auto-managed by emulator runtime.
 
 
 def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
@@ -138,19 +126,7 @@ def run_device(
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
         info_idx = cfg.getint(ct_section, "INFO_IDX", fallback=0)
-        discharge_from_total = cfg.getboolean(
-            ct_section, "DISCHARGE_FROM_TOTAL", fallback=False
-        )
-        phase_map = cfg.get(ct_section, "PHASE_MAP", fallback="")
-        control_deadband_w = cfg.getint(
-            ct_section, "CONTROL_DEADBAND_W", fallback=50
-        )
-        control_hysteresis_on_w = cfg.getint(
-            ct_section, "CONTROL_HYSTERESIS_ON_W", fallback=70
-        )
-        control_hysteresis_off_w = cfg.getint(
-            ct_section, "CONTROL_HYSTERESIS_OFF_W", fallback=30
-        )
+        # no legacy control knobs: CT emulation mirrors other-storage reports
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
         allow_any_ct_mac = cfg.getboolean(
@@ -167,11 +143,7 @@ def run_device(
         logger.debug(f"Disable Sum Phases: {disable_sum}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
-        logger.debug(f"Discharge From Total: {discharge_from_total}")
-        logger.debug(f"Phase Map: {parse_phase_map(phase_map)}")
-        logger.debug(f"Control Deadband W: {control_deadband_w}")
-        logger.debug(f"Control Hysteresis On W: {control_hysteresis_on_w}")
-        logger.debug(f"Control Hysteresis Off W: {control_hysteresis_off_w}")
+        logger.debug("CT control model: relay reports of other storages")
         logger.debug(f"Override JSON: {override_path}")
 
         device = CT002(
@@ -181,11 +153,6 @@ def run_device(
             ct_mac=ct_mac,
             wifi_rssi=wifi_rssi,
             info_idx=info_idx,
-            discharge_from_total=discharge_from_total,
-            phase_map=parse_phase_map(phase_map),
-            control_deadband_w=control_deadband_w,
-            control_hysteresis_on_w=control_hysteresis_on_w,
-            control_hysteresis_off_w=control_hysteresis_off_w,
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
             allow_any_ct_mac=allow_any_ct_mac,
