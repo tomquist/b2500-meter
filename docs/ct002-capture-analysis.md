@@ -69,9 +69,10 @@ Likely (high confidence):
 - `v1..v3` are per-phase-like values
 - `v4` behaves like a total/aggregate value (often close to sum with small +/- drift)
 
-Unclear (needs targeted experiments):
+Partially confirmed (targeted experiments still useful for edge-cases):
 
-- exact semantics of later fields after `v4` (status/counters/energy accumulators/etc.)
+- later fields after `v4` are largely consistent with status/counter/energy-style telemetry.
+- remaining uncertainty is mainly field-by-field naming confidence under all operating states.
 
 ## 4) Scenario comparison: single-active vs multi-active
 
