@@ -48,16 +48,6 @@ def calculate_checksum(data_bytes):
 
 
 
-def calculate_checksum_payload(data_bytes):
-    if len(data_bytes) < 5:
-        return calculate_checksum(data_bytes)
-    sep_index = data_bytes.find(b"|", 2)
-    if sep_index == -1:
-        return calculate_checksum(data_bytes)
-    xor = 0
-    for b in data_bytes[sep_index:]:
-        xor ^= b
-    return xor
 def parse_int(value, default=0):
     try:
         return int(value)
@@ -89,28 +79,6 @@ def build_payload(fields):
 
 
 
-def parse_request_lenient(data):
-    fields, error = parse_request(data)
-    if error and error.startswith("Checksum mismatch"):
-        # Retry checksum check but continue parsing if the structure is otherwise valid.
-        try:
-            sep_index = data.find(b"|", 2)
-            message = data[sep_index:-3].decode("ascii")
-            fields = message.split("|")[1:]
-            xor = 0
-            for b in data[:-2]:
-                xor ^= b
-            expected_checksum = f"{xor:02x}".encode("ascii")
-            actual_checksum = data[-2:]
-            logger.debug(
-                "CT002 request checksum mismatch (expected %s, got %s)",
-                expected_checksum,
-                actual_checksum,
-            )
-            return fields, None
-        except Exception as exc:
-            return None, str(exc)
-    return fields, error
 def parse_request(data):
     if len(data) < 10:
         return None, "Too short"
@@ -170,7 +138,6 @@ class CT002:
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
         self.info_idx = info_idx
-        self._phase_assignments = {}
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.allow_any_ct_mac = allow_any_ct_mac
@@ -197,23 +164,7 @@ class CT002:
         with self._values_lock:
             return self._values_by_consumer.get(consumer_id)
 
-    def _update_consumer_report(self, consumer_id, phase=None, power=None, charge_power=None, discharge_power=None):
-        """
-        Store latest per-consumer report.
-
-        Current protocol understanding (from captures): request fields are
-        ...|<phase>|<power> where phase is A/B/C and power is signed watts.
-
-        Legacy compatibility: if callers still pass charge/discharge, keep
-        approximate behavior by converting to a signed net power.
-        """
-        if power is None and (charge_power is not None or discharge_power is not None):
-            c = parse_int(charge_power, 0)
-            d = parse_int(discharge_power, 0)
-            power = d - c
-        if phase is None:
-            phase = "A"
-
+    def _update_consumer_report(self, consumer_id, phase, power):
         with self._values_lock:
             self._reports_by_consumer[consumer_id] = {
                 "phase": str(phase).upper() if phase else "A",
@@ -232,7 +183,6 @@ class CT002:
             for key in stale:
                 self._reports_by_consumer.pop(key, None)
                 self._values_by_consumer.pop(key, None)
-                self._phase_assignments.pop(key, None)
         stale_addrs = [
             addr
             for addr, ts in self._last_response_time.items()
@@ -240,26 +190,6 @@ class CT002:
         ]
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
-
-    def _assign_phase(self, consumer_id):
-        if consumer_id in self._phase_assignments:
-            return self._phase_assignments[consumer_id]
-        phases = ["A", "B", "C"]
-        assigned = set(self._phase_assignments.values())
-        for phase in phases:
-            if phase not in assigned:
-                self._phase_assignments[consumer_id] = phase
-                logger.debug("CT002 phase auto-assign: %s -> %s", consumer_id, phase)
-                return phase
-        # fallback round-robin
-        phase = phases[len(self._phase_assignments) % len(phases)]
-        self._phase_assignments[consumer_id] = phase
-        logger.debug("CT002 phase auto-assign (rr): %s -> %s", consumer_id, phase)
-        return phase
-
-    def _phase_index(self, phase):
-        mapping = {"A": 0, "B": 1, "C": 2}
-        return mapping.get(phase, 0)
 
     def _collect_reports_by_phase(self):
         by_phase = {
@@ -271,7 +201,7 @@ class CT002:
             reports = list(self._reports_by_consumer.items())
 
         for consumer_id, report in reports:
-            phase = (report.get("phase") or self._assign_phase(consumer_id) or "A").upper()
+            phase = (report.get("phase") or "A").upper()
             if phase not in by_phase:
                 phase = "A"
             by_phase[phase]["power"] += parse_int(report.get("power", 0))
@@ -380,16 +310,12 @@ class CT002:
             )
             return None
         consumer_id = self._consumer_key(addr, fields)
-        reported_phase = fields[4] if len(fields) > 4 else "A"
+        reported_phase = (fields[4] if len(fields) > 4 else "A").upper()
         reported_power = parse_int(fields[5] if len(fields) > 5 else 0)
 
-        # Backward-compatible fallback for older synthetic payloads that used
-        # numeric charge/discharge at positions 5/6.
         if reported_phase not in ("A", "B", "C"):
-            legacy_charge = parse_int(fields[4] if len(fields) > 4 else 0)
-            legacy_discharge = parse_int(fields[5] if len(fields) > 5 else 0)
-            reported_phase = "A"
-            reported_power = legacy_discharge - legacy_charge
+            logger.debug("CT002 request from %s has invalid phase '%s'", addr, reported_phase)
+            return None
 
         logger.debug(
             "CT002 parsed fields from %s: meter_dev_type=%s meter_mac=%s ct_type=%s ct_mac=%s phase=%s power=%s consumer_id=%s",
