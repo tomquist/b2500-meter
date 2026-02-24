@@ -261,7 +261,7 @@ class CT002:
         mapping = {"A": 0, "B": 1, "C": 2}
         return mapping.get(phase, 0)
 
-    def _collect_other_reports_by_phase(self, consumer_id):
+    def _collect_reports_by_phase(self):
         by_phase = {
             "A": {"power": 0},
             "B": {"power": 0},
@@ -270,10 +270,8 @@ class CT002:
         with self._values_lock:
             reports = list(self._reports_by_consumer.items())
 
-        for other_id, report in reports:
-            if other_id == consumer_id:
-                continue
-            phase = (report.get("phase") or self._assign_phase(other_id) or "A").upper()
+        for consumer_id, report in reports:
+            phase = (report.get("phase") or self._assign_phase(consumer_id) or "A").upper()
             if phase not in by_phase:
                 phase = "A"
             by_phase[phase]["power"] += parse_int(report.get("power", 0))
@@ -316,7 +314,9 @@ class CT002:
             "0", "0", "0", "0", "0",  # x/A/B/C/ABC_dchrg_power
         ]
 
-        phase_values = self._collect_other_reports_by_phase(consumer_id)
+        # Capture analysis indicates forwarded A/B/C values are sums across all
+        # known consumers (not only "other" consumers).
+        phase_values = self._collect_reports_by_phase()
         for phase, idx in (("A", 0), ("B", 1), ("C", 2)):
             power = phase_values[phase]["power"]
             if power != 0:

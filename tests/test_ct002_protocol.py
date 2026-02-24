@@ -73,7 +73,7 @@ def test_ct002_response_field_count_stable():
     assert len(response_fields) == len(RESPONSE_LABELS)
 
 
-def test_ct002_relays_other_storage_reports_only():
+def test_ct002_relays_sum_of_all_storage_reports_by_phase():
     device = CT002()
     request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "B", "-100"]
 
@@ -87,10 +87,11 @@ def test_ct002_relays_other_storage_reports_only():
         consumer_id="consumer-a",
     )
 
-    # only consumer-b data is visible to consumer-a
+    # sums across all known consumers are forwarded
+    assert response_for_a[15] == "-180"  # A_chrg_power
     assert response_for_a[16] == "-240"  # B_chrg_power
+    assert response_for_a[8] == "1"  # A_chrg_nb
     assert response_for_a[9] == "1"  # B_chrg_nb
-    assert response_for_a[15] == "0"  # A_chrg_power
     assert response_for_a[21] == "0"  # B_dchrg_power (unused)
 
     response_for_b = device._build_response_fields(
@@ -99,7 +100,6 @@ def test_ct002_relays_other_storage_reports_only():
         consumer_id="consumer-b",
     )
 
-    # only consumer-a data is visible to consumer-b
+    # same aggregate forwarding for other consumers in same state
     assert response_for_b[15] == "-180"  # A_chrg_power
-    assert response_for_b[8] == "1"  # A_chrg_nb
-    assert response_for_b[16] == "0"  # B_chrg_power
+    assert response_for_b[16] == "-240"  # B_chrg_power
