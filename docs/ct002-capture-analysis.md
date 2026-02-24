@@ -99,13 +99,68 @@ Observed request senders:
 Interpretation:
 - All three batteries actively report non-zero power.
 
-## 5) Additional observations
+## 5) Answers to key behavior questions
+
+### Q1: Does each storage get its own response, or are responses basically the same?
+
+**Each requester gets its own UDP response** (unicast back to the source endpoint).
+
+Payload similarity depends on scenario:
+
+- In `charge 1 batteryes.pcap`, the forwarded A/B/C section (`A_chrg_power|B_chrg_power|C_chrg_power`) is identical across recipients in **94.7%** of multi-recipient cycles.
+- In `charge 3 batteryes.pcap`, that same section is identical across recipients in **56.7%** of cycles.
+
+Interpretation:
+- Responses are not globally broadcast-identical; they are generated per requester.
+- But many fields can still be very similar when system state is similar.
+
+### Q2: What happens with request `phase_power` values?
+
+Observed request tail:
+- `...|<phase>|<phase_power>`
+
+Observed response effect:
+- `phase_power` values clearly reappear in response forwarding fields (A/B/C charge-power section), e.g. tuples like `(-353, -270, 0)` in the multi-active trace.
+- In single-active trace, forwarding is typically `(-X, 0, 0)`, matching one active contributor.
+
+Interpretation:
+- Request phase-power is not ignored; it is fed into forwarded per-phase values in responses.
+- This is consistent with anti-feedback/coordination intent between multiple storage units.
+
+## 6) Cycle-by-cycle snapshots (anonymized)
+
+Legend:
+- `resp_p1234` = first four numeric response values after identity fields
+- `resp_fwd_ABC` = forwarded A/B/C charge-power-like tuple
+
+### `charge 1 batteryes.pcap` (single-active)
+
+- Cycle 1
+  - battery C: req `?/?`, resp_p1234 `[77,63,-147,-6]`, resp_fwd_ABC `[-239,0,0]`
+  - battery B: req `B/0`, resp_p1234 `[78,62,-147,-7]`, resp_fwd_ABC `[-239,0,0]`
+  - battery A: req `A/-239`, resp_p1234 `[78,62,-147,-7]`, resp_fwd_ABC `[-239,0,0]`
+- Cycle 2
+  - battery B: req `B/0`, resp_p1234 `[78,66,-146,-1]`, resp_fwd_ABC `[-239,0,0]`
+  - battery A: req `A/-239`, resp_p1234 `[78,66,-146,-1]`, resp_fwd_ABC `[-239,0,0]`
+
+### `charge 3 batteryes.pcap` (multi-active)
+
+- Cycle 1
+  - battery A: req `A/-353`, resp_p1234 `[121,205,-295,32]`, resp_fwd_ABC `[-353,-275,0]`
+  - battery C: req `B/-53`, resp_p1234 `[121,209,-294,36]`, resp_fwd_ABC `[-353,-270,0]`
+  - battery B: req `B/-193`, resp_p1234 `[121,202,-294,29]`, resp_fwd_ABC `[-353,-270,0]`
+- Cycle 4
+  - battery A: req `A/-327`, resp_p1234 `[121,171,-294,-1]`, resp_fwd_ABC `[-327,-218,0]`
+  - battery C: req `B/-53`, resp_p1234 `[105,150,-293,-38]`, resp_fwd_ABC `[-327,-214,0]`
+  - battery B: req `B/-161`, resp_p1234 `[105,144,-294,-44]`, resp_fwd_ABC `[-324,-214,0]`
+
+## 7) Additional observations
 
 - Two devices (battery B and battery C) both report phase `B` in these captures.
   - So phase label is not guaranteed to be globally unique per device.
 - Response destination identity aligns with requesting battery identity (no obvious cross-target mismatches).
 
-## 6) Practical modeling guidance
+## 8) Practical modeling guidance
 
 For emulator/protocol implementation:
 
@@ -115,7 +170,7 @@ For emulator/protocol implementation:
 - Keep legacy fallback only for synthetic/older tests.
 - Treat later response fields as implementation-defined unless verified with controlled experiments.
 
-## 7) Suggested follow-up experiments
+## 9) Suggested follow-up experiments
 
 To resolve remaining unknown response fields:
 
