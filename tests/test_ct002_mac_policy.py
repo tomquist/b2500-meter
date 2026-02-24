@@ -2,7 +2,7 @@ from ct002.ct002 import CT002, build_payload
 
 
 def make_request(ct_mac):
-    fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", ct_mac, "0", "0"]
+    fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", ct_mac, "B", "0"]
     return build_payload(fields)
 
 
