@@ -106,11 +106,11 @@ reflects the grid power **excluding its own output** so the devices do not overâ
 
 The emulator therefore:
 - Tracks perâ€‘consumer `phase` + `phase_power` from the request fields.
-- When responding to consumer **X**, it includes only *other* consumers in the per-phase report fields,
-  grouped by their reported phase.
+- When responding, it forwards per-phase aggregates based on the latest known reports from all
+  known consumers, grouped by their reported phase.
 
-This avoids feeding a storage unit its own reported contribution and helps reduce feedback loops in
-multi-consumer setups.
+Capture analysis shows this aggregate model matches observed traffic closely, with minor deviations
+expected from asynchronous request/response timing.
 
 If a consumer stops sending updates for a while, its reported values are evicted after a configurable
 TTL (`CONSUMER_TTL`).
