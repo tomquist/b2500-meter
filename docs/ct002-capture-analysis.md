@@ -122,10 +122,14 @@ Observed request tail:
 Observed response effect:
 - `phase_power` values clearly reappear in response forwarding fields (A/B/C charge-power section), e.g. tuples like `(-353, -270, 0)` in the multi-active trace.
 - In single-active trace, forwarding is typically `(-X, 0, 0)`, matching one active contributor.
+- When comparing `resp_fwd_ABC` against per-phase sums of latest known request powers:
+  - single-active capture: exact match in ~96.8% (A) / 100% (B,C)
+  - multi-active capture: exact match in ~87.1% (A) / ~81.6% (B) / 100% (C)
+  - non-exact cases are consistent with async timing/skew between requests and responses.
 
 Interpretation:
 - Request phase-power is not ignored; it is fed into forwarded per-phase values in responses.
-- This is consistent with anti-feedback/coordination intent between multiple storage units.
+- Best current model: `resp_fwd_ABC` is the per-phase sum across all known storages (with minor timing skew possible).
 
 ## 6) Cycle-by-cycle snapshots (anonymized)
 
