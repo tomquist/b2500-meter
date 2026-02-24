@@ -197,11 +197,27 @@ class CT002:
         with self._values_lock:
             return self._values_by_consumer.get(consumer_id)
 
-    def _update_consumer_report(self, consumer_id, charge_power, discharge_power):
+    def _update_consumer_report(self, consumer_id, phase=None, power=None, charge_power=None, discharge_power=None):
+        """
+        Store latest per-consumer report.
+
+        Current protocol understanding (from captures): request fields are
+        ...|<phase>|<power> where phase is A/B/C and power is signed watts.
+
+        Legacy compatibility: if callers still pass charge/discharge, keep
+        approximate behavior by converting to a signed net power.
+        """
+        if power is None and (charge_power is not None or discharge_power is not None):
+            c = parse_int(charge_power, 0)
+            d = parse_int(discharge_power, 0)
+            power = d - c
+        if phase is None:
+            phase = "A"
+
         with self._values_lock:
             self._reports_by_consumer[consumer_id] = {
-                "charge": charge_power,
-                "discharge": discharge_power,
+                "phase": str(phase).upper() if phase else "A",
+                "power": parse_int(power, 0),
                 "timestamp": time.time(),
             }
 
@@ -247,9 +263,9 @@ class CT002:
 
     def _collect_other_reports_by_phase(self, consumer_id):
         by_phase = {
-            "A": {"charge": 0, "discharge": 0},
-            "B": {"charge": 0, "discharge": 0},
-            "C": {"charge": 0, "discharge": 0},
+            "A": {"power": 0},
+            "B": {"power": 0},
+            "C": {"power": 0},
         }
         with self._values_lock:
             reports = list(self._reports_by_consumer.items())
@@ -257,9 +273,10 @@ class CT002:
         for other_id, report in reports:
             if other_id == consumer_id:
                 continue
-            phase = self._assign_phase(other_id)
-            by_phase[phase]["charge"] += parse_int(report.get("charge", 0))
-            by_phase[phase]["discharge"] += parse_int(report.get("discharge", 0))
+            phase = (report.get("phase") or self._assign_phase(other_id) or "A").upper()
+            if phase not in by_phase:
+                phase = "A"
+            by_phase[phase]["power"] += parse_int(report.get("power", 0))
         return by_phase
 
     def _load_override(self):
@@ -301,14 +318,12 @@ class CT002:
 
         phase_values = self._collect_other_reports_by_phase(consumer_id)
         for phase, idx in (("A", 0), ("B", 1), ("C", 2)):
-            charge = phase_values[phase]["charge"]
-            discharge = phase_values[phase]["discharge"]
-            if charge != 0 or discharge != 0:
+            power = phase_values[phase]["power"]
+            if power != 0:
                 response_fields[8 + idx] = "1"
-            if charge != 0:
-                response_fields[15 + idx] = str(charge)
-            if discharge != 0:
-                response_fields[20 + idx] = str(discharge)
+                # Observed packets carry signed per-phase values in the
+                # *_chrg_power section; keep *_dchrg_power at 0 for now.
+                response_fields[15 + idx] = str(power)
 
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         override = self._load_override()
@@ -365,20 +380,29 @@ class CT002:
             )
             return None
         consumer_id = self._consumer_key(addr, fields)
-        reported_charge = parse_int(fields[4] if len(fields) > 4 else 0)
-        reported_discharge = parse_int(fields[5] if len(fields) > 5 else 0)
+        reported_phase = fields[4] if len(fields) > 4 else "A"
+        reported_power = parse_int(fields[5] if len(fields) > 5 else 0)
+
+        # Backward-compatible fallback for older synthetic payloads that used
+        # numeric charge/discharge at positions 5/6.
+        if reported_phase not in ("A", "B", "C"):
+            legacy_charge = parse_int(fields[4] if len(fields) > 4 else 0)
+            legacy_discharge = parse_int(fields[5] if len(fields) > 5 else 0)
+            reported_phase = "A"
+            reported_power = legacy_discharge - legacy_charge
+
         logger.debug(
-            "CT002 parsed fields from %s: meter_dev_type=%s meter_mac=%s ct_type=%s ct_mac=%s charge=%s discharge=%s consumer_id=%s",
+            "CT002 parsed fields from %s: meter_dev_type=%s meter_mac=%s ct_type=%s ct_mac=%s phase=%s power=%s consumer_id=%s",
             addr,
             fields[0] if len(fields) > 0 else None,
             fields[1] if len(fields) > 1 else None,
             fields[2] if len(fields) > 2 else None,
             fields[3] if len(fields) > 3 else None,
-            reported_charge,
-            reported_discharge,
+            reported_phase,
+            reported_power,
             consumer_id,
         )
-        self._update_consumer_report(consumer_id, reported_charge, reported_discharge)
+        self._update_consumer_report(consumer_id, phase=reported_phase, power=reported_power)
 
         updated = self._call_before_send(addr, fields, consumer_id)
         if updated is not None:

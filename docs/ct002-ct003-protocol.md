@@ -52,17 +52,16 @@ Request payload fields (consumer → CT):
 2. **meter_mac_code** — battery MAC (12 hex chars, from Marstek app device management)
 3. **hhm_dev_type** — CT type (`HME-4` or `HME-3`)
 4. **hhm_mac_code** — CT MAC (12 hex chars, from Marstek app device management)
-5. **charge_power** — reported charging power of the consumer (integer, usually `0` in public scripts)
-6. **discharge_power** — reported discharging power of the consumer (integer, usually `0` in public scripts)
+5. **phase** — phase identifier (`A`, `B`, `C`) observed in real traffic
+6. **phase_power** — signed integer watts for the phase in field 5
 
-The last two fields are often set to `0` in open‑source scripts, but real devices appear to report their own
-charge/discharge power. The emulator uses these fields to avoid over‑compensating when multiple consumers
-are connected (see “Multi‑consumer behavior”).
+This mapping is based on real packet captures. Older public scripts may show `0|0` placeholders,
+but observed live traffic carries `phase|power` in these two fields.
 
 ### Example Request (human readable)
 
 ```text
-<SOH><STX>56|HMG-50|AABBCCDDEEFF|HME-4|112233445566|0|0<ETX>3a
+<SOH><STX>53|HMG-50|AABBCCDDEEFF|HME-4|112233445566|B|-217<ETX>xx
 ```
 
 ## Response Fields
@@ -95,7 +94,7 @@ Response payload fields (CT → consumer):
 24. **ABC_dchrg_power** — 0
 
 Only the phase and total power fields are required for the storage system to react. The remaining fields
-are typically left at zero in the public reverse‑engineering code.
+are less well understood and may contain status/counter values in vendor firmware.
 
 ## Multi‑consumer behavior
 
@@ -103,15 +102,12 @@ When multiple storage systems query the same CT emulator, each system should rec
 reflects the grid power **excluding its own output** so the devices do not over‑compensate.
 
 The emulator therefore:
-- Tracks per‑consumer `charge_power` and `discharge_power` from the request fields.
-- When responding to consumer **X**, it adjusts the response by:
+- Tracks per‑consumer `phase` + `phase_power` from the request fields.
+- When responding to consumer **X**, it includes only *other* consumers in the per-phase report fields,
+  grouped by their reported phase.
 
-```text
-adjustment = sum(other.discharge_power) - sum(other.charge_power)
-```
-
-This adjustment is added to phase A (and therefore the total). This keeps the total consistent while
-avoiding a feedback loop when multiple devices are present.
+This avoids feeding a storage unit its own reported contribution and helps reduce feedback loops in
+multi-consumer setups.
 
 If a consumer stops sending updates for a while, its reported values are evicted after a configurable
 TTL (`CONSUMER_TTL`).
