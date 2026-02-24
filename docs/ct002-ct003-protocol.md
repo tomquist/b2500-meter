@@ -4,6 +4,9 @@ This document summarizes the CT002/CT003 protocol based on community reverse‑e
 - https://github.com/rweijnen/marstek-venus-e-firmware-notes
 - https://github.com/d-shmt/hass_marstek-smart-meter
 
+Capture-based findings for issue #111 are documented in:
+- [ct002-capture-analysis.md](ct002-capture-analysis.md)
+
 The CT002 and CT003 share the **same protocol**. The only difference is the CT type value:
 - **CT002:** `HME-4`
 - **CT003:** `HME-3`
