@@ -119,8 +119,7 @@ def run_device(
         ct_section = "CT002"
         if device_type == "ct003" and cfg.has_section("CT003"):
             ct_section = "CT003"
-        ct_type_default = "HME-4" if device_type == "ct002" else "HME-3"
-        ct_type = cfg.get(ct_section, "CT_TYPE", fallback=ct_type_default)
+        ct_type = "HME-4" if device_type == "ct002" else "HME-3"
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
