@@ -32,17 +32,6 @@ wait_for_homeassistant() {
 
 CONFIG="/app/config.ini"
 
-# Generate a stable fallback CT MAC if none is configured (12 lowercase hex chars)
-generate_ct_mac() {
-    local seed
-    if [ -f /etc/machine-id ]; then
-        seed=$(cat /etc/machine-id)
-    else
-        seed=$(hostname)
-    fi
-    echo "$seed" | sha256sum | cut -c1-12
-}
-
 print_redacted_config() {
     sed -E \
         -e 's/^(MAILBOX=).*/\1REDACTED/' \
@@ -58,17 +47,15 @@ if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'c
 else
     # Determine CT section from selected device types
     ct_section="CT002"
+    ct_type="HME-4"
     if echo "$(bashio::config 'device_types')" | grep -qi 'ct003'; then
         ct_section="CT003"
+        ct_type="HME-3"
     fi
 
     ct_mac=""
     if bashio::config.has_value 'ct_mac'; then
         ct_mac="$(bashio::config 'ct_mac')"
-    fi
-    if [ -z "$ct_mac" ]; then
-        ct_mac="$(generate_ct_mac)"
-        bashio::log.info "ct_mac not set, generated stable MAC: $ct_mac"
     fi
 
     # Generate default config
@@ -82,7 +69,7 @@ else
         echo ""
         echo "[$ct_section]"
         echo "DEVICE_TYPE=HMG-50"
-        echo "CT_TYPE=$(bashio::config 'ct_type')"
+        echo "CT_TYPE=$ct_type"
         echo "CT_MAC=$ct_mac"
         if bashio::config.has_value 'ct_allow_any_mac'; then
             echo "ALLOW_ANY_CT_MAC=$(bashio::config 'ct_allow_any_mac')"
