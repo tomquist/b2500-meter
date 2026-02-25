@@ -245,15 +245,17 @@ class CT002:
         ]
 
         # Capture analysis indicates forwarded A/B/C values are sums across all
-        # known consumers (not only "other" consumers).
+        # known consumers (not only "other" consumers), with sign split:
+        # negative sums -> *_chrg_power, positive sums -> *_dchrg_power.
         phase_values = self._collect_reports_by_phase()
         for phase, idx in (("A", 0), ("B", 1), ("C", 2)):
             power = phase_values[phase]["power"]
             if power != 0:
                 response_fields[8 + idx] = "1"
-                # Observed packets carry signed per-phase values in the
-                # *_chrg_power section; keep *_dchrg_power at 0 for now.
-                response_fields[15 + idx] = str(power)
+                if power < 0:
+                    response_fields[15 + idx] = str(power)
+                else:
+                    response_fields[20 + idx] = str(power)
 
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         override = self._load_override()
