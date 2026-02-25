@@ -66,7 +66,6 @@ else
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
         echo "[$ct_section]"
-        echo "DEVICE_TYPE=HMG-50"
         echo "CT_TYPE=$ct_type"
         echo "CT_MAC=$ct_mac"
         if bashio::config.has_value 'ct_allow_any_mac'; then
