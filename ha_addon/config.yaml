@@ -47,6 +47,5 @@ schema:
   device_types: str
   throttle_interval: float(0,)
   ct_mac: str?
-  ct_allow_any_mac: bool?
   log_level: list(critical|error|warning|info|debug)
   custom_config: str?
