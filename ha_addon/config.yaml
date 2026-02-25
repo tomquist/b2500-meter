@@ -37,7 +37,6 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
-  ct_mac: ""
   log_level: "info"
 schema:
   power_input_alias: str
