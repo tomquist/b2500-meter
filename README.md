@@ -173,7 +173,7 @@ WIFI_RSSI = -50
 # Info index reported to the storage system
 INFO_IDX = 0
 # Ignore repeated requests from the same client within this window (seconds)
-DEDUPE_TIME_WINDOW = 10
+DEDUPE_TIME_WINDOW = 0
 # Forget consumers after this many seconds without updates (multi-consumer support)
 CONSUMER_TTL = 120
 ```
