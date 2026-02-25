@@ -124,3 +124,21 @@ def test_ct002_splits_positive_phase_sum_into_dchrg_fields():
     assert response[21] == "800"  # B_dchrg_power
     assert response[8] == "1"  # A_chrg_nb flag still marks active phase contribution
     assert response[9] == "1"  # B_chrg_nb
+
+
+def test_ct002_info_idx_increments_and_wraps():
+    device = CT002()
+    request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "A", "0"]
+
+    first = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
+    second = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
+
+    assert first[13] == "0"
+    assert second[13] == "1"
+
+    device._info_idx_counter = 255
+    wrap = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
+    after_wrap = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
+
+    assert wrap[13] == "255"
+    assert after_wrap[13] == "0"
