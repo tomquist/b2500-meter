@@ -70,9 +70,6 @@ else
         echo "[$ct_section]"
         echo "CT_TYPE=$ct_type"
         echo "CT_MAC=$ct_mac"
-        if bashio::config.has_value 'ct_allow_any_mac'; then
-            echo "ALLOW_ANY_CT_MAC=$(bashio::config 'ct_allow_any_mac')"
-        fi
         # CT002/CT003 control behavior is fixed by emulator
         echo ""
 
