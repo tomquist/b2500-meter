@@ -130,7 +130,10 @@ Observed response effect:
 
 Interpretation:
 - Request phase-power is not ignored; it is fed into forwarded per-phase values in responses.
-- Best current model: `resp_fwd_ABC` is the per-phase sum across all known storages (with minor timing skew possible).
+- Best current model: forwarded values are per-phase sums across all known storages (with minor timing skew possible).
+- Sign split observed in newer traces:
+  - negative sums appear in `A/B/C_chrg_power` (fields 16-18)
+  - positive sums appear in `A/B/C_dchrg_power` (fields 21-23)
 
 ## 6) Cycle-by-cycle snapshots (anonymized)
 
@@ -160,6 +163,12 @@ Legend:
   - battery B: req `B/-161`, resp_p1234 `[105,144,-294,-44]`, resp_fwd_ABC `[-324,-214,0]`
 
 ## 7) Additional observations
+
+- Newer traces with explicit discharge scenarios confirm the same aggregate logic as charge traces,
+  but mapped to the `*_dchrg_power` block instead of `*_chrg_power`.
+- Field hypothesis update:
+  - `F25` and likely `F26` are plausible CT003 import/export counter-like values (scaling still unknown).
+  - `F27` and `F28` may also be meter-state/counter related, but semantics are still not fully confirmed.
 
 - Two devices (battery B and battery C) both report phase `B` in these captures.
   - So phase label is not guaranteed to be globally unique per device.
