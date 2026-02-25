@@ -32,11 +32,37 @@ wait_for_homeassistant() {
 
 CONFIG="/app/config.ini"
 
+# Generate a stable fallback CT MAC if none is configured (12 lowercase hex chars)
+generate_ct_mac() {
+    local seed
+    if [ -f /etc/machine-id ]; then
+        seed=$(cat /etc/machine-id)
+    else
+        seed=$(hostname)
+    fi
+    echo "$seed" | sha256sum | cut -c1-12
+}
+
 # Check if custom config is provided
 if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'custom_config')" ]; then
     bashio::log.info "Using custom config file: $(bashio::config 'custom_config')"
     cp "/config/$(bashio::config 'custom_config')" "$CONFIG"
 else
+    # Determine CT section from selected device types
+    ct_section="CT002"
+    if echo "$(bashio::config 'device_types')" | grep -qi 'ct003'; then
+        ct_section="CT003"
+    fi
+
+    ct_mac=""
+    if bashio::config.has_value 'ct_mac'; then
+        ct_mac="$(bashio::config 'ct_mac')"
+    fi
+    if [ -z "$ct_mac" ]; then
+        ct_mac="$(generate_ct_mac)"
+        bashio::log.info "ct_mac not set, generated stable MAC: $ct_mac"
+    fi
+
     # Generate default config
     {
         echo "[GENERAL]"
@@ -46,14 +72,14 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
-        echo "[CT002]"
-        echo "DEVICE_TYPE=$(bashio::config 'ct_device_type')"
+        echo "[$ct_section]"
+        echo "DEVICE_TYPE=HMG-50"
         echo "CT_TYPE=$(bashio::config 'ct_type')"
-        echo "CT_MAC=$(bashio::config 'ct_mac')"
-        echo "ALLOW_ANY_CT_MAC=$(bashio::config 'ct_allow_any_mac')"
-        echo "WIFI_RSSI=$(bashio::config 'ct_wifi_rssi')"
-        echo "INFO_IDX=$(bashio::config 'ct_info_idx')"
-        # CT002 control behavior is fixed by emulator
+        echo "CT_MAC=$ct_mac"
+        if bashio::config.has_value 'ct_allow_any_mac'; then
+            echo "ALLOW_ANY_CT_MAC=$(bashio::config 'ct_allow_any_mac')"
+        fi
+        # CT002/CT003 control behavior is fixed by emulator
         echo ""
         echo "[HOMEASSISTANT]"
         echo "IP=supervisor"
