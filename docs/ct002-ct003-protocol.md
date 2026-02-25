@@ -117,7 +117,6 @@ TTL (`CONSUMER_TTL`).
 
 ## CT MAC behavior
 
-The CT only responds if the request’s `hhm_mac_code` matches its configured `CT_MAC`. For convenience,
-the emulator can be configured to accept any CT MAC (or `000000000000` as a wildcard) when
-`ALLOW_ANY_CT_MAC=true`. When `CT_MAC` is not set, the emulator echoes the request’s CT MAC back in
-responses to keep configuration simple (this fallback is not based on device RE).
+If `CT_MAC` is configured, the CT only responds when the request `hhm_mac_code` matches `CT_MAC`.
+If `CT_MAC` is empty, the emulator accepts requests for any CT MAC and echoes the request CT MAC
+back in responses.
