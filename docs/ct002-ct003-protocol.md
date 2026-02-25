@@ -101,16 +101,16 @@ are less well understood and may contain status/counter values in vendor firmwar
 
 ## Multi‑consumer behavior
 
-When multiple storage systems query the same CT emulator, each system should receive a response that
-reflects the grid power **excluding its own output** so the devices do not over‑compensate.
-
 The emulator therefore:
 - Tracks per‑consumer `phase` + `phase_power` from the request fields.
 - When responding, it forwards per-phase aggregates based on the latest known reports from all
   known consumers, grouped by their reported phase.
+- Uses sign split for forwarded aggregates:
+  - negative phase sums -> `A/B/C_chrg_power` (fields 16-18)
+  - positive phase sums -> `A/B/C_dchrg_power` (fields 21-23)
 
-Capture analysis shows this aggregate model matches observed traffic closely, with minor deviations
-expected from asynchronous request/response timing.
+Capture analysis (including charge and discharge traces) shows this aggregate + sign-split model
+matches observed traffic closely, with minor deviations expected from asynchronous request/response timing.
 
 If a consumer stops sending updates for a while, its reported values are evicted after a configurable
 TTL (`CONSUMER_TTL`).
