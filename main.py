@@ -129,15 +129,11 @@ def run_device(
         # no legacy control knobs: CT emulation mirrors other-storage reports
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
-        allow_any_ct_mac = cfg.getboolean(
-            ct_section, "ALLOW_ANY_CT_MAC", fallback=True
-        )
 
         logger.debug(f"{device_type.upper()} Settings for {device_id}:")
         logger.debug(f"CT Type: {ct_type}")
         logger.debug(f"CT MAC: {ct_mac}")
         logger.debug(f"CT UDP Port: {ct_udp_port}")
-        logger.debug(f"Allow Any CT MAC: {allow_any_ct_mac}")
         logger.debug(f"Disable Sum Phases: {disable_sum}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
         logger.debug(f"Info IDX: {info_idx}")
@@ -151,7 +147,6 @@ def run_device(
             info_idx=info_idx,
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
-            allow_any_ct_mac=allow_any_ct_mac,
         )
 
         def update_readings(addr, _fields=None, _consumer_id=None):
