@@ -39,10 +39,8 @@ if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'c
 else
     # Determine CT section from selected device types
     ct_section="CT002"
-    ct_type="HME-4"
     if echo "$(bashio::config 'device_types')" | grep -qi 'ct003'; then
         ct_section="CT003"
-        ct_type="HME-3"
     fi
 
     ct_mac=""
@@ -60,7 +58,6 @@ else
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
         echo "[$ct_section]"
-        echo "CT_TYPE=$ct_type"
         echo "CT_MAC=$ct_mac"
         # CT002/CT003 control behavior is fixed by emulator
         echo ""
