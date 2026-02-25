@@ -121,7 +121,6 @@ class CT002:
     def __init__(
         self,
         udp_port=UDP_PORT,
-        device_type="HMG-50",
         ct_mac="",
         ct_type="HME-4",
         wifi_rssi=-50,
@@ -131,7 +130,6 @@ class CT002:
         allow_any_ct_mac=True,
     ):
         self.udp_port = udp_port
-        self.device_type = device_type
         self.ct_mac = ct_mac
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
@@ -209,7 +207,7 @@ class CT002:
             values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
         measured_total_power = phase_a + phase_b + phase_c
-        meter_dev_type = request_fields[0] if len(request_fields) > 0 else self.device_type
+        meter_dev_type = request_fields[0] if len(request_fields) > 0 else "HMG-50"
         meter_mac = request_fields[1] if len(request_fields) > 1 else ""
         ct_type = self.ct_type
         ct_mac = self.ct_mac if self.ct_mac else (request_fields[3] if len(request_fields) > 3 else "")

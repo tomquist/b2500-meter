@@ -119,7 +119,6 @@ def run_device(
         ct_section = "CT002"
         if device_type == "ct003" and cfg.has_section("CT003"):
             ct_section = "CT003"
-        ct_device_type = cfg.get(ct_section, "DEVICE_TYPE", fallback="HMG-50")
         ct_type_default = "HME-4" if device_type == "ct002" else "HME-3"
         ct_type = cfg.get(ct_section, "CT_TYPE", fallback=ct_type_default)
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
@@ -134,7 +133,6 @@ def run_device(
         )
 
         logger.debug(f"{device_type.upper()} Settings for {device_id}:")
-        logger.debug(f"Device Type: {ct_device_type}")
         logger.debug(f"CT Type: {ct_type}")
         logger.debug(f"CT MAC: {ct_mac}")
         logger.debug(f"CT UDP Port: {ct_udp_port}")
@@ -146,7 +144,6 @@ def run_device(
 
         device = CT002(
             udp_port=ct_udp_port,
-            device_type=ct_device_type,
             ct_type=ct_type,
             ct_mac=ct_mac,
             wifi_rssi=wifi_rssi,
