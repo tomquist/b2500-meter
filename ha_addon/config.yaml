@@ -37,7 +37,6 @@ options:
   device_types: "shellypro3em"
   throttle_interval: 0
   ct_mac: ""
-  ct_allow_any_mac: true
   marstek_auto_register_ct_device: false
   marstek_mailbox: ""
   marstek_password: ""
@@ -50,7 +49,6 @@ schema:
   device_types: str
   throttle_interval: float(0,)
   ct_mac: str?
-  ct_allow_any_mac: bool?
   marstek_auto_register_ct_device: bool?
   marstek_mailbox: str?
   marstek_password: password?

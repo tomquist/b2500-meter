@@ -127,7 +127,6 @@ class CT002:
         info_idx=0,
         dedupe_time_window=10,
         consumer_ttl=120,
-        allow_any_ct_mac=True,
     ):
         self.udp_port = udp_port
         self.ct_mac = ct_mac
@@ -136,7 +135,6 @@ class CT002:
         self.info_idx = info_idx
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
-        self.allow_any_ct_mac = allow_any_ct_mac
         self.before_send = None
         self._stop = False
         self._udp_thread = None
@@ -256,20 +254,15 @@ class CT002:
             return None
 
     def _validate_ct_mac(self, request_fields):
-        if self.allow_any_ct_mac and not self.ct_mac:
+        # If CT_MAC is not configured, accept all request CT MACs.
+        if not self.ct_mac:
             return True
         if len(request_fields) < 4:
             return False
         req_ct_mac = request_fields[3]
         if not req_ct_mac:
             return False
-        if self.ct_mac:
-            if req_ct_mac.lower() == self.ct_mac.lower():
-                return True
-            if self.allow_any_ct_mac and req_ct_mac == "000000000000":
-                return True
-            return False
-        return self.allow_any_ct_mac
+        return req_ct_mac.lower() == self.ct_mac.lower()
 
     def _handle_request(self, data, addr):
         logger.debug("CT002 request from %s: %s", addr, data.hex())
@@ -282,11 +275,10 @@ class CT002:
             return None
         if not self._validate_ct_mac(fields):
             logger.debug(
-                "Ignoring CT002 request from %s due to CT MAC mismatch (req=%s, cfg=%s, allow_any=%s)",
+                "Ignoring CT002 request from %s due to CT MAC mismatch (req=%s, cfg=%s)",
                 addr,
                 fields[3] if len(fields) > 3 else None,
                 self.ct_mac,
-                self.allow_any_ct_mac,
             )
             return None
         consumer_id = self._consumer_key(addr, fields)

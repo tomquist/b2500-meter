@@ -23,13 +23,10 @@ THROTTLE_INTERVAL = 0
 ## CT type: HME-4 (CT002) or HME-3 (CT003)
 #CT_TYPE = HME-4
 ## Note: CT003 can optionally use its own [CT003] section with the same keys.
-## CT MAC (12 hex digits, from Marstek app). If empty and ALLOW_ANY_CT_MAC=true,
-## the emulator accepts any CT MAC and echoes the request’s CT MAC in responses.
-## If set, the emulator will respond only to the configured MAC (optionally also
-## 000000000000 when permissive).
+## CT MAC (12 hex digits, from Marstek app).
+## If empty, the emulator accepts any request CT MAC and echoes the request's
+## CT MAC in responses. If set, the emulator responds only to the configured MAC.
 #CT_MAC = 001122334455
-## Allow any CT MAC (permissive mode). Set to False to strictly require CT_MAC.
-#ALLOW_ANY_CT_MAC = True
 ## UDP port to bind for CT002/CT003 (default 12345).
 #UDP_PORT = 12345
 ## WiFi RSSI reported to the storage system
