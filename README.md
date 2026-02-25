@@ -160,8 +160,6 @@ THROTTLE_INTERVAL = 0
 
 ```ini
 [CT002]
-# Device type reported by the CT (typically HMG-50 for Marstek Venus/B2500)
-DEVICE_TYPE = HMG-50
 # CT type: HME-4 (CT002) or HME-3 (CT003)
 CT_TYPE = HME-4
 # CT MAC (12 hex digits, from Marstek app). If empty and ALLOW_ANY_CT_MAC=true,

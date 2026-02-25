@@ -20,8 +20,6 @@ POLL_INTERVAL = 1
 THROTTLE_INTERVAL = 0
 
 #[CT002]
-## Device type reported by the CT (typically HMG-50 for Marstek Venus/B2500)
-#DEVICE_TYPE = HMG-50
 ## CT type: HME-4 (CT002) or HME-3 (CT003)
 #CT_TYPE = HME-4
 ## Note: CT003 can optionally use its own [CT003] section with the same keys.
