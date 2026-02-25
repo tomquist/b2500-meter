@@ -160,8 +160,7 @@ THROTTLE_INTERVAL = 0
 
 ```ini
 [CT002]
-# CT type: HME-4 (CT002) or HME-3 (CT003)
-CT_TYPE = HME-4
+# CT type is derived from the emulated device (ct002 -> HME-4, ct003 -> HME-3).
 # CT MAC (12 hex digits, from Marstek app).
 # If empty, the emulator accepts any request CT MAC and echoes the request’s
 # CT MAC in responses. If set, the emulator responds only to that CT MAC.
