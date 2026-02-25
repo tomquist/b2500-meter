@@ -36,12 +36,9 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
-  ct_device_type: "HMG-50"
   ct_type: "HME-4"
   ct_mac: ""
   ct_allow_any_mac: true
-  ct_wifi_rssi: -50
-  ct_info_idx: 0
   marstek_auto_register_ct_device: false
   marstek_mailbox: ""
   marstek_password: ""
@@ -53,12 +50,9 @@ schema:
   disable_absolute_values: bool
   device_types: str
   throttle_interval: float(0,)
-  ct_device_type: str?
   ct_type: str?
   ct_mac: str?
   ct_allow_any_mac: bool?
-  ct_wifi_rssi: int?
-  ct_info_idx: int?
   marstek_auto_register_ct_device: bool?
   marstek_mailbox: str?
   marstek_password: password?
