@@ -84,7 +84,7 @@ Response payload fields (CT → consumer):
 11. **C_chrg_nb** — set to `1` if phase C aggregate is non-zero, else `0`
 12. **ABC_chrg_nb** — currently always `0`
 13. **wifi_rssi** — configured RSSI value
-14. **info_idx** — configured info index
+14. **info_idx** — incrementing response index (`0..255`, wraps)
 15. **x_chrg_power** — currently `0`
 16. **A_chrg_power** — phase A aggregate when negative, else `0`
 17. **B_chrg_power** — phase B aggregate when negative, else `0`

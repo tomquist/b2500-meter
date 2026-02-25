@@ -128,7 +128,6 @@ def run_device(
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
-        info_idx = cfg.getint(ct_section, "INFO_IDX", fallback=0)
         # no legacy control knobs: CT emulation mirrors other-storage reports
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
@@ -139,7 +138,6 @@ def run_device(
         logger.debug(f"CT UDP Port: {ct_udp_port}")
         logger.debug(f"Disable Sum Phases: {disable_sum}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
-        logger.debug(f"Info IDX: {info_idx}")
         logger.debug("CT control model: relay reports of other storages")
 
         device = CT002(
@@ -147,7 +145,6 @@ def run_device(
             ct_type=ct_type,
             ct_mac=ct_mac,
             wifi_rssi=wifi_rssi,
-            info_idx=info_idx,
             dedupe_time_window=dedupe_time_window,
             consumer_ttl=consumer_ttl,
         )

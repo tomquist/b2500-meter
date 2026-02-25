@@ -169,8 +169,6 @@ CT_MAC = 001122334455
 UDP_PORT = 12345
 # WiFi RSSI reported to the storage system
 WIFI_RSSI = -50
-# Info index reported to the storage system
-INFO_IDX = 0
 # Ignore repeated requests from the same client within this window (seconds)
 DEDUPE_TIME_WINDOW = 0
 # Forget consumers after this many seconds without updates (multi-consumer support)
