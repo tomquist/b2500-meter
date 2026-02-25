@@ -83,6 +83,7 @@ def run_device(
 
         logger.debug(f"CT001 Settings for {device_id}:")
         logger.debug(f"Disable Sum Phases: {disable_sum}")
+        logger.debug(f"Disable Absolute Values: {disable_absolute}")
         logger.debug(f"Poll Interval: {poll_interval}")
 
         device = CT001(poll_interval=poll_interval)
