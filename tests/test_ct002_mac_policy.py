@@ -7,18 +7,18 @@ def make_request(ct_mac):
 
 
 def test_ct002_accepts_any_when_no_mac():
-    device = CT002(ct_mac="", allow_any_ct_mac=True)
+    device = CT002(ct_mac="")
     response = device._handle_request(make_request("DEADBEEF0001"), ("1.1.1.1", 12345))
     assert response is not None
 
 
-def test_ct002_strict_mac_rejects_mismatch():
-    device = CT002(ct_mac="AABBCCDDEEFF", allow_any_ct_mac=False)
+def test_ct002_configured_mac_rejects_mismatch():
+    device = CT002(ct_mac="AABBCCDDEEFF")
     response = device._handle_request(make_request("DEADBEEF0001"), ("1.1.1.1", 12345))
     assert response is None
 
 
-def test_ct002_strict_mac_accepts_match():
-    device = CT002(ct_mac="AABBCCDDEEFF", allow_any_ct_mac=False)
+def test_ct002_configured_mac_accepts_match():
+    device = CT002(ct_mac="AABBCCDDEEFF")
     response = device._handle_request(make_request("AABBCCDDEEFF"), ("1.1.1.1", 12345))
     assert response is not None
