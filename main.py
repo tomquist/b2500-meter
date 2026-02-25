@@ -106,6 +106,9 @@ def run_device(
                 value1 = value1 + value2 + value3
                 value2 = value3 = 0
 
+            if not disable_absolute:
+                value1, value2, value3 = map(abs, (value1, value2, value3))
+
             device.value = [value1, value2, value3]
 
         device.before_send = update_readings
