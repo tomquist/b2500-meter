@@ -37,7 +37,6 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
-  ct_mac: ""
   marstek_auto_register_ct_device: false
   marstek_mailbox: ""
   marstek_password: ""
