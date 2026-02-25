@@ -124,7 +124,6 @@ class CT002:
         ct_mac="",
         ct_type="HME-4",
         wifi_rssi=-50,
-        info_idx=0,
         dedupe_time_window=10,
         consumer_ttl=120,
     ):
@@ -132,10 +131,10 @@ class CT002:
         self.ct_mac = ct_mac
         self.ct_type = ct_type
         self.wifi_rssi = wifi_rssi
-        self.info_idx = info_idx
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
         self.before_send = None
+        self._info_idx_counter = 0
         self._stop = False
         self._udp_thread = None
         self._values_by_consumer = {}
@@ -220,7 +219,7 @@ class CT002:
             str(round(measured_total_power)),
             "0", "0", "0", "0",  # A/B/C/ABC_chrg_nb
             str(self.wifi_rssi),
-            str(self.info_idx),
+            str(self._info_idx_counter),
             "0", "0", "0", "0", "0",  # x/A/B/C/ABC_chrg_power
             "0", "0", "0", "0", "0",  # x/A/B/C/ABC_dchrg_power
         ]
@@ -239,6 +238,7 @@ class CT002:
                     response_fields[20 + idx] = str(power)
 
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
+        self._info_idx_counter = (self._info_idx_counter + 1) % 256
         return response_fields
 
     def _call_before_send(self, addr, fields, consumer_id):
