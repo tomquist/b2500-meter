@@ -36,7 +36,6 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
-  ct_type: "HME-4"
   ct_mac: ""
   ct_allow_any_mac: true
   marstek_auto_register_ct_device: false
@@ -50,7 +49,6 @@ schema:
   disable_absolute_values: bool
   device_types: str
   throttle_interval: float(0,)
-  ct_type: str?
   ct_mac: str?
   ct_allow_any_mac: bool?
   marstek_auto_register_ct_device: bool?
