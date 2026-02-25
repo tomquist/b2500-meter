@@ -51,7 +51,7 @@ checksum = f"{xor:02x}".encode("ascii")
 
 Request payload fields (consumer → CT):
 
-1. **meter_dev_type** — device type of the storage system (commonly `HMG-50` for Venus/B2500)
+1. **meter_dev_type** — device type of the requester (copied through into the response)
 2. **meter_mac_code** — battery MAC (12 hex chars, from Marstek app device management)
 3. **hhm_dev_type** — CT type (`HME-4` or `HME-3`)
 4. **hhm_mac_code** — CT MAC (12 hex chars, from Marstek app device management)
@@ -79,25 +79,24 @@ Response payload fields (CT → consumer):
 6. **B_phase_power** — integer watts for phase B
 7. **C_phase_power** — integer watts for phase C
 8. **total_power** — integer watts (sum of phases)
-9. **A_chrg_nb** — 0
-10. **B_chrg_nb** — 0
-11. **C_chrg_nb** — 0
-12. **ABC_chrg_nb** — 0
-13. **wifi_rssi** — integer RSSI (e.g., `-50`)
-14. **info_idx** — integer index (often `0`)
-15. **x_chrg_power** — 0
-16. **A_chrg_power** — 0
-17. **B_chrg_power** — 0
-18. **C_chrg_power** — 0
-19. **ABC_chrg_power** — 0
-20. **x_dchrg_power** — 0
-21. **A_dchrg_power** — 0
-22. **B_dchrg_power** — 0
-23. **C_dchrg_power** — 0
-24. **ABC_dchrg_power** — 0
+9. **A_chrg_nb** — set to `1` if phase A aggregate is non-zero, else `0`
+10. **B_chrg_nb** — set to `1` if phase B aggregate is non-zero, else `0`
+11. **C_chrg_nb** — set to `1` if phase C aggregate is non-zero, else `0`
+12. **ABC_chrg_nb** — currently always `0`
+13. **wifi_rssi** — configured RSSI value
+14. **info_idx** — configured info index
+15. **x_chrg_power** — currently `0`
+16. **A_chrg_power** — phase A aggregate when negative, else `0`
+17. **B_chrg_power** — phase B aggregate when negative, else `0`
+18. **C_chrg_power** — phase C aggregate when negative, else `0`
+19. **ABC_chrg_power** — currently `0`
+20. **x_dchrg_power** — currently `0`
+21. **A_dchrg_power** — phase A aggregate when positive, else `0`
+22. **B_dchrg_power** — phase B aggregate when positive, else `0`
+23. **C_dchrg_power** — phase C aggregate when positive, else `0`
+24. **ABC_dchrg_power** — currently `0`
 
-Only the phase and total power fields are required for the storage system to react. The remaining fields
-are less well understood and may contain status/counter values in vendor firmware.
+This list describes current emulator behavior as implemented.
 
 ## Multi‑consumer behavior
 
