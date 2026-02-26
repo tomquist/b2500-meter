@@ -124,7 +124,7 @@ class CT002:
         ct_mac="",
         ct_type="HME-4",
         wifi_rssi=-50,
-        dedupe_time_window=10,
+        dedupe_time_window=0,
         consumer_ttl=120,
     ):
         self.udp_port = udp_port
