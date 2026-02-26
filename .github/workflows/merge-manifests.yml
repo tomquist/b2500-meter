@@ -42,7 +42,7 @@ jobs:
             type=ref,event=tag
             type=ref,event=pr
             type=sha
-            type=raw,value=ct002,enable=${{ github.ref_name == 'feat/ct002-emulation' }}
+            type=raw,value=ct002,enable=${{ github.ref_name == 'feat/ct002-emulation' || (github.ref_type == 'tag' && github.ref_name == 'ct002') }}
           flavor: |
             latest=${{ github.ref == 'refs/heads/main' }}
       - name: Log in to Container registry
