@@ -129,7 +129,7 @@ def run_device(
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
         # no legacy control knobs: CT emulation mirrors other-storage reports
-        dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=10)
+        dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=0)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
 
         logger.debug(f"{device_type.upper()} Settings for {device_id}:")
