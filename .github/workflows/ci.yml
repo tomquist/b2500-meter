@@ -2,8 +2,8 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, feat/ct002-emulation ]
-    tags: [ "*.*.*" ]
+    branches: [ main ]
+    tags: [ "*.*.*", "ct002" ]
   pull_request:
     branches: [ main, develop ]
 
