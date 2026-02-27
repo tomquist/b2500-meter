@@ -46,7 +46,6 @@ def calculate_checksum(data_bytes):
     return xor
 
 
-
 def parse_int(value, default=0):
     try:
         return int(value)
@@ -77,7 +76,6 @@ def build_payload(fields):
     return payload
 
 
-
 def parse_request(data):
     if len(data) < 10:
         return None, "Too short"
@@ -102,7 +100,10 @@ def parse_request(data):
     if actual_checksum.lower() != expected_checksum:
         # Tolerate a leading space in the checksum: some firmware versions
         # emit a space instead of the high hex nibble.
-        if actual_checksum[0:1] == b" " and actual_checksum[1:2].lower() == expected_checksum[1:2]:
+        if (
+            actual_checksum[0:1] == b" "
+            and actual_checksum[1:2].lower() == expected_checksum[1:2]
+        ):
             pass
         else:
             return None, "Checksum mismatch (expected %s, got %s)" % (
@@ -207,7 +208,11 @@ class CT002:
         meter_dev_type = request_fields[0] if len(request_fields) > 0 else "HMG-50"
         meter_mac = request_fields[1] if len(request_fields) > 1 else ""
         ct_type = self.ct_type
-        ct_mac = self.ct_mac if self.ct_mac else (request_fields[3] if len(request_fields) > 3 else "")
+        ct_mac = (
+            self.ct_mac
+            if self.ct_mac
+            else (request_fields[3] if len(request_fields) > 3 else "")
+        )
         response_fields = [
             ct_type,
             ct_mac,
@@ -217,11 +222,22 @@ class CT002:
             str(round(phase_b)),
             str(round(phase_c)),
             str(round(measured_total_power)),
-            "0", "0", "0", "0",  # A/B/C/ABC_chrg_nb
+            "0",
+            "0",
+            "0",
+            "0",  # A/B/C/ABC_chrg_nb
             str(self.wifi_rssi),
             str(self._info_idx_counter),
-            "0", "0", "0", "0", "0",  # x/A/B/C/ABC_chrg_power
-            "0", "0", "0", "0", "0",  # x/A/B/C/ABC_dchrg_power
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",  # x/A/B/C/ABC_chrg_power
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",  # x/A/B/C/ABC_dchrg_power
         ]
 
         # Capture analysis indicates forwarded A/B/C values are sums across all
@@ -286,7 +302,9 @@ class CT002:
         reported_power = parse_int(fields[5] if len(fields) > 5 else 0)
 
         if reported_phase not in ("A", "B", "C"):
-            logger.debug("CT002 request from %s has invalid phase '%s'", addr, reported_phase)
+            logger.debug(
+                "CT002 request from %s has invalid phase '%s'", addr, reported_phase
+            )
             return None
 
         logger.debug(
@@ -300,7 +318,9 @@ class CT002:
             reported_power,
             consumer_id,
         )
-        self._update_consumer_report(consumer_id, phase=reported_phase, power=reported_power)
+        self._update_consumer_report(
+            consumer_id, phase=reported_phase, power=reported_power
+        )
 
         updated = self._call_before_send(addr, fields, consumer_id)
         if updated is not None:
@@ -313,13 +333,15 @@ class CT002:
             response_fields = self._build_response_fields(fields, values, consumer_id)
             response = build_payload(response_fields)
         except Exception as exc:
-            logger.warning("Failed to build CT002 response for %s (%s): %s", addr, fields, exc)
+            logger.warning(
+                "Failed to build CT002 response for %s (%s): %s", addr, fields, exc
+            )
             return None
         logger.debug(
             "CT002 response to %s: %s (fields=%s)",
             addr,
             response.hex(),
-            response_fields
+            response_fields,
         )
         return response
 
