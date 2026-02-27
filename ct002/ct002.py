@@ -187,9 +187,9 @@ class CT002:
 
     def _collect_reports_by_phase(self):
         by_phase = {
-            "A": {"power": 0},
-            "B": {"power": 0},
-            "C": {"power": 0},
+            "A": {"chrg_power": 0, "dchrg_power": 0, "active": False},
+            "B": {"chrg_power": 0, "dchrg_power": 0, "active": False},
+            "C": {"chrg_power": 0, "dchrg_power": 0, "active": False},
         }
         with self._values_lock:
             reports = list(self._reports_by_consumer.items())
@@ -198,7 +198,14 @@ class CT002:
             phase = (report.get("phase") or "A").upper()
             if phase not in by_phase:
                 phase = "A"
-            by_phase[phase]["power"] += parse_int(report.get("power", 0))
+            power = parse_int(report.get("power", 0))
+            if power == 0:
+                continue
+            by_phase[phase]["active"] = True
+            if power < 0:
+                by_phase[phase]["chrg_power"] += power
+            else:
+                by_phase[phase]["dchrg_power"] += power
         return by_phase
 
     def _build_response_fields(self, request_fields, values):
@@ -241,18 +248,16 @@ class CT002:
             "0",  # x/A/B/C/ABC_dchrg_power
         ]
 
-        # Capture analysis indicates forwarded A/B/C values are sums across all
-        # known consumers (not only "other" consumers), with sign split:
-        # negative sums -> *_chrg_power, positive sums -> *_dchrg_power.
+        # Forward A/B/C values across all known consumers, but split per-storage
+        # by sign before aggregation:
+        # negative reports contribute to *_chrg_power,
+        # positive reports contribute to *_dchrg_power.
         phase_values = self._collect_reports_by_phase()
         for phase, idx in (("A", 0), ("B", 1), ("C", 2)):
-            power = phase_values[phase]["power"]
-            if power != 0:
+            if phase_values[phase]["active"]:
                 response_fields[8 + idx] = "1"
-                if power < 0:
-                    response_fields[15 + idx] = str(power)
-                else:
-                    response_fields[20 + idx] = str(power)
+            response_fields[15 + idx] = str(phase_values[phase]["chrg_power"])
+            response_fields[20 + idx] = str(phase_values[phase]["dchrg_power"])
 
         response_fields += ["0"] * (len(RESPONSE_LABELS) - len(response_fields))
         self._info_idx_counter = (self._info_idx_counter + 1) % 256
