@@ -67,7 +67,6 @@ def test_ct002_response_field_count_stable():
     response_fields = device._build_response_fields(
         request_fields=request_fields,
         values=[500, 0, 0],
-        consumer_id="consumer-a",
     )
 
     assert len(response_fields) == len(RESPONSE_LABELS)
@@ -84,7 +83,6 @@ def test_ct002_relays_sum_of_all_storage_reports_by_phase():
     response_for_a = device._build_response_fields(
         request_fields=request_fields,
         values=[10, 20, 30],
-        consumer_id="consumer-a",
     )
 
     # negative sums are forwarded into *_chrg_power
@@ -97,7 +95,6 @@ def test_ct002_relays_sum_of_all_storage_reports_by_phase():
     response_for_b = device._build_response_fields(
         request_fields=request_fields,
         values=[10, 20, 30],
-        consumer_id="consumer-b",
     )
 
     assert response_for_b[15] == "-180"  # A_chrg_power
@@ -114,7 +111,6 @@ def test_ct002_splits_positive_phase_sum_into_dchrg_fields():
     response = device._build_response_fields(
         request_fields=request_fields,
         values=[10, 20, 30],
-        consumer_id="consumer-a",
     )
 
     # positive sums are forwarded into *_dchrg_power
@@ -130,17 +126,15 @@ def test_ct002_info_idx_increments_and_wraps():
     device = CT002()
     request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "A", "0"]
 
-    first = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
-    second = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
+    first = device._build_response_fields(request_fields, [1, 2, 3])
+    second = device._build_response_fields(request_fields, [1, 2, 3])
 
     assert first[13] == "0"
     assert second[13] == "1"
 
     device._info_idx_counter = 255
-    wrap = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
-    after_wrap = device._build_response_fields(
-        request_fields, [1, 2, 3], consumer_id="a"
-    )
+    wrap = device._build_response_fields(request_fields, [1, 2, 3])
+    after_wrap = device._build_response_fields(request_fields, [1, 2, 3])
 
     assert wrap[13] == "255"
     assert after_wrap[13] == "0"
