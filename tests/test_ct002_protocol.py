@@ -138,7 +138,9 @@ def test_ct002_info_idx_increments_and_wraps():
 
     device._info_idx_counter = 255
     wrap = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
-    after_wrap = device._build_response_fields(request_fields, [1, 2, 3], consumer_id="a")
+    after_wrap = device._build_response_fields(
+        request_fields, [1, 2, 3], consumer_id="a"
+    )
 
     assert wrap[13] == "255"
     assert after_wrap[13] == "0"
