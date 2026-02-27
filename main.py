@@ -15,8 +15,14 @@ from config.logger import logger, setLogLevel
 from health_service import start_health_service, stop_health_service
 from marstek_api import MarstekConfig, ensure_managed_fake_device, MarstekApiError
 
-
 # CT002/CT003 phase assignment is auto-managed by emulator runtime.
+
+
+def get_ct_section(device_type: str, cfg: configparser.ConfigParser) -> str:
+    section = "CT002"
+    if device_type == "ct003" and cfg.has_section("CT003"):
+        section = "CT003"
+    return section
 
 
 def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
@@ -121,9 +127,7 @@ def run_device(
             else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
         )
 
-        ct_section = "CT002"
-        if device_type == "ct003" and cfg.has_section("CT003"):
-            ct_section = "CT003"
+        ct_section = get_ct_section(device_type, cfg)
         ct_type = "HME-4" if device_type == "ct002" else "HME-3"
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
@@ -282,16 +286,10 @@ def main():
         device_types.append("shellypro3em_new")
         device_ids.append(device_ids[shellypro3em_index])
 
-    def get_ct_section(device_type):
-        section = "CT002"
-        if device_type == "ct003" and cfg.has_section("CT003"):
-            section = "CT003"
-        return section
-
     ct_ports = []
     for device_type in device_types:
         if device_type in ["ct002", "ct003"]:
-            section = get_ct_section(device_type)
+            section = get_ct_section(device_type, cfg)
             ct_ports.append(cfg.getint(section, "UDP_PORT", fallback=UDP_PORT))
     if len(ct_ports) != len(set(ct_ports)):
         raise ValueError(
