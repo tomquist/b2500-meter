@@ -10,6 +10,7 @@ STX = 0x02
 ETX = 0x03
 SEPARATOR = "|"
 UDP_PORT = 12345
+CLEANUP_INTERVAL_SECONDS = 5
 
 RESPONSE_LABELS = [
     "meter_dev_type",
@@ -193,14 +194,14 @@ class CT002:
         with self._values_lock:
             reports = list(self._reports_by_consumer.items())
 
-        for consumer_id, report in reports:
+        for _consumer_id, report in reports:
             phase = (report.get("phase") or "A").upper()
             if phase not in by_phase:
                 phase = "A"
             by_phase[phase]["power"] += parse_int(report.get("power", 0))
         return by_phase
 
-    def _build_response_fields(self, request_fields, values, consumer_id=None):
+    def _build_response_fields(self, request_fields, values):
         if not values or len(values) != 3:
             values = [0, 0, 0]
         phase_a, phase_b, phase_c = values
@@ -330,7 +331,7 @@ class CT002:
         if values is None:
             values = [0, 0, 0]
         try:
-            response_fields = self._build_response_fields(fields, values, consumer_id)
+            response_fields = self._build_response_fields(fields, values)
             response = build_payload(response_fields)
         except Exception as exc:
             logger.warning(
@@ -351,9 +352,13 @@ class CT002:
         udp_sock.bind(("", self.udp_port))
         udp_sock.settimeout(1.0)
         logger.info("CT002 UDP server listening on port %s", self.udp_port)
+        last_cleanup = time.time()
         try:
             while not self._stop:
-                self._cleanup_consumers()
+                now = time.time()
+                if now - last_cleanup >= CLEANUP_INTERVAL_SECONDS:
+                    self._cleanup_consumers()
+                    last_cleanup = now
                 try:
                     data, addr = udp_sock.recvfrom(1024)
                 except socket.timeout:
