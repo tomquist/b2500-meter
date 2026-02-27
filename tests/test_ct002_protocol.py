@@ -122,6 +122,25 @@ def test_ct002_splits_positive_phase_sum_into_dchrg_fields():
     assert response[9] == "1"  # B_chrg_nb
 
 
+def test_ct002_splits_mixed_sign_reports_per_storage_before_aggregation():
+    device = CT002()
+    request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "A", "0"]
+
+    # Same phase, opposite directions from different storages.
+    device._update_consumer_report("consumer-a", phase="A", power=-300)
+    device._update_consumer_report("consumer-b", phase="A", power=120)
+
+    response = device._build_response_fields(
+        request_fields=request_fields,
+        values=[10, 20, 30],
+    )
+
+    # Split is done per storage report before phase aggregation.
+    assert response[15] == "-300"  # A_chrg_power
+    assert response[20] == "120"  # A_dchrg_power
+    assert response[8] == "1"  # A_chrg_nb active flag
+
+
 def test_ct002_info_idx_increments_and_wraps():
     device = CT002()
     request_fields = ["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "A", "0"]
