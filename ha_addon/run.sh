@@ -37,9 +37,18 @@ if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'c
     bashio::log.info "Using custom config file: $(bashio::config 'custom_config')"
     cp "/config/$(bashio::config 'custom_config')" "$CONFIG"
 else
-    # Determine CT section from selected device types
+    device_types="$(bashio::config 'device_types')"
+    has_ct002=0
+    has_ct003=0
+    if echo "$device_types" | grep -qi 'ct002'; then
+        has_ct002=1
+    fi
+    if echo "$device_types" | grep -qi 'ct003'; then
+        has_ct003=1
+    fi
+
     ct_section="CT002"
-    if echo "$(bashio::config 'device_types')" | grep -qi 'ct003'; then
+    if [ "$has_ct003" -eq 1 ] && [ "$has_ct002" -eq 0 ]; then
         ct_section="CT003"
     fi
 
@@ -57,10 +66,21 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
-        echo "[$ct_section]"
-        echo "CT_MAC=$ct_mac"
-        # CT002/CT003 control behavior is fixed by emulator
-        echo ""
+        if [ "$has_ct002" -eq 1 ] && [ "$has_ct003" -eq 1 ]; then
+            echo "[CT002]"
+            echo "CT_MAC=$ct_mac"
+            # CT002/CT003 control behavior is fixed by emulator
+            echo ""
+            echo "[CT003]"
+            echo "CT_MAC=$ct_mac"
+            # CT002/CT003 control behavior is fixed by emulator
+            echo ""
+        else
+            echo "[$ct_section]"
+            echo "CT_MAC=$ct_mac"
+            # CT002/CT003 control behavior is fixed by emulator
+            echo ""
+        fi
         echo "[HOMEASSISTANT]"
         echo "IP=supervisor"
         echo "PORT=80"
