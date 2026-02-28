@@ -305,10 +305,7 @@ class CT002:
             return None
         consumer_id = self._consumer_key(addr, fields)
         reported_phase = (fields[4] if len(fields) > 4 else "A").upper()
-        # Match real CT002/CT003 capture semantics:
-        # request power direction is opposite to the internal charge/discharge model,
-        # therefore invert it so charge-like reports end up negative.
-        reported_power = -parse_int(fields[5] if len(fields) > 5 else 0)
+        reported_power = parse_int(fields[5] if len(fields) > 5 else 0)
 
         if reported_phase not in ("A", "B", "C"):
             logger.debug(
