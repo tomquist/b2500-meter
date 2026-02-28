@@ -9,10 +9,7 @@ urllib3 = "*"
 paho-mqtt = "*"
 jsonpath-ng = "*"
 pymodbus = "==3.6.5"
-<<<<<<< HEAD
 websocket-client = "==1.8.0"
-=======
->>>>>>> 92c340e (feat: add CT002/CT003 emulation)
 
 [dev-packages]
 flake8 = "6.1.0"
