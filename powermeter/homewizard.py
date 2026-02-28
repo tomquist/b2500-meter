@@ -9,7 +9,8 @@ import websocket
 from .base import Powermeter
 from config.logger import logger
 
-# Source: https://api-documentation.homewizard.com/docs/v2/authorization#https
+# Certificate: https://api-documentation.homewizard.com/assets/files/homewizard-ca-cert-56d062ef8e71d1038f464ea905d42fc6.pem
+# Docs: https://api-documentation.homewizard.com/docs/v2/authorization#https
 CA_CERT_PATH = os.path.join(os.path.dirname(__file__), "homewizard_ca.pem")
 
 
