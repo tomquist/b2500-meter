@@ -23,6 +23,7 @@ from powermeter import (
     ESPHome,
     JsonHttpPowermeter,
     TQEnergyManager,
+    HomeWizardPowermeter,
     ThrottledPowermeter,
 )
 
@@ -39,6 +40,7 @@ AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
 JSON_HTTP_SECTION = "JSON_HTTP"
 TQ_EM_SECTION = "TQ_EM"
+HOMEWIZARD_SECTION = "HOMEWIZARD"
 
 
 class ClientFilter:
@@ -125,6 +127,8 @@ def create_powermeter(
         return create_tq_em_powermeter(section, config)
     elif section.startswith(JSON_HTTP_SECTION):
         return create_json_http_powermeter(section, config)
+    elif section.startswith(HOMEWIZARD_SECTION):
+        return create_homewizard_powermeter(section, config)
     elif section.startswith("MQTT"):
         return create_mqtt_powermeter(section, config)
     else:
@@ -333,4 +337,14 @@ def create_tq_em_powermeter(
         config.get(section, "IP", fallback=""),
         config.get(section, "PASSWORD", fallback=""),
         timeout=config.getfloat(section, "TIMEOUT", fallback=5.0),
+    )
+
+
+def create_homewizard_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return HomeWizardPowermeter(
+        config.get(section, "IP", fallback=""),
+        config.get(section, "TOKEN", fallback=""),
+        config.get(section, "SERIAL", fallback=""),
     )

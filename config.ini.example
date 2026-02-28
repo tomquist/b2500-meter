@@ -142,6 +142,17 @@ THROTTLE_INTERVAL = 0
 #TIMEOUT = 5.0 (Optional)
 #THROTTLE_INTERVAL = 1
 
+#[HOMEWIZARD]
+## HomeWizard P1 Meter via WebSocket API (v2)
+## Connects over WSS and subscribes to real-time measurement updates
+## Token must be obtained once via POST /api/user while pressing the device button
+## See: https://api-documentation.homewizard.com/docs/v2/
+#IP = 192.168.1.110
+#TOKEN = YOUR_32_CHAR_HEX_TOKEN
+#SERIAL = your_device_serial
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 0
+
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh
 ## Per-powermeter throttling override (optional)
