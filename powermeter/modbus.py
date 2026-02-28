@@ -3,7 +3,6 @@ from pymodbus.client import ModbusTcpClient
 from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.constants import Endian
 
-
 DATA_TYPE_DECODERS = {
     "FLOAT32": "decode_32bit_float",
     "INT16": "decode_16bit_int",

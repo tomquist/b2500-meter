@@ -62,17 +62,13 @@ class HomeAssistant(Powermeter):
             logger.error(
                 f"Response content: {response.text[:200]}..."
             )  # Log first 200 chars
-            raise ValueError(
-                f"Home Assistant API returned invalid JSON: {e}"
-            ) from e
+            raise ValueError(f"Home Assistant API returned invalid JSON: {e}") from e
         except requests.exceptions.HTTPError:
             # Propagate HTTP errors for caller-specific handling
             raise
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to connect to Home Assistant API: {e}")
-            raise ValueError(
-                f"Home Assistant API connection error: {e}"
-            ) from e
+            raise ValueError(f"Home Assistant API connection error: {e}") from e
         except Exception as e:
             logger.error(f"Unexpected error calling Home Assistant API: {e}")
             raise ValueError(f"Home Assistant API error: {e}") from e
@@ -83,9 +79,7 @@ class HomeAssistant(Powermeter):
             response = self.get_json(path)
 
             if not isinstance(response, dict):
-                msg = (
-                    f"Home Assistant sensor {entity} returned non-object JSON"
-                )
+                msg = f"Home Assistant sensor {entity} returned non-object JSON"
                 logger.error(msg)
                 raise ValueError(msg)
 
@@ -104,9 +98,7 @@ class HomeAssistant(Powermeter):
             try:
                 return float(val)
             except (ValueError, TypeError) as e:
-                msg = (
-                    f"Home Assistant sensor {entity} state '{val}' is not numeric"
-                )
+                msg = f"Home Assistant sensor {entity} state '{val}' is not numeric"
                 logger.error(msg)
                 raise ValueError(msg) from e
         except requests.exceptions.HTTPError as e:
@@ -119,12 +111,12 @@ class HomeAssistant(Powermeter):
 
     def get_powermeter_watts(self):
         if not self.power_calculate:
-            return [self.get_sensor_value(entity) for entity in self.current_power_entity]
+            return [
+                self.get_sensor_value(entity) for entity in self.current_power_entity
+            ]
         else:
             if len(self.power_input_alias) != len(self.power_output_alias):
-                msg = (
-                    "Home Assistant power_input_alias and power_output_alias lengths differ"
-                )
+                msg = "Home Assistant power_input_alias and power_output_alias lengths differ"
                 logger.error(msg)
                 raise ValueError(msg)
 
