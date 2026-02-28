@@ -20,6 +20,7 @@ from config.config_loader import (
     create_mqtt_powermeter,
     create_json_http_powermeter,
     create_tq_em_powermeter,
+    create_homewizard_powermeter,
 )
 import unittest
 from unittest.mock import patch, Mock
@@ -245,6 +246,22 @@ def test_create_tq_em_powermeter():
             raise
 
 
+def test_create_homewizard_powermeter():
+    """Test HomeWizard powermeter creation."""
+    config = configparser.ConfigParser()
+    config["HOMEWIZARD"] = {
+        "IP": "127.0.0.1",
+        "TOKEN": "ABCDEF1234567890ABCDEF1234567890",
+        "SERIAL": "aabbccddee",
+    }
+
+    try:
+        create_homewizard_powermeter("HOMEWIZARD", config)
+    except Exception as e:
+        if "Connection" not in str(e) and "timed out" not in str(e):
+            raise
+
+
 def test_create_powermeter():
     """Test the main create_powermeter function."""
     config = configparser.ConfigParser()
@@ -264,6 +281,11 @@ def test_create_powermeter():
     config["MQTT_TEST"] = {"BROKER": "127.0.0.1"}
     config["JSON_HTTP_TEST"] = {"URL": "http://localhost", "JSON_PATHS": "$.power"}
     config["TQ_EM_TEST"] = {"IP": "127.0.0.1"}
+    config["HOMEWIZARD_TEST"] = {
+        "IP": "127.0.0.1",
+        "TOKEN": "ABCDEF1234567890ABCDEF1234567890",
+        "SERIAL": "aabbccddee",
+    }
     config["UNKNOWN_TEST"] = {"SOME_KEY": "some_value"}
 
     # Test each powermeter type
