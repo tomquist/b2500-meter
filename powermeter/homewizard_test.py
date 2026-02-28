@@ -8,7 +8,7 @@ from .homewizard import HomeWizardPowermeter
 class TestHomeWizardPowermeter(unittest.TestCase):
     def _create_powermeter(self):
         with patch("powermeter.homewizard.websocket.WebSocketApp"):
-            with patch("threading.Thread"):
+            with patch("powermeter.homewizard.threading.Thread"):
                 pm = HomeWizardPowermeter("192.168.1.1", "ABCD1234", "aabbccddee")
         return pm
 

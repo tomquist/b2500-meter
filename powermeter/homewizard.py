@@ -103,7 +103,10 @@ class HomeWizardPowermeter(Powermeter):
 
     def wait_for_message(self, timeout=5):
         start_time = time.time()
-        while self.values is None:
+        while True:
+            with self._lock:
+                if self.values is not None:
+                    return
             if time.time() - start_time > timeout:
                 raise TimeoutError("Timeout waiting for HomeWizard measurement")
             time.sleep(1)

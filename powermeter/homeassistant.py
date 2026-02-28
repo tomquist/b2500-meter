@@ -122,7 +122,7 @@ class HomeAssistant(Powermeter):
 
             results = []
             for in_entity, out_entity in zip(
-                self.power_input_alias, self.power_output_alias
+                self.power_input_alias, self.power_output_alias, strict=True
             ):
                 power_in = self.get_sensor_value(in_entity)
                 power_out = self.get_sensor_value(out_entity)
