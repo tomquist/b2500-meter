@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     tags: [ "*.*.*" ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 permissions:
   packages: write
