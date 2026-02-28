@@ -157,3 +157,18 @@ def test_ct002_info_idx_increments_and_wraps():
 
     assert wrap[13] == "255"
     assert after_wrap[13] == "0"
+
+
+def test_ct002_request_power_is_inverted_to_match_capture_direction():
+    device = CT002()
+
+    # Incoming request power from storage is interpreted with inverted sign,
+    # so "charge-like" traffic is serialized into *_chrg_power (v12/v13/...).
+    req = build_payload(["HMG-50", "AABBCCDDEEFF", "HME-4", "112233445566", "B", "223"])
+    response = device._handle_request(req, ("1.2.3.4", 12345))
+
+    parsed, error = parse_request(response)
+    assert error is None
+
+    assert parsed[16] == "-223"  # B_chrg_power (v13)
+    assert parsed[21] == "0"  # B_dchrg_power (v18)
