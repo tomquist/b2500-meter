@@ -12,7 +12,7 @@ pymodbus = "==3.6.5"
 websocket-client = "*"
 
 [dev-packages]
-flake8 = "6.1.0"
+flake8 = "==6.1.0"
 black = "*"
 flake8-black = "*"
 pytest = "==7.4.4"
