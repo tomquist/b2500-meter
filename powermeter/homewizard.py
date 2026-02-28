@@ -42,7 +42,7 @@ class HomeWizardPowermeter(Powermeter):
     def _build_sslopt(self):
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ssl_context.load_verify_locations(CA_CERT_PATH)
-        ssl_context.check_hostname = False
+        ssl_context.check_hostname = True
         ssl_context.verify_mode = ssl.CERT_REQUIRED
         return {
             "context": ssl_context,

@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "8359b81a11c4f85f6dcbf443808db79f0a291af7429772789911227d0c572005"
+            "sha256": "afd9124362223bed735ecac7c88376ec8b339a224f400a2baf896f36c83ab02a"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -195,12 +195,12 @@
         },
         "websocket-client": {
             "hashes": [
-                "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98",
-                "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef"
+                "sha256:17b44cc997f5c498e809b22cdf2d9c7a9e71c02c8cc2b6c56e7c2d1239bfa526",
+                "sha256:3239df9f44da632f96012472805d40a23281a991027ce11d2f45a6f24ac4c3da"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.9'",
-            "version": "==1.9.0"
+            "markers": "python_version >= '3.8'",
+            "version": "==1.8.0"
         }
     },
     "develop": {
@@ -345,22 +345,14 @@
             "markers": "python_version >= '3.8'",
             "version": "==3.1.0"
         },
-        "pygments": {
-            "hashes": [
-                "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887",
-                "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b"
-            ],
-            "markers": "python_version >= '3.8'",
-            "version": "==2.19.2"
-        },
         "pytest": {
             "hashes": [
-                "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b",
-                "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11"
+                "sha256:2cf0005922c6ace4a3e2ec8b4080eb0d9753fdc93107415332f50ce9e7994280",
+                "sha256:b090cdf5ed60bf4c45261be03239c2c1c22df034fbffe691abe93cd80cea01d8"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.10'",
-            "version": "==9.0.2"
+            "markers": "python_version >= '3.7'",
+            "version": "==7.4.4"
         },
         "pytokens": {
             "hashes": [
