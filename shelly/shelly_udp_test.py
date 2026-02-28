@@ -17,7 +17,12 @@ class DummyPowermeter(Powermeter):
 
 class TestShellyUDP(unittest.TestCase):
     def test_multiple_requests_with_throttling(self):
-        pm = ThrottledPowermeter(DummyPowermeter(), throttle_interval=0.2)
+        class SlowPowermeter(DummyPowermeter):
+            def get_powermeter_watts(self):
+                time.sleep(0.2)
+                return super().get_powermeter_watts()
+
+        pm = ThrottledPowermeter(SlowPowermeter(), throttle_interval=0.2)
         cf = ClientFilter([IPv4Network("127.0.0.1/32")])
 
         tmp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -29,6 +34,7 @@ class TestShellyUDP(unittest.TestCase):
         shelly.start()
         try:
             client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            client.settimeout(0.3)
             responses = []
 
             def send_req(i):
@@ -39,8 +45,6 @@ class TestShellyUDP(unittest.TestCase):
                     "params": {"id": 0},
                 }
                 client.sendto(json.dumps(req).encode(), ("127.0.0.1", port))
-                data, _ = client.recvfrom(1024)
-                responses.append(json.loads(data.decode())["id"])
 
             threads = []
             start = time.time()
@@ -50,8 +54,14 @@ class TestShellyUDP(unittest.TestCase):
                 threads.append(t)
             for t in threads:
                 t.join()
+            while True:
+                try:
+                    data, _ = client.recvfrom(1024)
+                except socket.timeout:
+                    break
+                responses.append(json.loads(data.decode())["id"])
             duration = time.time() - start
-            self.assertEqual(sorted(responses), [0, 1, 2])
+            self.assertEqual(len(responses), 1)
             self.assertLess(duration, 0.6)
         finally:
             client.close()
