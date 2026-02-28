@@ -124,7 +124,8 @@ def run_device(
         disable_sum = (
             args.disable_sum
             if args.disable_sum is not None
-            else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
+            # CT002/CT003 captures are phase-resolved; keep per-phase values by default.
+            else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=True)
         )
 
         ct_section = get_ct_section(device_type, cfg)
