@@ -204,7 +204,9 @@ class CT002:
         if self._smoothed_target is None:
             self._smoothed_target = raw_total
         else:
-            self._smoothed_target = alpha * raw_total + (1 - alpha) * self._smoothed_target
+            self._smoothed_target = (
+                alpha * raw_total + (1 - alpha) * self._smoothed_target
+            )
         with self._values_lock:
             num_consumers = max(1, len(self._reports_by_consumer))
         target_per_consumer = self._smoothed_target / num_consumers
@@ -238,18 +240,17 @@ class CT002:
         if not values or len(values) != 3:
             values = [0, 0, 0]
         phases = " ".join(f"{p}:{int(v)}W" for p, v in zip("ABC", values))
-        chrg = " ".join(
-            f"{p}:{phase_values[p]['chrg_power']}" for p in "ABC"
-        )
-        dchrg = " ".join(
-            f"{p}:{phase_values[p]['dchrg_power']}" for p in "ABC"
-        )
+        chrg = " ".join(f"{p}:{phase_values[p]['chrg_power']}" for p in "ABC")
+        dchrg = " ".join(f"{p}:{phase_values[p]['dchrg_power']}" for p in "ABC")
         with self._values_lock:
             reports = list(self._reports_by_consumer.items())
-        consumers = " ".join(
-            f"{cid[:8]}@{r.get('phase','?')}:{r.get('power',0)}"
-            for cid, r in sorted(reports, key=lambda x: x[0])
-        ) or "none"
+        consumers = (
+            " ".join(
+                f"{cid[:8]}@{r.get('phase','?')}:{r.get('power',0)}"
+                for cid, r in sorted(reports, key=lambda x: x[0])
+            )
+            or "none"
+        )
         return f"phases {phases} | chrg {chrg} | dchrg {dchrg} | consumers {consumers}"
 
     def _build_response_fields(self, request_fields, values):
