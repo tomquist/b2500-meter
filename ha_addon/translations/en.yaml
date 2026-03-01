@@ -25,7 +25,7 @@ configuration:
     description: "Optional. Name of a custom config.ini file to use instead of the UI configuration. The file must be placed in the add-on's configuration directory."
   marstek_auto_register_ct_device:
     name: Auto-register Managed CT Device (Marstek)
-    description: "If enabled, the add-on signs in to your Marstek account at startup and ensures one managed fake CT device exists for each emulated CT type (ct002 -> HME-4, ct003 -> HME-3). It only creates devices with the fixed prefix 'acde48' and reuses an existing matching one instead of creating duplicates."
+    description: "If enabled, the add-on signs in to your Marstek account at startup and ensures one managed fake CT device exists for each emulated CT type (ct002 -> HME-4, ct003 -> HME-3). Existing matching devices are reused to avoid duplicates."
   marstek_mailbox:
     name: Marstek Account Email
     description: "Email address used to sign in to your Marstek account for managed CT device registration."
