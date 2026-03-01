@@ -109,4 +109,4 @@ class HomeWizardPowermeter(Powermeter):
                     return
             if time.time() - start_time > timeout:
                 raise TimeoutError("Timeout waiting for HomeWizard measurement")
-            time.sleep(1)
+            time.sleep(0.1)

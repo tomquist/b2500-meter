@@ -156,6 +156,7 @@ class HomeAssistant(Powermeter):
                 self._entity_values[entity_id] = None
 
     def _get_entity_value(self, entity_id) -> float:
+        """Return cached value for entity. Caller must hold self._lock."""
         val = self._entity_values.get(entity_id)
         if val is None:
             raise ValueError(f"Home Assistant sensor {entity_id} has no state")
@@ -202,4 +203,4 @@ class HomeAssistant(Powermeter):
                     return
             if time.time() - start_time > timeout:
                 raise TimeoutError("Timeout waiting for Home Assistant state")
-            time.sleep(1)
+            time.sleep(0.1)
