@@ -152,13 +152,12 @@ THROTTLE_INTERVAL = 0
 Optional Marstek cloud auto-registration:
 - **MARSTEK.ENABLE** — auto-create/check managed fake CT device(s) at startup
 - **MARSTEK.MAILBOX / PASSWORD** — credentials used to call Marstek API
-- Managed fake devices always use prefix `acde48` (not configurable)
 - For `ct002` a managed `HME-4` device is ensured, for `ct003` a managed `HME-3` device.
 - Device fields created by b2500-meter:
-  - `devid == mac` (random lowercase hex, prefix `acde48`)
+  - `devid == mac` (random lowercase hex)
   - `bluetooth_name = MST-SMR_<last4(mac)>`
   - `name = B2500-Meter CT002` / `B2500-Meter CT003`
-- If a matching managed `acde48` device of expected type already exists, no new device is created.
+- If a matching managed device of expected type already exists, no new device is created.
 
 ### Shelly
 

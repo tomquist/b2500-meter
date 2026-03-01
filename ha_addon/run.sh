@@ -32,6 +32,14 @@ wait_for_homeassistant() {
 
 CONFIG="/app/config.ini"
 
+print_redacted_config() {
+    sed -E \
+        -e 's/^(MAILBOX=).*/\1REDACTED/' \
+        -e 's/^(PASSWORD=).*/\1REDACTED/' \
+        -e 's/^(ACCESSTOKEN=).*/\1REDACTED/' \
+        "$1"
+}
+
 # Check if custom config is provided
 if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'custom_config')" ]; then
     bashio::log.info "Using custom config file: $(bashio::config 'custom_config')"
@@ -77,7 +85,7 @@ else
     } > "$CONFIG"
 fi
 
-cat "$CONFIG"
+print_redacted_config "$CONFIG"
 
 # Wait for Home Assistant to be ready before starting
 wait_for_homeassistant

@@ -3,6 +3,7 @@ import json
 import random
 import urllib.parse
 import urllib.request
+import urllib.error
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -30,16 +31,34 @@ def _http_get_json(url: str, params: Dict[str, Any], headers: Dict[str, str] = N
     query = urllib.parse.urlencode(params)
     full_url = f"{url}?{query}"
     req = urllib.request.Request(full_url, headers=headers or {}, method="GET")
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        body = resp.read().decode("utf-8", errors="replace")
-        code = resp.status
+
+    code = None
+    body = ""
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            code = resp.status
+    except urllib.error.HTTPError as exc:
+        code = exc.code
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = str(exc)
+    except urllib.error.URLError as exc:
+        raise MarstekApiError(
+            f"Network error calling {full_url}: {exc.reason}"
+        ) from exc
+    except Exception as exc:
+        raise MarstekApiError(f"Unexpected error calling {full_url}: {exc}") from exc
+
     try:
         payload = json.loads(body)
     except Exception:
-        raise MarstekApiError(f"Non-JSON response from {url}: {body[:200]}")
+        snippet = body[:200] if body else "<empty>"
+        raise MarstekApiError(f"Non-JSON response from {full_url}: {snippet}")
 
-    if code < 200 or code >= 300:
-        raise MarstekApiError(f"HTTP {code} from {url}: {payload}")
+    if code is None or code < 200 or code >= 300:
+        raise MarstekApiError(f"HTTP {code} from {full_url}: {payload}")
     return payload
 
 

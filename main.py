@@ -265,6 +265,21 @@ def main():
             except Exception as exc:
                 logger.error("Unexpected Marstek auto-registration error: %s", exc)
 
+    # ct002/ct003 are registration markers only in this branch and must not be enqueued.
+    runtime_pairs = [
+        (dt, did)
+        for dt, did in zip(device_types, device_ids)
+        if dt not in ("ct002", "ct003")
+    ]
+    runtime_device_types = [dt for dt, _ in runtime_pairs]
+    runtime_device_ids = [did for _, did in runtime_pairs]
+
+    if len(runtime_device_types) != len(device_types):
+        logger.info(
+            "Skipping registration-only device markers from runtime queue: %s",
+            [dt for dt in device_types if dt in ("ct002", "ct003")],
+        )
+
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
     if not skip_test:
@@ -273,9 +288,13 @@ def main():
 
     # Run devices in parallel
     try:
-        with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
+        if not runtime_device_types:
+            logger.warning("No runnable device types configured after filtering.")
+            return
+
+        with ThreadPoolExecutor(max_workers=len(runtime_device_types)) as executor:
             futures = []
-            for device_type, device_id in zip(device_types, device_ids):
+            for device_type, device_id in zip(runtime_device_types, runtime_device_ids):
                 futures.append(
                     executor.submit(
                         run_device, device_type, cfg, args, powermeters, device_id
