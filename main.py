@@ -146,9 +146,7 @@ def run_device(
         error_reduce_threshold = cfg.getint(
             ct_section, "ERROR_REDUCE_THRESHOLD", fallback=20
         )
-        balance_deadband = cfg.getint(
-            ct_section, "BALANCE_DEADBAND", fallback=15
-        )
+        balance_deadband = cfg.getint(ct_section, "BALANCE_DEADBAND", fallback=15)
         deadband = cfg.getint(ct_section, "DEADBAND", fallback=20)
         max_correction_per_step = cfg.getint(
             ct_section, "MAX_CORRECTION_PER_STEP", fallback=80

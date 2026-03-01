@@ -377,7 +377,9 @@ class CT002:
             values = [0, 0, 0]
         parts = []
         if consumer_id is not None:
-            parts.append(f"consumer {consumer_id[:16]}" if consumer_id else "consumer -")
+            parts.append(
+                f"consumer {consumer_id[:16]}" if consumer_id else "consumer -"
+            )
         if meter_value is not None:
             parts.append(f"meter {meter_value}W")
         phases = " ".join(f"{p}:{int(v)}W" for p, v in zip("ABC", values))
@@ -392,7 +394,14 @@ class CT002:
             )
             or "none"
         )
-        parts.extend([f"phases {phases}", f"chrg {chrg}", f"dchrg {dchrg}", f"consumers {consumers}"])
+        parts.extend(
+            [
+                f"phases {phases}",
+                f"chrg {chrg}",
+                f"dchrg {dchrg}",
+                f"consumers {consumers}",
+            ]
+        )
         return " | ".join(parts)
 
     def _build_response_fields(self, request_fields, values):
