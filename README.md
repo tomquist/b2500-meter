@@ -156,6 +156,13 @@ POLL_INTERVAL = 1
 THROTTLE_INTERVAL = 0
 ```
 
+Per-powermeter options (e.g. in `[TASMOTA]`):
+- **THROTTLE_INTERVAL** — Override global throttling for this powermeter
+
+CT002/CT003 options:
+- **ACTIVE_CONTROL** — Smooth raw grid reading and split target across consumers (reduces oscillation)
+- **SMOOTH_TARGET_ALPHA** — EMA alpha for target smoothing (0.2–0.4 typical)
+
 ### CT002 / CT003
 
 ```ini
