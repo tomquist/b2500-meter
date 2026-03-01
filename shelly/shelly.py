@@ -118,12 +118,16 @@ class Shelly:
 
     def udp_server(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
         sock.bind(("", self._udp_port))
         logger.info(f"Shelly emulator listening on UDP port {self._udp_port}...")
 
         try:
             while not self._stop:
-                data, addr = sock.recvfrom(1024)
+                try:
+                    data, addr = sock.recvfrom(1024)
+                except TimeoutError:
+                    continue
                 self._executor.submit(self._handle_request, sock, data, addr)
 
         finally:

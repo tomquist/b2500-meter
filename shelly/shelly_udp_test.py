@@ -55,9 +55,6 @@ class TestShellyUDP(unittest.TestCase):
             self.assertLess(duration, 0.6)
         finally:
             client.close()
-            # send dummy packet to unblock server if waiting on recv
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.sendto(b"{}", ("127.0.0.1", port))
             shelly.stop()
 
 
