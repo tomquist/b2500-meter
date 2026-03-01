@@ -37,7 +37,7 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
-  marstek_enable: false
+  marstek_auto_register_ct_device: false
   marstek_mailbox: ""
   marstek_password: ""
   log_level: "info"
@@ -48,7 +48,7 @@ schema:
   disable_absolute_values: bool
   device_types: str
   throttle_interval: float(0,)
-  marstek_enable: bool?
+  marstek_auto_register_ct_device: bool?
   marstek_mailbox: str?
   marstek_password: password?
   log_level: list(critical|error|warning|info|debug)

@@ -46,12 +46,12 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
-        marstek_enable="false"
-        if bashio::config.has_value 'marstek_enable'; then
-            marstek_enable="$(bashio::config 'marstek_enable')"
+        marstek_auto_register_ct_device="false"
+        if bashio::config.has_value 'marstek_auto_register_ct_device'; then
+            marstek_auto_register_ct_device="$(bashio::config 'marstek_auto_register_ct_device')"
         fi
 
-        if [ "$marstek_enable" = "true" ] && bashio::config.has_value 'marstek_mailbox' && bashio::config.has_value 'marstek_password'; then
+        if [ "$marstek_auto_register_ct_device" = "true" ] && bashio::config.has_value 'marstek_mailbox' && bashio::config.has_value 'marstek_password'; then
             echo "[MARSTEK]"
             echo "ENABLE=True"
             echo "BASE_URL=https://eu.hamedata.com"
