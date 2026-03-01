@@ -181,7 +181,8 @@ For emulator/protocol implementation:
 - Parse request tail strictly as:
   - `phase = fields[4]`
   - `power = int(fields[5])`
-- Reject invalid request phase values outside `A/B/C`.
+- Accept phase `A`, `B`, `C` for normal aggregation; accept `0` or empty as inspection mode (respond
+  but do not aggregate). Reject other phase values.
 - Treat later response fields as implementation-defined unless verified with controlled experiments.
 
 ## 9) Suggested follow-up experiments
