@@ -28,8 +28,13 @@ class TestShellyUDP(unittest.TestCase):
         shelly = Shelly([(pm, cf)], udp_port=port, device_id="test")
         shelly.start()
         try:
-            client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            # Give the UDP server thread a brief moment to bind before sending requests.
+            # Without this, first packets can be dropped and recvfrom() may block forever.
+            time.sleep(0.05)
+
             responses = []
+            errors = []
+            responses_lock = threading.Lock()
 
             def send_req(i):
                 req = {
@@ -38,9 +43,19 @@ class TestShellyUDP(unittest.TestCase):
                     "method": "EM.GetStatus",
                     "params": {"id": 0},
                 }
-                client.sendto(json.dumps(req).encode(), ("127.0.0.1", port))
-                data, _ = client.recvfrom(1024)
-                responses.append(json.loads(data.decode())["id"])
+
+                client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                client.settimeout(1.0)
+                try:
+                    client.sendto(json.dumps(req).encode(), ("127.0.0.1", port))
+                    data, _ = client.recvfrom(1024)
+                    with responses_lock:
+                        responses.append(json.loads(data.decode())["id"])
+                except TimeoutError:
+                    with responses_lock:
+                        errors.append(f"timeout for request id={i}")
+                finally:
+                    client.close()
 
             threads = []
             start = time.time()
@@ -49,12 +64,14 @@ class TestShellyUDP(unittest.TestCase):
                 t.start()
                 threads.append(t)
             for t in threads:
-                t.join()
+                t.join(timeout=2.0)
+                self.assertFalse(t.is_alive(), "request thread did not finish")
+
             duration = time.time() - start
+            self.assertEqual(errors, [])
             self.assertEqual(sorted(responses), [0, 1, 2])
             self.assertLess(duration, 0.6)
         finally:
-            client.close()
             shelly.stop()
 
 
