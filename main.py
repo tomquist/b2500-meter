@@ -12,6 +12,7 @@ from shelly import Shelly
 from collections import OrderedDict
 from config.logger import logger, setLogLevel
 from health_service import start_health_service, stop_health_service
+from marstek_api import MarstekConfig, ensure_managed_fake_device, MarstekApiError
 
 
 def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
@@ -144,7 +145,9 @@ def main():
     parser.add_argument(
         "-c", "--config", default="config.ini", help="Path to the configuration file"
     )
-    parser.add_argument("-t", "--skip-powermeter-test", action="store_true", default=None)
+    parser.add_argument(
+        "-t", "--skip-powermeter-test", action="store_true", default=None
+    )
     parser.add_argument(
         "-d",
         "--device-types",
@@ -233,7 +236,50 @@ def main():
             logger.info("Health check service started successfully")
         else:
             logger.error("Failed to start health check service")
-    
+
+    # Optional Marstek cloud registration for managed fake CT devices
+    marstek_enabled = cfg.getboolean("MARSTEK", "ENABLE", fallback=False)
+    if marstek_enabled:
+        mailbox = cfg.get("MARSTEK", "MAILBOX", fallback="")
+        password = cfg.get("MARSTEK", "PASSWORD", fallback="")
+        base_url = cfg.get("MARSTEK", "BASE_URL", fallback="https://eu.hamedata.com")
+        timezone_name = cfg.get("MARSTEK", "TIMEZONE", fallback="Europe/Berlin")
+
+        if not mailbox or not password:
+            logger.warning(
+                "MARSTEK.ENABLE is true, but MAILBOX/PASSWORD missing; skipping fake-device auto-registration"
+            )
+        else:
+            marstek_cfg = MarstekConfig(
+                base_url=base_url,
+                mailbox=mailbox,
+                password=password,
+                timezone=timezone_name,
+            )
+            try:
+                for dt in ("ct002", "ct003"):
+                    if dt in device_types:
+                        ensure_managed_fake_device(marstek_cfg, dt)
+            except MarstekApiError as exc:
+                logger.error("Marstek auto-registration failed: %s", exc)
+            except Exception as exc:
+                logger.error("Unexpected Marstek auto-registration error: %s", exc)
+
+    # ct002/ct003 are registration markers only in this branch and must not be enqueued.
+    runtime_pairs = [
+        (dt, did)
+        for dt, did in zip(device_types, device_ids)
+        if dt not in ("ct002", "ct003")
+    ]
+    runtime_device_types = [dt for dt, _ in runtime_pairs]
+    runtime_device_ids = [did for _, did in runtime_pairs]
+
+    if len(runtime_device_types) != len(device_types):
+        logger.info(
+            "Skipping registration-only device markers from runtime queue: %s",
+            [dt for dt in device_types if dt in ("ct002", "ct003")],
+        )
+
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
     if not skip_test:
@@ -242,9 +288,13 @@ def main():
 
     # Run devices in parallel
     try:
-        with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
+        if not runtime_device_types:
+            logger.warning("No runnable device types configured after filtering.")
+            return
+
+        with ThreadPoolExecutor(max_workers=len(runtime_device_types)) as executor:
             futures = []
-            for device_type, device_id in zip(device_types, device_ids):
+            for device_type, device_id in zip(runtime_device_types, runtime_device_ids):
                 futures.append(
                     executor.submit(
                         run_device, device_type, cfg, args, powermeters, device_id
