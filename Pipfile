@@ -9,6 +9,8 @@ urllib3 = "*"
 paho-mqtt = "*"
 jsonpath-ng = "*"
 pymodbus = "*"
+smllib = "*"
+pyserial = "*"
 
 [dev-packages]
 flake8 = "6.1.0"

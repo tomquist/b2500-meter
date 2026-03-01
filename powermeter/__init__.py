@@ -12,5 +12,6 @@ from .modbus import ModbusPowermeter
 from .mqtt import MqttPowermeter
 from .json_http import JsonHttpPowermeter
 from .script import Script
+from .sml import Sml
 from .throttling import ThrottledPowermeter
 from .tq_em import TQEnergyManager
