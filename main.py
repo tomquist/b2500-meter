@@ -125,7 +125,6 @@ def run_device(
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
         ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
         wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
-        # no legacy control knobs: CT emulation mirrors other-storage reports
         dedupe_time_window = cfg.getint(ct_section, "DEDUPE_TIME_WINDOW", fallback=0)
         consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=120)
         debug_status = cfg.getboolean(ct_section, "DEBUG_STATUS", fallback=False)
@@ -133,24 +132,59 @@ def run_device(
             debug_status = True
         active_control = cfg.getboolean(ct_section, "ACTIVE_CONTROL", fallback=True)
         smooth_target_alpha = cfg.getfloat(
-            ct_section, "SMOOTH_TARGET_ALPHA", fallback=0.3
+            ct_section, "SMOOTH_TARGET_ALPHA", fallback=0.08
         )
+        max_smooth_step = cfg.getint(ct_section, "MAX_SMOOTH_STEP", fallback=0)
         fair_distribution = cfg.getboolean(
             ct_section, "FAIR_DISTRIBUTION", fallback=True
         )
-        balance_gain = cfg.getfloat(ct_section, "BALANCE_GAIN", fallback=0.3)
+        balance_gain = cfg.getfloat(ct_section, "BALANCE_GAIN", fallback=0.2)
+        error_boost_threshold = cfg.getint(
+            ct_section, "ERROR_BOOST_THRESHOLD", fallback=150
+        )
+        error_boost_max = cfg.getfloat(ct_section, "ERROR_BOOST_MAX", fallback=0.5)
+        error_reduce_threshold = cfg.getint(
+            ct_section, "ERROR_REDUCE_THRESHOLD", fallback=20
+        )
+        balance_deadband = cfg.getint(
+            ct_section, "BALANCE_DEADBAND", fallback=15
+        )
+        deadband = cfg.getint(ct_section, "DEADBAND", fallback=20)
+        max_correction_per_step = cfg.getint(
+            ct_section, "MAX_CORRECTION_PER_STEP", fallback=80
+        )
+        max_target_step = cfg.getint(ct_section, "MAX_TARGET_STEP", fallback=0)
+        saturation_detection = cfg.getboolean(
+            ct_section, "SATURATION_DETECTION", fallback=True
+        )
+        saturation_alpha = cfg.getfloat(ct_section, "SATURATION_ALPHA", fallback=0.15)
+        min_target_for_saturation = cfg.getint(
+            ct_section, "MIN_TARGET_FOR_SATURATION", fallback=20
+        )
 
         logger.debug(f"{device_type.upper()} Settings for {device_id}:")
         logger.debug(f"CT Type: {ct_type}")
         logger.debug(f"CT MAC: {ct_mac}")
         logger.debug(f"CT UDP Port: {ct_udp_port}")
         logger.debug(f"WiFi RSSI: {wifi_rssi}")
-        logger.debug("CT control model: relay reports of other storages")
+        logger.debug(
+            "CT control model: %s",
+            (
+                "active control (emulator computes targets)"
+                if active_control
+                else "relay (forward consumer aggregates)"
+            ),
+        )
         if active_control:
+            extras = []
+            if fair_distribution:
+                extras.append("fair distribution")
+            if saturation_detection:
+                extras.append("saturation detection")
             logger.info(
                 "Active control enabled (alpha=%.2f): smooth target + load split%s",
                 smooth_target_alpha,
-                " + fair distribution" if fair_distribution else "",
+                " + " + " + ".join(extras) if extras else "",
             )
 
         device = CT002(
@@ -163,8 +197,19 @@ def run_device(
             debug_status=debug_status,
             active_control=active_control,
             smooth_target_alpha=smooth_target_alpha,
+            max_smooth_step=max_smooth_step,
             fair_distribution=fair_distribution,
             balance_gain=balance_gain,
+            error_boost_threshold=error_boost_threshold,
+            error_boost_max=error_boost_max,
+            error_reduce_threshold=error_reduce_threshold,
+            balance_deadband=balance_deadband,
+            deadband=deadband,
+            max_correction_per_step=max_correction_per_step,
+            max_target_step=max_target_step,
+            saturation_detection=saturation_detection,
+            saturation_alpha=saturation_alpha,
+            min_target_for_saturation=min_target_for_saturation,
         )
 
         def update_readings(addr, _fields=None, _consumer_id=None):
