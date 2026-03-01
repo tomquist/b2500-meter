@@ -109,20 +109,38 @@ This list describes current emulator behavior as implemented.
 
 ## Multi‑consumer behavior
 
-The emulator therefore:
-- Tracks per‑consumer `phase` + `phase_power` from the request fields (only when phase is `A`, `B`, or `C`;
-  inspection-mode requests with phase `0` or empty are responded to but not aggregated).
-- When responding, it forwards per-phase aggregates based on the latest known reports from all
-  known consumers, grouped by their reported phase.
+The emulator tracks per‑consumer `phase` + `phase_power` from the request fields (only when phase is
+`A`, `B`, or `C`; inspection-mode requests with phase `0` or empty are responded to but not aggregated).
+If a consumer stops sending updates for a while, its reported values are evicted after a configurable
+TTL (`CONSUMER_TTL`).
+
+### Relay mode (ACTIVE_CONTROL = False)
+
+When active control is disabled, the emulator behaves like a passive relay:
+- Forwards per-phase aggregates based on the latest known reports from all known consumers,
+  grouped by their reported phase.
 - Uses sign split for forwarded aggregates:
   - negative phase sums -> `A/B/C_chrg_power` (fields 16-18)
   - positive phase sums -> `A/B/C_dchrg_power` (fields 21-23)
 
-Capture analysis (including charge and discharge traces) shows this aggregate + sign-split model
-matches observed traffic closely, with minor deviations expected from asynchronous request/response timing.
+Capture analysis shows this aggregate + sign-split model matches observed traffic closely. In this
+mode, each battery decides its own charge/discharge based on the relayed aggregates.
 
-If a consumer stops sending updates for a while, its reported values are evicted after a configurable
-TTL (`CONSUMER_TTL`).
+### Active control mode (ACTIVE_CONTROL = True, default)
+
+When active control is enabled, the emulator becomes the control authority:
+- Reads grid/meter power from a configured powermeter (Tasmota, Shelly, etc.).
+- Smooths the raw reading (EMA) and splits the target across consumers.
+- Sends per-consumer targets in the response fields (`A/B/C_phase_power`, `*_chrg_power`, `*_dchrg_power`).
+
+Additional options refine the control:
+- **Fair distribution** — Adjusts each consumer’s target to balance actual load (under‑performers get
+  higher targets, over‑performers get lower).
+- **Saturation detection** — Reduces share for batteries that cannot follow target (e.g. full or empty).
+- **Error boost** — Increases correction gain when offset is large for faster convergence.
+- **Error reduce** — Decreases correction gain when offset is small to avoid oscillation.
+
+In this mode, the emulator computes what each battery should do; the batteries follow the targets.
 
 ## CT MAC behavior
 

@@ -130,9 +130,20 @@ class CT002:
         consumer_ttl=120,
         debug_status=False,
         active_control=True,
-        smooth_target_alpha=0.3,
+        smooth_target_alpha=0.08,
+        max_smooth_step=0,
         fair_distribution=True,
-        balance_gain=0.3,
+        balance_gain=0.2,
+        error_boost_threshold=150,
+        error_boost_max=0.5,
+        error_reduce_threshold=20,
+        balance_deadband=15,
+        deadband=20,
+        max_correction_per_step=80,
+        max_target_step=0,
+        saturation_detection=True,
+        saturation_alpha=0.15,
+        min_target_for_saturation=20,
     ):
         self.udp_port = udp_port
         self.ct_mac = ct_mac
@@ -143,14 +154,27 @@ class CT002:
         self.debug_status = debug_status
         self.active_control = active_control
         self.smooth_target_alpha = max(0.01, min(1.0, smooth_target_alpha))
+        self.max_smooth_step = max(0, max_smooth_step)
         self.fair_distribution = fair_distribution
         self.balance_gain = max(0.0, min(1.0, balance_gain))
+        self.error_boost_threshold = max(0, error_boost_threshold)
+        self.error_boost_max = max(0.0, error_boost_max)
+        self.error_reduce_threshold = max(0, error_reduce_threshold)
+        self.balance_deadband = max(0, balance_deadband)
+        self.deadband = max(0, deadband)
+        self.max_correction_per_step = max(0, max_correction_per_step)
+        self.max_target_step = max(0, max_target_step)
+        self.saturation_detection = saturation_detection
+        self.saturation_alpha = max(0.01, min(1.0, saturation_alpha))
+        self.min_target_for_saturation = max(1, min_target_for_saturation)
         self.before_send = None
         self._info_idx_counter = 0
         self._stop = False
         self._udp_thread = None
         self._values_by_consumer = {}
         self._reports_by_consumer = {}
+        self._last_target_by_consumer = {}
+        self._saturation_by_consumer = {}
         self._values_lock = threading.Lock()
         self._last_response_time = {}
         self._smoothed_target = None
@@ -188,6 +212,8 @@ class CT002:
             for key in stale:
                 self._reports_by_consumer.pop(key, None)
                 self._values_by_consumer.pop(key, None)
+                self._last_target_by_consumer.pop(key, None)
+                self._saturation_by_consumer.pop(key, None)
         stale_addrs = [
             addr
             for addr, ts in self._last_response_time.items()
@@ -196,37 +222,130 @@ class CT002:
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
 
+    def _update_saturation(self, consumer_id, last_target, actual):
+        """
+        Update saturation score using EMA. Saturation = 1 when consumer cannot
+        follow target (e.g. full/empty battery); 0 when following well.
+        """
+        if not self.saturation_detection or last_target is None:
+            return
+        target_abs = abs(last_target)
+        if target_abs < self.min_target_for_saturation:
+            return
+        if (last_target > 0 and actual < 0) or (last_target < 0 and actual > 0):
+            return
+        follow_ratio = min(1.0, abs(actual) / target_abs)
+        inst_saturation = 1.0 - follow_ratio
+        alpha = self.saturation_alpha
+        with self._values_lock:
+            prev = self._saturation_by_consumer.get(consumer_id, 0.0)
+            self._saturation_by_consumer[consumer_id] = (
+                alpha * inst_saturation + (1 - alpha) * prev
+            )
+
     def _compute_smooth_target(self, values, consumer_id=None):
         """
         Active control: smooth the raw grid reading and split target across consumers.
         With fair_distribution: adjust each consumer's target to balance actual load.
+        With saturation_detection: reduce share for consumers that cannot follow target.
         Returns [target, 0, 0] for single-phase (all in phase A).
         """
-        if not values or len(values) != 3:
+        if not self.active_control or not values or len(values) != 3:
             return values
         raw_total = sum(parse_int(v, 0) for v in values)
         alpha = self.smooth_target_alpha
         if self._smoothed_target is None:
             self._smoothed_target = raw_total
+        elif self.deadband > 0 and abs(raw_total) < self.deadband:
+            # Within deadband: hold target, no correction
+            pass
         else:
-            self._smoothed_target = (
-                alpha * raw_total + (1 - alpha) * self._smoothed_target
-            )
+            # When meter and smoothed cross zero, catch up faster to avoid
+            # sending wrong-sign target (e.g. 0 when we need discharge)
+            catchup_alpha = alpha
+            if (raw_total > 0) != (self._smoothed_target > 0):
+                catchup_alpha = min(0.5, alpha * 4)
+            delta = catchup_alpha * (raw_total - self._smoothed_target)
+            if self.max_smooth_step > 0:
+                delta = max(
+                    -self.max_smooth_step,
+                    min(self.max_smooth_step, delta),
+                )
+            self._smoothed_target += delta
         with self._values_lock:
             reports = dict(self._reports_by_consumer)
-            num_consumers = max(1, len(reports))
-        fair_share = self._smoothed_target / num_consumers
+            last_target = self._last_target_by_consumer.get(consumer_id)
+            saturation = dict(self._saturation_by_consumer)
+        if consumer_id and consumer_id in reports:
+            actual_self = parse_int(reports.get(consumer_id, {}).get("power", 0))
+            self._update_saturation(consumer_id, last_target, actual_self)
+        with self._values_lock:
+            saturation = dict(self._saturation_by_consumer)
+        num_consumers = max(1, len(reports))
+        eff_part = {cid: max(0.01, 1.0 - saturation.get(cid, 0.0)) for cid in reports}
+        total_effective = sum(eff_part.values())
+        fair_share = (
+            (self._smoothed_target / total_effective) * eff_part.get(consumer_id, 1.0)
+            if consumer_id and consumer_id in reports
+            else self._smoothed_target / num_consumers
+        )
         if (
             not self.fair_distribution
             or consumer_id is None
             or consumer_id not in reports
+            or (self.deadband > 0 and abs(raw_total) < self.deadband)
         ):
-            return [fair_share, 0, 0]
-        actual_self = parse_int(reports.get(consumer_id, {}).get("power", 0))
-        actual_total = sum(parse_int(r.get("power", 0)) for r in reports.values())
-        actual_avg = actual_total / num_consumers if num_consumers else 0
-        error = actual_avg - actual_self
-        target = fair_share + self.balance_gain * error
+            target = fair_share
+        elif consumer_id in eff_part:
+            actual_self = parse_int(reports.get(consumer_id, {}).get("power", 0))
+            participating = [cid for cid in reports if eff_part.get(cid, 1.0) > 0.1]
+            if participating:
+                actual_total = sum(
+                    parse_int(reports.get(cid, {}).get("power", 0))
+                    for cid in participating
+                )
+                actual_avg = actual_total / len(participating)
+                error = actual_avg - actual_self
+                err_abs = abs(error)
+                if self.balance_deadband > 0 and err_abs < self.balance_deadband:
+                    target = fair_share
+                else:
+                    gain = self.balance_gain
+                    if (
+                        self.error_reduce_threshold > 0
+                        and err_abs < self.error_reduce_threshold
+                    ):
+                        gain = gain * (err_abs / self.error_reduce_threshold)
+                    elif self.error_boost_threshold > 0 and self.error_boost_max > 0:
+                        boost = (
+                            min(err_abs / self.error_boost_threshold, 1.0)
+                            * self.error_boost_max
+                        )
+                        gain = gain * (1.0 + boost)
+                    correction = gain * error
+                    if self.max_correction_per_step > 0:
+                        cap = self.max_correction_per_step
+                        if correction > cap:
+                            correction = cap
+                        elif correction < -cap:
+                            correction = -cap
+                    target = fair_share + correction
+                    if self.max_target_step > 0:
+                        lo = actual_self - self.max_target_step
+                        hi = actual_self + self.max_target_step
+                        target = max(lo, min(hi, target))
+            else:
+                target = fair_share
+        # When meter and target disagree on sign, clamp to avoid fighting the
+        # actual state (smoothing lag can command discharge during export or
+        # charge during import, worsening overshoot)
+        if raw_total < 0 and target > 0:
+            target = 0
+        elif raw_total > 0 and target < 0:
+            target = 0
+        with self._values_lock:
+            if consumer_id:
+                self._last_target_by_consumer[consumer_id] = target
         return [target, 0, 0]
 
     def _collect_reports_by_phase(self):
@@ -252,10 +371,15 @@ class CT002:
                 by_phase[phase]["dchrg_power"] += power
         return by_phase
 
-    def _format_status(self, values, phase_values):
+    def _format_status(self, values, phase_values, consumer_id=None, meter_value=None):
         """Concise one-line status: phase consumption and consumer charge/discharge reports."""
         if not values or len(values) != 3:
             values = [0, 0, 0]
+        parts = []
+        if consumer_id is not None:
+            parts.append(f"consumer {consumer_id[:16]}" if consumer_id else "consumer -")
+        if meter_value is not None:
+            parts.append(f"meter {meter_value}W")
         phases = " ".join(f"{p}:{int(v)}W" for p, v in zip("ABC", values))
         chrg = " ".join(f"{p}:{phase_values[p]['chrg_power']}" for p in "ABC")
         dchrg = " ".join(f"{p}:{phase_values[p]['dchrg_power']}" for p in "ABC")
@@ -268,7 +392,8 @@ class CT002:
             )
             or "none"
         )
-        return f"phases {phases} | chrg {chrg} | dchrg {dchrg} | consumers {consumers}"
+        parts.extend([f"phases {phases}", f"chrg {chrg}", f"dchrg {dchrg}", f"consumers {consumers}"])
+        return " | ".join(parts)
 
     def _build_response_fields(self, request_fields, values):
         if not values or len(values) != 3:
@@ -401,6 +526,7 @@ class CT002:
         values = self._get_consumer_value(consumer_id)
         if values is None:
             values = [0, 0, 0]
+        meter_value = sum(parse_int(v, 0) for v in values)
         if self.active_control:
             values = self._compute_smooth_target(values, consumer_id)
         try:
@@ -419,7 +545,10 @@ class CT002:
         )
         if self.debug_status:
             phase_values = self._collect_reports_by_phase()
-            logger.info("CT002 status: %s", self._format_status(values, phase_values))
+            logger.info(
+                "CT002 status: %s",
+                self._format_status(values, phase_values, consumer_id, meter_value),
+            )
         return response
 
     def udp_server(self):
