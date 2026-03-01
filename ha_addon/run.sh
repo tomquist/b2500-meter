@@ -46,6 +46,22 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
+        marstek_enable="false"
+        if bashio::config.has_value 'marstek_enable'; then
+            marstek_enable="$(bashio::config 'marstek_enable')"
+        fi
+
+        if [ "$marstek_enable" = "true" ] && bashio::config.has_value 'marstek_mailbox' && bashio::config.has_value 'marstek_password'; then
+            echo "[MARSTEK]"
+            echo "ENABLE=True"
+            echo "BASE_URL=$(bashio::config 'marstek_base_url')"
+            echo "MAILBOX=$(bashio::config 'marstek_mailbox')"
+            echo "PASSWORD=$(bashio::config 'marstek_password')"
+            echo "TIMEZONE=$(bashio::config 'marstek_timezone')"
+            echo "MAC_PREFIX=$(bashio::config 'marstek_mac_prefix')"
+            echo ""
+        fi
+
         echo "[HOMEASSISTANT]"
         echo "IP=supervisor"
         echo "PORT=80"

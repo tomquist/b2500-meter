@@ -12,6 +12,7 @@ from shelly import Shelly
 from collections import OrderedDict
 from config.logger import logger, setLogLevel
 from health_service import start_health_service, stop_health_service
+from marstek_api import MarstekConfig, ensure_managed_fake_device, MarstekApiError
 
 
 def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
@@ -233,7 +234,37 @@ def main():
             logger.info("Health check service started successfully")
         else:
             logger.error("Failed to start health check service")
-    
+
+    # Optional Marstek cloud registration for managed fake CT devices
+    marstek_enabled = cfg.getboolean("MARSTEK", "ENABLE", fallback=False)
+    if marstek_enabled:
+        mailbox = cfg.get("MARSTEK", "MAILBOX", fallback="")
+        password = cfg.get("MARSTEK", "PASSWORD", fallback="")
+        base_url = cfg.get("MARSTEK", "BASE_URL", fallback="https://eu.hamedata.com")
+        timezone_name = cfg.get("MARSTEK", "TIMEZONE", fallback="Europe/Berlin")
+        mac_prefix = cfg.get("MARSTEK", "MAC_PREFIX", fallback="acde48")
+
+        if not mailbox or not password:
+            logger.warning(
+                "MARSTEK.ENABLE is true, but MAILBOX/PASSWORD missing; skipping fake-device auto-registration"
+            )
+        else:
+            marstek_cfg = MarstekConfig(
+                base_url=base_url,
+                mailbox=mailbox,
+                password=password,
+                timezone=timezone_name,
+                mac_prefix=mac_prefix,
+            )
+            try:
+                for dt in ("ct002", "ct003"):
+                    if dt in device_types:
+                        ensure_managed_fake_device(marstek_cfg, dt)
+            except MarstekApiError as exc:
+                logger.error("Marstek auto-registration failed: %s", exc)
+            except Exception as exc:
+                logger.error("Unexpected Marstek auto-registration error: %s", exc)
+
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
     if not skip_test:

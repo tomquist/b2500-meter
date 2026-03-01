@@ -37,6 +37,12 @@ options:
   disable_absolute_values: false
   device_types: "shellypro3em"
   throttle_interval: 0
+  marstek_enable: false
+  marstek_mailbox: ""
+  marstek_password: ""
+  marstek_base_url: "https://eu.hamedata.com"
+  marstek_timezone: "Europe/Berlin"
+  marstek_mac_prefix: "acde48"
   log_level: "info"
 schema:
   power_input_alias: str
@@ -45,5 +51,11 @@ schema:
   disable_absolute_values: bool
   device_types: str
   throttle_interval: float(0,)
+  marstek_enable: bool?
+  marstek_mailbox: str?
+  marstek_password: password?
+  marstek_base_url: str?
+  marstek_timezone: str?
+  marstek_mac_prefix: str?
   log_level: list(critical|error|warning|info|debug)
   custom_config: str?

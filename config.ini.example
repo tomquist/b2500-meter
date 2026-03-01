@@ -17,6 +17,17 @@ POLL_INTERVAL = 1
 # Can be overridden per powermeter section
 THROTTLE_INTERVAL = 0
 
+#[MARSTEK]
+## Optional: auto-register managed fake CT devices in Marstek cloud on startup.
+#ENABLE = False
+#BASE_URL = https://eu.hamedata.com
+#MAILBOX = your@email.example
+#PASSWORD = your_password
+## Prefix for generated managed fake devices (must be 6 lowercase hex chars)
+#MAC_PREFIX = acde48
+## Used for add-device request
+#TIMEZONE = Europe/Berlin
+
 #[SHELLY]
 #TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO
 #IP = 192.168.1.100
