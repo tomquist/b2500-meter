@@ -536,7 +536,7 @@ class CT002:
         if values is None:
             values = [0, 0, 0]
         meter_value = sum(parse_int(v, 0) for v in values)
-        if self.active_control:
+        if self.active_control and not in_inspection_mode:
             values = self._compute_smooth_target(values, consumer_id)
         try:
             response_fields = self._build_response_fields(fields, values)
