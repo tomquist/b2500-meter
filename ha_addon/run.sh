@@ -54,11 +54,10 @@ else
         if [ "$marstek_enable" = "true" ] && bashio::config.has_value 'marstek_mailbox' && bashio::config.has_value 'marstek_password'; then
             echo "[MARSTEK]"
             echo "ENABLE=True"
-            echo "BASE_URL=$(bashio::config 'marstek_base_url')"
+            echo "BASE_URL=https://eu.hamedata.com"
             echo "MAILBOX=$(bashio::config 'marstek_mailbox')"
             echo "PASSWORD=$(bashio::config 'marstek_password')"
-            echo "TIMEZONE=$(bashio::config 'marstek_timezone')"
-            echo "MAC_PREFIX=$(bashio::config 'marstek_mac_prefix')"
+            echo "TIMEZONE=Europe/Berlin"
             echo ""
         fi
 

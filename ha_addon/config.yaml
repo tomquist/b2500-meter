@@ -40,9 +40,6 @@ options:
   marstek_enable: false
   marstek_mailbox: ""
   marstek_password: ""
-  marstek_base_url: "https://eu.hamedata.com"
-  marstek_timezone: "Europe/Berlin"
-  marstek_mac_prefix: "acde48"
   log_level: "info"
 schema:
   power_input_alias: str
@@ -54,8 +51,5 @@ schema:
   marstek_enable: bool?
   marstek_mailbox: str?
   marstek_password: password?
-  marstek_base_url: str?
-  marstek_timezone: str?
-  marstek_mac_prefix: str?
   log_level: list(critical|error|warning|info|debug)
   custom_config: str?

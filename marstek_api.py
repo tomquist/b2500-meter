@@ -11,13 +11,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+MANAGED_MAC_PREFIX = "acde48"
+
+
 @dataclass
 class MarstekConfig:
     base_url: str
     mailbox: str
     password: str
     timezone: str = "Europe/Berlin"
-    mac_prefix: str = "acde48"
 
 
 class MarstekApiError(Exception):
@@ -53,8 +55,8 @@ def _desired_name(device_type: str) -> str:
     return "B2500-Meter CT002" if device_type == "ct002" else "B2500-Meter CT003"
 
 
-def _is_managed_prefix(value: str, mac_prefix: str) -> bool:
-    return isinstance(value, str) and value.lower().startswith(mac_prefix.lower())
+def _is_managed_prefix(value: str) -> bool:
+    return isinstance(value, str) and value.lower().startswith(MANAGED_MAC_PREFIX)
 
 
 def _fetch_token_and_devices(cfg: MarstekConfig) -> Tuple[str, List[Dict[str, Any]]]:
@@ -112,7 +114,7 @@ def _fetch_token_and_devices(cfg: MarstekConfig) -> Tuple[str, List[Dict[str, An
 
 
 def _find_existing_managed_device(
-    devices: List[Dict[str, Any]], expected_type: str, mac_prefix: str
+    devices: List[Dict[str, Any]], expected_type: str
 ) -> Optional[Dict[str, Any]]:
     for d in devices:
         devid = str(d.get("devid", "")).lower()
@@ -120,14 +122,12 @@ def _find_existing_managed_device(
         dtype = str(d.get("type", ""))
         if dtype != expected_type:
             continue
-        if _is_managed_prefix(devid, mac_prefix) and _is_managed_prefix(
-            mac, mac_prefix
-        ):
+        if _is_managed_prefix(devid) and _is_managed_prefix(mac):
             return d
     return None
 
 
-def _generate_new_id(existing_devices: List[Dict[str, Any]], mac_prefix: str) -> str:
+def _generate_new_id(existing_devices: List[Dict[str, Any]]) -> str:
     existing = {
         str(d.get("devid", "")).lower()
         for d in existing_devices
@@ -139,9 +139,7 @@ def _generate_new_id(existing_devices: List[Dict[str, Any]], mac_prefix: str) ->
         if isinstance(d, dict) and d.get("mac")
     }
 
-    prefix = mac_prefix.lower()
-    if len(prefix) != 6 or any(c not in "0123456789abcdef" for c in prefix):
-        raise MarstekApiError("MAC_PREFIX must be exactly 6 lowercase hex chars")
+    prefix = MANAGED_MAC_PREFIX
 
     for _ in range(200):
         candidate = f"{prefix}{_random_hex(6)}"
@@ -196,7 +194,7 @@ def ensure_managed_fake_device(
     token, devices = _fetch_token_and_devices(cfg)
     expected_type = _desired_type(device_type)
 
-    existing = _find_existing_managed_device(devices, expected_type, cfg.mac_prefix)
+    existing = _find_existing_managed_device(devices, expected_type)
     if existing:
         logger.info(
             "Marstek managed %s already exists (devid=%s, mac=%s, type=%s)",
@@ -207,7 +205,7 @@ def ensure_managed_fake_device(
         )
         return existing
 
-    new_id = _generate_new_id(devices, cfg.mac_prefix)
+    new_id = _generate_new_id(devices)
     logger.info(
         "Creating managed fake %s device in Marstek cloud (devid=mac=%s, type=%s)",
         device_type,
@@ -218,9 +216,7 @@ def ensure_managed_fake_device(
 
     # Re-fetch once for confirmation and return created record
     _, refreshed_devices = _fetch_token_and_devices(cfg)
-    created = _find_existing_managed_device(
-        refreshed_devices, expected_type, cfg.mac_prefix
-    )
+    created = _find_existing_managed_device(refreshed_devices, expected_type)
     if not created:
         logger.warning(
             "Created %s device but could not confirm it in refreshed list", device_type

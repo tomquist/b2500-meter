@@ -145,7 +145,9 @@ def main():
     parser.add_argument(
         "-c", "--config", default="config.ini", help="Path to the configuration file"
     )
-    parser.add_argument("-t", "--skip-powermeter-test", action="store_true", default=None)
+    parser.add_argument(
+        "-t", "--skip-powermeter-test", action="store_true", default=None
+    )
     parser.add_argument(
         "-d",
         "--device-types",
@@ -242,7 +244,6 @@ def main():
         password = cfg.get("MARSTEK", "PASSWORD", fallback="")
         base_url = cfg.get("MARSTEK", "BASE_URL", fallback="https://eu.hamedata.com")
         timezone_name = cfg.get("MARSTEK", "TIMEZONE", fallback="Europe/Berlin")
-        mac_prefix = cfg.get("MARSTEK", "MAC_PREFIX", fallback="acde48")
 
         if not mailbox or not password:
             logger.warning(
@@ -254,7 +255,6 @@ def main():
                 mailbox=mailbox,
                 password=password,
                 timezone=timezone_name,
-                mac_prefix=mac_prefix,
             )
             try:
                 for dt in ("ct002", "ct003"):
