@@ -53,7 +53,7 @@ THROTTLE_INTERVAL = 0
 #BASE_URL = https://eu.hamedata.com
 #MAILBOX = your@email.example
 #PASSWORD = your_password
-## Prefix is fixed to acde48 for managed fake devices.
+## Prefix is fixed to 02b250 (locally administered MAC space) for managed fake devices.
 ## Used for add-device request
 #TIMEZONE = Europe/Berlin
 

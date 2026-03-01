@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-MANAGED_MAC_PREFIX = "acde48"
+MANAGED_MAC_PREFIX = "02b250"
 
 
 @dataclass
