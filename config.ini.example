@@ -45,6 +45,18 @@ THROTTLE_INTERVAL = 0
 ## Deadband (W): no target change when |meter| below this; reduces oscillation near zero
 #DEADBAND = 20
 
+#[MARSTEK]
+## Optional: auto-register managed fake CT devices in Marstek cloud on startup.
+## Only used when DEVICE_TYPE includes ct002 and/or ct003.
+#ENABLE = False
+#BASE_URL = https://eu.hamedata.com
+#MAILBOX = your@email.example
+#PASSWORD = your_password
+## Prefix for generated managed fake devices (must be 6 lowercase hex chars)
+#MAC_PREFIX = acde48
+## Used for add-device request
+#TIMEZONE = Europe/Berlin
+
 #[SHELLY]
 #TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO
 #IP = 192.168.1.100

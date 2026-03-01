@@ -167,6 +167,17 @@ CT002/CT003 options:
 - **ERROR_REDUCE_THRESHOLD** — Smaller corrections when offset is small (avoids oscillation)
 - **SATURATION_DETECTION** — Reduce share for full/empty batteries (default: true)
 
+Optional Marstek cloud auto-registration:
+- **MARSTEK.ENABLE** — auto-create/check managed fake CT device(s) at startup
+- **MARSTEK.MAILBOX / PASSWORD** — credentials used to call Marstek API
+- **MARSTEK.MAC_PREFIX** — generated fake device prefix (default `acde48`)
+- For `ct002` a managed `HME-4` device is ensured, for `ct003` a managed `HME-3` device.
+- Device fields created by b2500-meter:
+  - `devid == mac` (random lowercase hex, prefix `acde48`)
+  - `bluetooth_name = MST-SMR_<last4(mac)>`
+  - `name = B2500-Meter CT002` / `B2500-Meter CT003`
+- If a matching managed `acde48` device of expected type already exists, no new device is created.
+
 ### CT002 / CT003
 
 ```ini
