@@ -404,20 +404,8 @@ def main():
             except Exception as exc:
                 logger.error("Unexpected Marstek auto-registration error: %s", exc)
 
-    # ct002/ct003 are registration markers only in this branch and must not be enqueued.
-    runtime_pairs = [
-        (dt, did)
-        for dt, did in zip(device_types, device_ids)
-        if dt not in ("ct002", "ct003")
-    ]
-    runtime_device_types = [dt for dt, _ in runtime_pairs]
-    runtime_device_ids = [did for _, did in runtime_pairs]
-
-    if len(runtime_device_types) != len(device_types):
-        logger.info(
-            "Skipping registration-only device markers from runtime queue: %s",
-            [dt for dt in device_types if dt in ("ct002", "ct003")],
-        )
+    runtime_device_types = list(device_types)
+    runtime_device_ids = list(device_ids)
 
     # Create powermeter
     powermeters = read_all_powermeter_configs(cfg)
