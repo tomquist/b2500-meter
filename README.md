@@ -158,8 +158,14 @@ Per-powermeter options (e.g. in `[TASMOTA]`):
 - **THROTTLE_INTERVAL** — Override global throttling for this powermeter
 
 CT002/CT003 options:
-- **ACTIVE_CONTROL** — Smooth raw grid reading and split target across consumers (reduces oscillation)
+- **ACTIVE_CONTROL** — When true (default), emulator computes per-consumer targets from meter data.
+  When false, emulator relays consumer aggregates (batteries decide their own charge/discharge).
 - **SMOOTH_TARGET_ALPHA** — EMA alpha for target smoothing (0.2–0.4 typical)
+- **FAIR_DISTRIBUTION** — Balance load across consumers (default: true)
+- **BALANCE_GAIN** — Correction strength for fair distribution (0.3 typical)
+- **ERROR_BOOST_THRESHOLD** / **ERROR_BOOST_MAX** — Faster correction when offset is large
+- **ERROR_REDUCE_THRESHOLD** — Smaller corrections when offset is small (avoids oscillation)
+- **SATURATION_DETECTION** — Reduce share for full/empty batteries (default: true)
 
 ### CT002 / CT003
 
