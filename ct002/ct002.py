@@ -131,6 +131,8 @@ class CT002:
         debug_status=False,
         active_control=True,
         smooth_target_alpha=0.3,
+        fair_distribution=True,
+        balance_gain=0.3,
     ):
         self.udp_port = udp_port
         self.ct_mac = ct_mac
@@ -141,6 +143,8 @@ class CT002:
         self.debug_status = debug_status
         self.active_control = active_control
         self.smooth_target_alpha = max(0.01, min(1.0, smooth_target_alpha))
+        self.fair_distribution = fair_distribution
+        self.balance_gain = max(0.0, min(1.0, balance_gain))
         self.before_send = None
         self._info_idx_counter = 0
         self._stop = False
@@ -192,10 +196,11 @@ class CT002:
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
 
-    def _compute_smooth_target(self, values):
+    def _compute_smooth_target(self, values, consumer_id=None):
         """
         Active control: smooth the raw grid reading and split target across consumers.
-        Returns [target_per_consumer, 0, 0] for single-phase (all in phase A).
+        With fair_distribution: adjust each consumer's target to balance actual load.
+        Returns [target, 0, 0] for single-phase (all in phase A).
         """
         if not values or len(values) != 3:
             return values
@@ -208,9 +213,21 @@ class CT002:
                 alpha * raw_total + (1 - alpha) * self._smoothed_target
             )
         with self._values_lock:
-            num_consumers = max(1, len(self._reports_by_consumer))
-        target_per_consumer = self._smoothed_target / num_consumers
-        return [target_per_consumer, 0, 0]
+            reports = dict(self._reports_by_consumer)
+            num_consumers = max(1, len(reports))
+        fair_share = self._smoothed_target / num_consumers
+        if (
+            not self.fair_distribution
+            or consumer_id is None
+            or consumer_id not in reports
+        ):
+            return [fair_share, 0, 0]
+        actual_self = parse_int(reports.get(consumer_id, {}).get("power", 0))
+        actual_total = sum(parse_int(r.get("power", 0)) for r in reports.values())
+        actual_avg = actual_total / num_consumers if num_consumers else 0
+        error = actual_avg - actual_self
+        target = fair_share + self.balance_gain * error
+        return [target, 0, 0]
 
     def _collect_reports_by_phase(self):
         by_phase = {
@@ -385,7 +402,7 @@ class CT002:
         if values is None:
             values = [0, 0, 0]
         if self.active_control:
-            values = self._compute_smooth_target(values)
+            values = self._compute_smooth_target(values, consumer_id)
         try:
             response_fields = self._build_response_fields(fields, values)
             response = build_payload(response_fields)

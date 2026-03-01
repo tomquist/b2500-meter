@@ -136,6 +136,10 @@ def run_device(
         smooth_target_alpha = cfg.getfloat(
             ct_section, "SMOOTH_TARGET_ALPHA", fallback=0.3
         )
+        fair_distribution = cfg.getboolean(
+            ct_section, "FAIR_DISTRIBUTION", fallback=True
+        )
+        balance_gain = cfg.getfloat(ct_section, "BALANCE_GAIN", fallback=0.3)
 
         logger.debug(f"{device_type.upper()} Settings for {device_id}:")
         logger.debug(f"CT Type: {ct_type}")
@@ -145,8 +149,9 @@ def run_device(
         logger.debug("CT control model: relay reports of other storages")
         if active_control:
             logger.info(
-                "Active control enabled (alpha=%.2f): smooth target + load split",
+                "Active control enabled (alpha=%.2f): smooth target + load split%s",
                 smooth_target_alpha,
+                " + fair distribution" if fair_distribution else "",
             )
 
         device = CT002(
@@ -159,6 +164,8 @@ def run_device(
             debug_status=debug_status,
             active_control=active_control,
             smooth_target_alpha=smooth_target_alpha,
+            fair_distribution=fair_distribution,
+            balance_gain=balance_gain,
         )
 
         def update_readings(addr, _fields=None, _consumer_id=None):
