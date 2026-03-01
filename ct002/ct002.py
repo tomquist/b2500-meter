@@ -128,6 +128,9 @@ class CT002:
         wifi_rssi=-50,
         dedupe_time_window=0,
         consumer_ttl=120,
+        debug_status=False,
+        active_control=True,
+        smooth_target_alpha=0.3,
     ):
         self.udp_port = udp_port
         self.ct_mac = ct_mac
@@ -135,6 +138,9 @@ class CT002:
         self.wifi_rssi = wifi_rssi
         self.dedupe_time_window = dedupe_time_window
         self.consumer_ttl = consumer_ttl
+        self.debug_status = debug_status
+        self.active_control = active_control
+        self.smooth_target_alpha = max(0.01, min(1.0, smooth_target_alpha))
         self.before_send = None
         self._info_idx_counter = 0
         self._stop = False
@@ -143,6 +149,7 @@ class CT002:
         self._reports_by_consumer = {}
         self._values_lock = threading.Lock()
         self._last_response_time = {}
+        self._smoothed_target = None
 
     def _consumer_key(self, addr, fields):
         battery_mac = fields[1] if len(fields) > 1 else ""
@@ -185,6 +192,24 @@ class CT002:
         for addr in stale_addrs:
             self._last_response_time.pop(addr, None)
 
+    def _compute_smooth_target(self, values):
+        """
+        Active control: smooth the raw grid reading and split target across consumers.
+        Returns [target_per_consumer, 0, 0] for single-phase (all in phase A).
+        """
+        if not values or len(values) != 3:
+            return values
+        raw_total = sum(parse_int(v, 0) for v in values)
+        alpha = self.smooth_target_alpha
+        if self._smoothed_target is None:
+            self._smoothed_target = raw_total
+        else:
+            self._smoothed_target = alpha * raw_total + (1 - alpha) * self._smoothed_target
+        with self._values_lock:
+            num_consumers = max(1, len(self._reports_by_consumer))
+        target_per_consumer = self._smoothed_target / num_consumers
+        return [target_per_consumer, 0, 0]
+
     def _collect_reports_by_phase(self):
         by_phase = {
             "A": {"chrg_power": 0, "dchrg_power": 0, "active": False},
@@ -207,6 +232,25 @@ class CT002:
             else:
                 by_phase[phase]["dchrg_power"] += power
         return by_phase
+
+    def _format_status(self, values, phase_values):
+        """Concise one-line status: phase consumption and consumer charge/discharge reports."""
+        if not values or len(values) != 3:
+            values = [0, 0, 0]
+        phases = " ".join(f"{p}:{int(v)}W" for p, v in zip("ABC", values))
+        chrg = " ".join(
+            f"{p}:{phase_values[p]['chrg_power']}" for p in "ABC"
+        )
+        dchrg = " ".join(
+            f"{p}:{phase_values[p]['dchrg_power']}" for p in "ABC"
+        )
+        with self._values_lock:
+            reports = list(self._reports_by_consumer.items())
+        consumers = " ".join(
+            f"{cid[:8]}@{r.get('phase','?')}:{r.get('power',0)}"
+            for cid, r in sorted(reports, key=lambda x: x[0])
+        ) or "none"
+        return f"phases {phases} | chrg {chrg} | dchrg {dchrg} | consumers {consumers}"
 
     def _build_response_fields(self, request_fields, values):
         if not values or len(values) != 3:
@@ -304,29 +348,33 @@ class CT002:
             )
             return None
         consumer_id = self._consumer_key(addr, fields)
-        reported_phase = (fields[4] if len(fields) > 4 else "A").upper()
+        reported_phase = (fields[4] if len(fields) > 4 else "").strip().upper()
         reported_power = parse_int(fields[5] if len(fields) > 5 else 0)
 
-        if reported_phase not in ("A", "B", "C"):
+        if reported_phase not in ("A", "B", "C", "0", ""):
             logger.debug(
                 "CT002 request from %s has invalid phase '%s'", addr, reported_phase
             )
             return None
 
+        in_inspection_mode = reported_phase in ("0", "")
+
         logger.debug(
-            "CT002 parsed fields from %s: meter_dev_type=%s meter_mac=%s ct_type=%s ct_mac=%s phase=%s power=%s consumer_id=%s",
+            "CT002 parsed fields from %s: meter_dev_type=%s meter_mac=%s ct_type=%s ct_mac=%s phase=%s power=%s consumer_id=%s%s",
             addr,
             fields[0] if len(fields) > 0 else None,
             fields[1] if len(fields) > 1 else None,
             fields[2] if len(fields) > 2 else None,
             fields[3] if len(fields) > 3 else None,
-            reported_phase,
+            reported_phase or "(inspection)",
             reported_power,
             consumer_id,
+            " in inspection mode" if in_inspection_mode else "",
         )
-        self._update_consumer_report(
-            consumer_id, phase=reported_phase, power=reported_power
-        )
+        if not in_inspection_mode:
+            self._update_consumer_report(
+                consumer_id, phase=reported_phase, power=reported_power
+            )
 
         updated = self._call_before_send(addr, fields, consumer_id)
         if updated is not None:
@@ -335,6 +383,8 @@ class CT002:
         values = self._get_consumer_value(consumer_id)
         if values is None:
             values = [0, 0, 0]
+        if self.active_control:
+            values = self._compute_smooth_target(values)
         try:
             response_fields = self._build_response_fields(fields, values)
             response = build_payload(response_fields)
@@ -349,6 +399,9 @@ class CT002:
             response.hex(),
             response_fields,
         )
+        if self.debug_status:
+            phase_values = self._collect_reports_by_phase()
+            logger.info("CT002 status: %s", self._format_status(values, phase_values))
         return response
 
     def udp_server(self):
@@ -375,8 +428,21 @@ class CT002:
                     continue
                 response = self._handle_request(data, addr)
                 if response:
-                    udp_sock.sendto(response, addr)
-                    self._last_response_time[addr] = current_time
+                    for attempt in range(3):
+                        try:
+                            udp_sock.sendto(response, addr)
+                            self._last_response_time[addr] = current_time
+                            break
+                        except OSError as e:
+                            if attempt < 2:
+                                time.sleep(0.05 * (attempt + 1))
+                            else:
+                                logger.info(
+                                    "Could not send response to %s after %d attempts: %s",
+                                    addr,
+                                    attempt + 1,
+                                    e,
+                                )
         finally:
             udp_sock.close()
 

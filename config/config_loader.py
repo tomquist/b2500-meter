@@ -79,8 +79,11 @@ def read_all_powermeter_configs(
                     if config.has_option(section, "THROTTLE_INTERVAL")
                     else "global"
                 )
-                print(
-                    f"Applying {throttle_source} throttling ({section_throttle_interval}s) to {section}"
+                logger.info(
+                    "Applying %s throttling (%.1fs) to %s",
+                    throttle_source,
+                    section_throttle_interval,
+                    section,
                 )
                 powermeter = ThrottledPowermeter(powermeter, section_throttle_interval)
 

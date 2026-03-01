@@ -32,6 +32,12 @@ THROTTLE_INTERVAL = 0
 #DEDUPE_TIME_WINDOW = 0
 ## Forget consumers after this many seconds without updates (multi-consumer support)
 #CONSUMER_TTL = 120
+## Log concise status (phase consumption + consumer charge/discharge) on each request when enabled
+#DEBUG_STATUS = False
+## Active control: smooth raw grid reading and split target across consumers (reduces oscillation). Default: True
+#ACTIVE_CONTROL = True
+## EMA alpha for target smoothing (0.2-0.4 typical)
+#SMOOTH_TARGET_ALPHA = 0.3
 
 #[SHELLY]
 #TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO

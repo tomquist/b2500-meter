@@ -55,11 +55,20 @@ Request payload fields (consumer → CT):
 2. **meter_mac_code** — battery MAC (12 hex chars, from Marstek app device management)
 3. **hhm_dev_type** — CT type (`HME-4` or `HME-3`)
 4. **hhm_mac_code** — CT MAC (12 hex chars, from Marstek app device management)
-5. **phase** — phase identifier (`A`, `B`, `C`) observed in real traffic
+5. **phase** — phase identifier (`A`, `B`, `C`) observed in real traffic; `0` or empty means inspection mode
 6. **phase_power** — signed integer watts for the phase in field 5
 
 This mapping is based on real packet captures. Older public scripts may show `0|0` placeholders,
 but observed live traffic carries `phase|power` in these two fields.
+
+### Inspection mode (phase `0` or empty)
+
+When a device sends `phase=0` or an empty phase, it is in **inspection mode** — determining which
+phase it is connected to. The emulator:
+
+- **Responds** to the request (so the device can continue its phase detection)
+- **Does not** add the device's reported power to the per-phase aggregates (the device has not yet
+  committed to a phase)
 
 ### Example Request (human readable)
 
@@ -101,7 +110,8 @@ This list describes current emulator behavior as implemented.
 ## Multi‑consumer behavior
 
 The emulator therefore:
-- Tracks per‑consumer `phase` + `phase_power` from the request fields.
+- Tracks per‑consumer `phase` + `phase_power` from the request fields (only when phase is `A`, `B`, or `C`;
+  inspection-mode requests with phase `0` or empty are responded to but not aggregated).
 - When responding, it forwards per-phase aggregates based on the latest known reports from all
   known consumers, grouped by their reported phase.
 - Uses sign split for forwarded aggregates:
