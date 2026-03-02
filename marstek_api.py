@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-MANAGED_MAC_PREFIX = "acde48"
+MANAGED_MAC_PREFIX = "02b250"
 
 
 @dataclass
@@ -25,6 +25,17 @@ class MarstekConfig:
 
 class MarstekApiError(Exception):
     pass
+
+
+def _translate_marstek_message(code: Any, msg: Any) -> str:
+    """Best-effort translation for common Marstek API messages."""
+    msg_text = "" if msg is None else str(msg)
+    code_text = "" if code is None else str(code)
+
+    if code_text == "4" and ("密码错误" in msg_text or "password" in msg_text.lower()):
+        return "password incorrect"
+
+    return msg_text
 
 
 def _http_get_json(url: str, params: Dict[str, Any], headers: Dict[str, str] = None):
@@ -84,9 +95,14 @@ def _fetch_token_and_devices(cfg: MarstekConfig) -> Tuple[str, List[Dict[str, An
     token_resp = _http_get_json(token_url, {"mailbox": cfg.mailbox, "pwd": pwd_md5})
 
     if str(token_resp.get("code")) != "2" or not token_resp.get("token"):
-        raise MarstekApiError(
-            f"Token fetch failed (code={token_resp.get('code')}): {token_resp.get('msg')}"
-        )
+        code = token_resp.get("code")
+        raw_msg = token_resp.get("msg")
+        translated_msg = _translate_marstek_message(code, raw_msg)
+        if translated_msg and translated_msg != str(raw_msg):
+            raise MarstekApiError(
+                f"Token fetch failed (code={code}): {translated_msg} (raw: {raw_msg})"
+            )
+        raise MarstekApiError(f"Token fetch failed (code={code}): {raw_msg}")
 
     token = token_resp["token"]
     solar_devices = (

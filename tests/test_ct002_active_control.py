@@ -1,0 +1,343 @@
+"""Tests for CT002 active control, fair distribution, and saturation detection."""
+
+import time
+
+from ct002.ct002 import CT002
+
+
+class TestActiveControl:
+    """Tests for smooth target and load splitting."""
+
+    def test_smooth_target_splits_across_consumers(self):
+        device = CT002(active_control=True, fair_distribution=False)
+        device._update_consumer_report("a", "A", 100)
+        device._update_consumer_report("b", "A", 100)
+        out = device._compute_smooth_target([400, 0, 0], "a")
+        assert out[0] == 200
+        assert out[1] == 0
+        assert out[2] == 0
+
+    def test_smooth_target_ema_smooths_raw_input(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+            smooth_target_alpha=0.5,
+        )
+        device._update_consumer_report("a", "A", 0)
+        first = device._compute_smooth_target([400, 0, 0], "a")
+        second = device._compute_smooth_target([100, 0, 0], "a")
+        assert first[0] == 400
+        assert second[0] == 250
+
+    def test_active_control_off_passes_through_values(self):
+        device = CT002(active_control=False)
+        device._update_consumer_report("a", "A", 0)
+        out = device._compute_smooth_target([100, 50, 25], "a")
+        assert out == [100, 50, 25]
+
+    def test_no_consumer_id_returns_fair_share(self):
+        device = CT002(active_control=True, fair_distribution=False)
+        device._update_consumer_report("a", "A", 0)
+        out = device._compute_smooth_target([300, 0, 0], None)
+        assert out[0] == 300
+
+    def test_active_control_splits_target_across_detected_phases(self):
+        device = CT002(active_control=True, fair_distribution=False)
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "B", 0)
+
+        out = device._compute_smooth_target([400, 0, 0], "a")
+
+        assert out[0] == 100
+        assert out[1] == 100
+        assert out[2] == 0
+
+
+class TestFairDistribution:
+    """Tests for fair load distribution across consumers."""
+
+    def test_underperforming_consumer_gets_higher_target(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 44)
+        device._update_consumer_report("b", "A", 356)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        assert out_a[0] > 200
+
+    def test_overperforming_consumer_gets_lower_target(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 44)
+        device._update_consumer_report("b", "A", 356)
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_b[0] < 200
+
+    def test_fair_distribution_off_gives_equal_share(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+        )
+        device._update_consumer_report("a", "A", 44)
+        device._update_consumer_report("b", "A", 356)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_a[0] == out_b[0] == 200
+
+    def test_balance_gain_zero_no_correction(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 44)
+        device._update_consumer_report("b", "A", 356)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_a[0] == out_b[0] == 200
+
+    def test_large_error_gets_boosted_correction(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            error_boost_threshold=100,
+            error_boost_max=1.0,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 400)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_a[0] > 250
+        assert out_b[0] < 150
+
+    def test_error_boost_disabled_when_threshold_zero(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            error_boost_threshold=0,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 400)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_a[0] == 260
+        assert out_b[0] == 140
+
+    def test_small_offset_gets_small_adjustment(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            error_reduce_threshold=20,
+        )
+        device._update_consumer_report("a", "A", 95)
+        device._update_consumer_report("b", "A", 105)
+        out_a = device._compute_smooth_target([200, 0, 0], "a")
+        out_b = device._compute_smooth_target([200, 0, 0], "b")
+        assert 98 < out_a[0] < 102
+        assert 98 < out_b[0] < 102
+
+    def test_error_reduce_disabled_when_threshold_zero(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            error_reduce_threshold=0,
+            error_boost_threshold=0,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 90)
+        device._update_consumer_report("b", "A", 110)
+        out_a = device._compute_smooth_target([200, 0, 0], "a")
+        assert out_a[0] == 103
+
+    def test_balance_deadband_skips_small_correction(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.3,
+            balance_deadband=25,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 95)
+        device._update_consumer_report("b", "A", 105)
+        out_a = device._compute_smooth_target([200, 0, 0], "a")
+        assert out_a[0] == 100
+
+    def test_max_correction_per_step_caps_correction(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.5,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=50,
+            max_target_step=0,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 400)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        assert 200 < out_a[0] <= 250
+
+    def test_max_target_step_caps_target_vs_actual(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            balance_gain=0.5,
+            balance_deadband=0,
+            deadband=0,
+            max_correction_per_step=0,
+            max_target_step=100,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 400)
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        assert out_a[0] == 100
+
+
+class TestSaturationDetection:
+    """Tests for saturation detection (full/empty battery)."""
+
+    def test_saturated_consumer_gets_reduced_share(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=True,
+            saturation_detection=True,
+            saturation_alpha=1.0,
+            min_target_for_saturation=10,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 400)
+        device._last_target_by_consumer["a"] = 200
+        device._last_target_by_consumer["b"] = 200
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_a[0] < out_b[0]
+        assert out_b[0] > 200
+
+    def test_saturation_ema_smooths_in(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+            saturation_detection=True,
+            saturation_alpha=0.5,
+            min_target_for_saturation=10,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 200)
+        device._last_target_by_consumer["a"] = 200
+        device._last_target_by_consumer["b"] = 200
+        out1 = device._compute_smooth_target([400, 0, 0], "a")
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 200)
+        out2 = device._compute_smooth_target([400, 0, 0], "a")
+        assert out2[0] < out1[0]
+
+    def test_saturation_ema_smooths_out_when_recovering(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+            saturation_detection=True,
+            saturation_alpha=0.5,
+            min_target_for_saturation=10,
+        )
+        device._saturation_by_consumer["a"] = 1.0
+        device._update_consumer_report("a", "A", 200)
+        device._update_consumer_report("b", "A", 200)
+        device._last_target_by_consumer["a"] = 200
+        device._last_target_by_consumer["b"] = 200
+        out1 = device._compute_smooth_target([400, 0, 0], "a")
+        device._update_consumer_report("a", "A", 200)
+        device._update_consumer_report("b", "A", 200)
+        out2 = device._compute_smooth_target([400, 0, 0], "a")
+        assert out2[0] > out1[0]
+
+    def test_saturation_ignores_low_target(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+            saturation_detection=True,
+            saturation_alpha=1.0,
+            min_target_for_saturation=100,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 0)
+        device._last_target_by_consumer["a"] = 10
+        device._last_target_by_consumer["b"] = 10
+        out = device._compute_smooth_target([20, 0, 0], "a")
+        assert out[0] == 10
+
+    def test_saturation_off_no_reduction(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+            saturation_detection=False,
+        )
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "A", 400)
+        device._last_target_by_consumer["a"] = 200
+        device._last_target_by_consumer["b"] = 200
+        out_a = device._compute_smooth_target([400, 0, 0], "a")
+        out_b = device._compute_smooth_target([400, 0, 0], "b")
+        assert out_a[0] == out_b[0] == 200
+
+    def test_saturation_skips_opposite_sign(self):
+        device = CT002(
+            active_control=True,
+            fair_distribution=False,
+            saturation_detection=True,
+            saturation_alpha=1.0,
+            min_target_for_saturation=10,
+        )
+        device._update_consumer_report("a", "A", -100)
+        device._update_consumer_report("b", "A", 200)
+        device._last_target_by_consumer["a"] = 200
+        device._last_target_by_consumer["b"] = 200
+        out = device._compute_smooth_target([400, 0, 0], "a")
+        assert out[0] == 200
+
+
+class TestCleanup:
+    """Tests that saturation state is cleaned up with consumers."""
+
+    def test_cleanup_removes_saturation_state(self):
+        device = CT002(saturation_detection=True, consumer_ttl=0.01)
+        device._update_consumer_report("a", "A", 0)
+        device._last_target_by_consumer["a"] = 100
+        device._saturation_by_consumer["a"] = 0.5
+        time.sleep(0.02)
+        device._cleanup_consumers()
+        assert "a" not in device._saturation_by_consumer
+        assert "a" not in device._last_target_by_consumer

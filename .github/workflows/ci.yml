@@ -2,8 +2,8 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
-    tags: [ "*.*.*" ]
+    branches: [ main, ct002 ]
+    tags: [ "*.*.*", "ct002" ]
   pull_request:
     branches: [ main, develop ]
 
