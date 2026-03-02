@@ -7,6 +7,7 @@ from marstek_api import (
     _desired_type,
     _find_existing_managed_device,
     _generate_new_id,
+    _translate_marstek_message,
 )
 
 
@@ -45,3 +46,11 @@ def test_generate_new_id_uses_prefix_and_avoids_collisions():
     assert new_id.startswith("02b250")
     assert len(new_id) == 12
     assert new_id not in {"02b250aaaaaa", "02b250bbbbbb"}
+
+
+def test_translate_marstek_message_password_error_chinese():
+    assert _translate_marstek_message("4", "密码错误") == "password incorrect"
+
+
+def test_translate_marstek_message_passthrough_unknown():
+    assert _translate_marstek_message("999", "some backend text") == "some backend text"
