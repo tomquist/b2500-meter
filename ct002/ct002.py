@@ -267,7 +267,8 @@ class CT002:
         Active control: smooth the raw grid reading and split target across consumers.
         With fair_distribution: adjust each consumer's target to balance actual load.
         With saturation_detection: reduce share for consumers that cannot follow target.
-        Returns [target, 0, 0] for single-phase (all in phase A).
+        Phase output is distributed across known consumer phases (A/B/C) based on
+        effective participation (saturation-aware); falls back to phase A if unknown.
         """
         if not self.active_control or not values or len(values) != 3:
             return values
@@ -365,7 +366,24 @@ class CT002:
         with self._values_lock:
             if consumer_id:
                 self._last_target_by_consumer[consumer_id] = target
-        return [target, 0, 0]
+
+        # Distribute target across phases according to active consumer phase mapping.
+        phase_effective = {"A": 0.0, "B": 0.0, "C": 0.0}
+        for cid, report in reports.items():
+            phase = (report.get("phase") or "A").upper()
+            if phase not in phase_effective:
+                phase = "A"
+            phase_effective[phase] += eff_part.get(cid, 1.0)
+
+        total_phase_effective = sum(phase_effective.values())
+        if total_phase_effective <= 0:
+            return [target, 0, 0]
+
+        return [
+            target * (phase_effective["A"] / total_phase_effective),
+            target * (phase_effective["B"] / total_phase_effective),
+            target * (phase_effective["C"] / total_phase_effective),
+        ]
 
     def _collect_reports_by_phase(self):
         by_phase = {

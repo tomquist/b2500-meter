@@ -41,6 +41,17 @@ class TestActiveControl:
         out = device._compute_smooth_target([300, 0, 0], None)
         assert out[0] == 300
 
+    def test_active_control_splits_target_across_detected_phases(self):
+        device = CT002(active_control=True, fair_distribution=False)
+        device._update_consumer_report("a", "A", 0)
+        device._update_consumer_report("b", "B", 0)
+
+        out = device._compute_smooth_target([400, 0, 0], "a")
+
+        assert out[0] == 100
+        assert out[1] == 100
+        assert out[2] == 0
+
 
 class TestFairDistribution:
     """Tests for fair load distribution across consumers."""
