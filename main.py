@@ -302,7 +302,9 @@ def main():
     )
 
     args = parser.parse_args()
-    cfg = configparser.ConfigParser(dict_type=OrderedDict)
+    # Disable interpolation so literal '%' in credentials (e.g. MARSTEK.PASSWORD)
+    # is read as-is from config.ini.
+    cfg = configparser.ConfigParser(dict_type=OrderedDict, interpolation=None)
     cfg.read(args.config)
 
     # configure logger
