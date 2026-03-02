@@ -199,8 +199,8 @@ Optional Marstek cloud auto-registration:
 - If a matching managed device of expected type already exists, no new device is created.
 - Important behavior notes:
   - Managed fake CT devices appear as **offline** in the app CT list (expected behavior).
-  - Refresh the CT device list after registration (or log out/in if needed). Then select `B2500-Meter CT002` / `B2500-Meter CT003`, switch battery mode to automatic, and choose that CT. It can take up to ~2 minutes before the CT appears.
-  - Marstek credentials are only needed for one-time registration. After successful pairing, you can remove `MARSTEK.MAILBOX` / `MARSTEK.PASSWORD` again.
+  - Refresh the CT device list after registration (or log out/in if needed). Then select `B2500-Meter CT002` / `B2500-Meter CT003`, switch battery mode to automatic, and choose that CT. It should be selectable as soon as it appears in the device list.
+  - Marstek credentials are only needed for one-time registration. You can remove `MARSTEK.MAILBOX` / `MARSTEK.PASSWORD` immediately after registration succeeds (or if the managed device already exists).
   - If you use Home Assistant add-on `custom_config`, values from that file take precedence over add-on UI fields.
 
 ### Value Transformation
@@ -629,7 +629,7 @@ A: Common causes include:
 - **Network setup:** Ensure both devices are on the same subnet (255.255.255.0)
 - **Bluetooth interference:** Disconnect any Bluetooth connections during setup
 - **Docker configuration:** When using Docker, set `network_mode: host` to enable UDP broadcast reception
-- **CT002/CT003 pairing flow:** For managed fake CTs, refresh the CT device list (or log out/in), then pick `B2500-Meter CT002` / `B2500-Meter CT003`, switch battery mode to automatic, and select that CT. Discovery can take up to ~2 minutes. The fake CT appears as offline in the CT list (expected).
+- **CT002/CT003 pairing flow:** For managed fake CTs, refresh the CT device list (or log out/in), then pick `B2500-Meter CT002` / `B2500-Meter CT003`, switch battery mode to automatic, and select that CT. It should be selectable as soon as it appears in the device list. The fake CT appears as offline in the CT list (expected).
 - **Config source confusion:** If Home Assistant add-on `custom_config` is used, it overrides add-on UI credentials/options.
 
 ### The emulator isn't visible in the Shelly app or network scanners. Is this normal?

@@ -413,11 +413,12 @@ def main():
                     if "ct003" in device_types:
                         ct_names.append("B2500-Meter CT003")
                     logger.info(
-                        "Pairing hint: refresh the CT device list (or log out/in if needed), select %s, switch battery mode to Automatic, and choose that CT. It can take up to ~2 minutes before the CT appears.",
+                        "Pairing hint: refresh the CT device list (or log out/in if needed), select %s, switch battery mode to Automatic, and choose that CT."
+                        " The CT should be selectable as soon as it appears in the device list.",
                         " / ".join(ct_names) if ct_names else "the managed B2500-Meter CT",
                     )
                     logger.info(
-                        "Credentials are only needed for this one-time registration step; you can remove MARSTEK mailbox/password from config after successful pairing."
+                        "Credentials are only needed for one-time registration. You can remove MARSTEK mailbox/password from config now."
                     )
             except MarstekApiError as exc:
                 logger.error("Marstek auto-registration failed: %s", exc)
