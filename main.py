@@ -398,10 +398,19 @@ def main():
                         ensure_managed_fake_device(marstek_cfg, dt)
                 if any_ct:
                     logger.info(
-                        "Managed fake CT registration completed. Note: fake CT devices are cloud records used for pairing and may not appear as online in the Marstek app CT list."
+                        "Managed fake CT registration completed. Fake CT devices appear as offline in the Marstek app CT list (this is expected)."
+                    )
+                    ct_names = []
+                    if "ct002" in device_types:
+                        ct_names.append("B2500-Meter CT002")
+                    if "ct003" in device_types:
+                        ct_names.append("B2500-Meter CT003")
+                    logger.info(
+                        "Pairing hint: refresh the CT device list (or log out/in if needed), select %s, switch battery mode to Automatic, and choose that CT. It can take up to ~2 minutes before the CT appears.",
+                        " / ".join(ct_names) if ct_names else "the managed B2500-Meter CT",
                     )
                     logger.info(
-                        "Pairing hint: open the battery device in the app, use 'Add CT', and wait up to ~2 minutes for discovery."
+                        "Credentials are only needed for this one-time registration step; you can remove MARSTEK mailbox/password from config after successful pairing."
                     )
             except MarstekApiError as exc:
                 logger.error("Marstek auto-registration failed: %s", exc)
