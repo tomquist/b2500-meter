@@ -43,6 +43,9 @@ print_redacted_config() {
 # Check if custom config is provided
 if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'custom_config')" ]; then
     bashio::log.info "Using custom config file: $(bashio::config 'custom_config')"
+    if bashio::config.has_value 'marstek_mailbox' || bashio::config.has_value 'marstek_password' || bashio::config.has_value 'marstek_auto_register_ct_device'; then
+        bashio::log.warning "Add-on UI Marstek settings are ignored when custom_config is used; values from custom config file take precedence"
+    fi
     cp "/config/$(bashio::config 'custom_config')" "$CONFIG"
 else
     device_types="$(bashio::config 'device_types')"
