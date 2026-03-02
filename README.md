@@ -195,6 +195,10 @@ Optional Marstek cloud auto-registration:
   - `bluetooth_name = MST-SMR_<last4(mac)>`
   - `name = B2500-Meter CT002` / `B2500-Meter CT003`
 - If a matching managed device of expected type already exists, no new device is created.
+- Important behavior notes:
+  - Managed fake CT devices are mainly cloud records used for pairing and may not appear as **online** in the app CT list.
+  - Pair through the battery flow in the app (`Battery -> Add CT`) and allow up to ~2 minutes for discovery.
+  - If you use Home Assistant add-on `custom_config`, values from that file take precedence over add-on UI fields.
 
 ### Shelly
 
@@ -532,6 +536,8 @@ A: Common causes include:
 - **Network setup:** Ensure both devices are on the same subnet (255.255.255.0)
 - **Bluetooth interference:** Disconnect any Bluetooth connections during setup
 - **Docker configuration:** When using Docker, set `network_mode: host` to enable UDP broadcast reception
+- **CT002/CT003 pairing flow:** For managed fake CTs, pair from `Battery -> Add CT` and wait up to ~2 minutes. The fake CT may not appear as online in the CT device list.
+- **Config source confusion:** If Home Assistant add-on `custom_config` is used, it overrides add-on UI credentials/options.
 
 ### The emulator isn't visible in the Shelly app or network scanners. Is this normal?
 
