@@ -194,12 +194,31 @@ class CT002:
             return self._values_by_consumer.get(consumer_id)
 
     def _update_consumer_report(self, consumer_id, phase, power):
+        normalized_phase = str(phase).upper() if phase else "A"
+        previous_phase = None
         with self._values_lock:
+            previous = self._reports_by_consumer.get(consumer_id, {})
+            previous_phase = previous.get("phase")
             self._reports_by_consumer[consumer_id] = {
-                "phase": str(phase).upper() if phase else "A",
+                "phase": normalized_phase,
                 "power": parse_int(power, 0),
                 "timestamp": time.time(),
             }
+
+        if normalized_phase in ("A", "B", "C") and previous_phase != normalized_phase:
+            if previous_phase in ("A", "B", "C"):
+                logger.info(
+                    "CT002 consumer %s phase changed: %s -> %s",
+                    consumer_id,
+                    previous_phase,
+                    normalized_phase,
+                )
+            else:
+                logger.info(
+                    "CT002 consumer %s phase detected: %s",
+                    consumer_id,
+                    normalized_phase,
+                )
 
     def _cleanup_consumers(self):
         now = time.time()
