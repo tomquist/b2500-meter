@@ -1,3 +1,5 @@
+import logging
+
 from ct002.ct002 import (
     build_payload,
     parse_request,
@@ -157,3 +159,17 @@ def test_ct002_info_idx_increments_and_wraps():
 
     assert wrap[13] == "255"
     assert after_wrap[13] == "0"
+
+
+def test_ct002_logs_phase_detection_and_change(caplog):
+    device = CT002()
+
+    with caplog.at_level(logging.INFO):
+        device._update_consumer_report("consumer-a", phase="A", power=100)
+        device._update_consumer_report("consumer-a", phase="A", power=80)
+        device._update_consumer_report("consumer-a", phase="B", power=120)
+
+    messages = [r.message for r in caplog.records if "CT002 consumer" in r.message]
+    assert any("phase detected: A" in m for m in messages)
+    assert any("phase changed: A -> B" in m for m in messages)
+    assert len(messages) == 2
