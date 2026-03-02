@@ -398,9 +398,18 @@ def main():
                 timezone=timezone_name,
             )
             try:
+                any_ct = False
                 for dt in ("ct002", "ct003"):
                     if dt in device_types:
+                        any_ct = True
                         ensure_managed_fake_device(marstek_cfg, dt)
+                if any_ct:
+                    logger.info(
+                        "Managed fake CT registration completed. Note: fake CT devices are cloud records used for pairing and may not appear as online in the Marstek app CT list."
+                    )
+                    logger.info(
+                        "Pairing hint: open the battery device in the app, use 'Add CT', and wait up to ~2 minutes for discovery."
+                    )
             except MarstekApiError as exc:
                 logger.error("Marstek auto-registration failed: %s", exc)
             except Exception as exc:
