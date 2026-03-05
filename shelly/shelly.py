@@ -111,6 +111,7 @@ class Shelly:
 
     def _log_inactive_batteries(self):
         now = time.time()
+        newly_inactive_batteries = []
 
         with self._battery_state_lock:
             for battery_ip, last_seen in self._battery_last_seen.items():
@@ -119,12 +120,15 @@ class Shelly:
                     and battery_ip not in self._inactive_batteries
                 ):
                     self._inactive_batteries.add(battery_ip)
-                    logger.info(
-                        "Battery inactive on Shelly UDP port %s for >= %ss: %s",
-                        self._udp_port,
-                        BATTERY_INACTIVE_TIMEOUT_SECONDS,
-                        battery_ip,
-                    )
+                    newly_inactive_batteries.append(battery_ip)
+
+        for battery_ip in newly_inactive_batteries:
+            logger.info(
+                "Battery inactive on Shelly UDP port %s for >= %ss: %s",
+                self._udp_port,
+                BATTERY_INACTIVE_TIMEOUT_SECONDS,
+                battery_ip,
+            )
 
     def _handle_request(self, sock, data, addr):
         request_str = data.decode()
