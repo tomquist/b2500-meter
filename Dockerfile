@@ -26,6 +26,7 @@ COPY . /app/
 RUN rm -rf /app/ha_addon
 
 # Expose the ports your application will be listening on
+EXPOSE 80/tcp
 EXPOSE 12345/tcp
 EXPOSE 12345/udp
 EXPOSE 52500/tcp

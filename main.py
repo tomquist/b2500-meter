@@ -55,6 +55,7 @@ def run_device(
     args: argparse.Namespace,
     powermeters: List[Tuple[Powermeter, ClientFilter]],
     device_id: Optional[str] = None,
+    http_port: Optional[int] = None,
 ):
     logger.debug(f"Starting device: {device_type}")
 
@@ -111,22 +112,22 @@ def run_device(
     elif device_type == "shellypro3em_old":
         logger.debug(f"Shelly Pro 3EM Settings:")
         logger.debug(f"Device ID: {device_id}")
-        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=1010)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=1010, http_port=http_port)
 
     elif device_type == "shellypro3em_new":
         logger.debug(f"Shelly Pro 3EM Settings:")
         logger.debug(f"Device ID: {device_id}")
-        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2220)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2220, http_port=http_port)
 
     elif device_type == "shellyemg3":
         logger.debug(f"Shelly EM Gen3 Settings:")
         logger.debug(f"Device ID: {device_id}")
-        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2222)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2222, http_port=http_port)
 
     elif device_type == "shellyproem50":
         logger.debug(f"Shelly Pro EM 50 Settings:")
         logger.debug(f"Device ID: {device_id}")
-        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2223)
+        device = Shelly(powermeters=powermeters, device_id=device_id, udp_port=2223, http_port=http_port)
 
     else:
         raise ValueError(f"Unsupported device type: {device_type}")
@@ -240,15 +241,19 @@ def main():
             test_powermeter(powermeter, client_filter)
 
     # Run devices in parallel
+    http_port = cfg.getint("GENERAL", "HTTP_PORT", fallback=0) or None
     try:
         with ThreadPoolExecutor(max_workers=len(device_types)) as executor:
             futures = []
             for device_type, device_id in zip(device_types, device_ids):
                 futures.append(
                     executor.submit(
-                        run_device, device_type, cfg, args, powermeters, device_id
+                        run_device, device_type, cfg, args, powermeters, device_id, http_port
                     )
                 )
+                # Only the first Shelly device gets the HTTP server
+                if http_port and device_type.startswith("shelly"):
+                    http_port = None
             # end for
 
             # Wait for all devices to complete
