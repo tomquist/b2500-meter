@@ -50,6 +50,14 @@ class Shelly:
                 logger.debug("Error reading powermeter for HTTP: %s", e)
         return [0, 0, 0]
 
+    def get_cached_powers(self):
+        """Return cached power values without blocking (for async callers)."""
+        for pm, _cf in self._powermeters:
+            cached = getattr(pm, "last_values", None)
+            if cached is not None:
+                return list(cached)
+        return [0, 0, 0]
+
     def _calculate_derived_values(self, power):
         decimal_point_enforcer = 0.001
         if abs(power) < 0.1:

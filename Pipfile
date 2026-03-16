@@ -8,7 +8,10 @@ requests = "*"
 urllib3 = "*"
 paho-mqtt = "*"
 jsonpath-ng = "*"
-pymodbus = "*"
+pymodbus = "==3.6.8"
+fastapi = "*"
+uvicorn = "*"
+websockets = "*"
 
 [dev-packages]
 flake8 = "6.1.0"
