@@ -118,21 +118,23 @@ class Envoy(Powermeter):
         return response.json()
 
     def get_powermeter_watts(self):
+        """Return grid power in watts as a list (one entry per phase)."""
         data = self._fetch()
         consumption_list = data.get("consumption", [])
 
-        # net-consumption is the grid meter reading
         net_meter = _find_measurement(consumption_list, "net-consumption")
-        # Fall back to total-consumption if net-consumption is not available
         if net_meter is None:
-            net_meter = _find_measurement(consumption_list, "total-consumption")
-
-        if net_meter is None:
-            logger.error("No consumption data found in Envoy response")
-            raise ValueError("No consumption data in Envoy response")
+            logger.error("Envoy response does not expose net-consumption")
+            raise ValueError(
+                "Envoy response does not expose net-consumption; "
+                "grid CTs are required"
+            )
 
         if self.phases == 1:
             return [int(net_meter.get("wNow", 0))]
         else:
             lines = net_meter.get("lines", [])
-            return [int(line.get("wNow", 0)) for line in lines[:3]]
+            values = [int(line.get("wNow", 0)) for line in lines[:self.phases]]
+            while len(values) < self.phases:
+                values.append(0)
+            return values

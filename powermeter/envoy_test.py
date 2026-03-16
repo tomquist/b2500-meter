@@ -101,9 +101,9 @@ class TestEnvoyThreePhase(unittest.TestCase):
         self.assertEqual(result, [-100, -80, -120])
 
 
-class TestEnvoyFallbackToTotalConsumption(unittest.TestCase):
+class TestEnvoyNoNetConsumption(unittest.TestCase):
     @patch("powermeter.envoy.requests.Session")
-    def test_fallback_when_no_net_consumption(self, mock_session_class):
+    def test_raises_when_only_total_consumption(self, mock_session_class):
         data = {
             "production": [],
             "consumption": [
@@ -122,12 +122,9 @@ class TestEnvoyFallbackToTotalConsumption(unittest.TestCase):
         mock_session_class.return_value = mock_session
 
         envoy = Envoy(host="192.168.1.200", token="test-token", phases=1)
-        result = envoy.get_powermeter_watts()
+        with self.assertRaises(ValueError):
+            envoy.get_powermeter_watts()
 
-        self.assertEqual(result, [800])
-
-
-class TestEnvoyNoConsumption(unittest.TestCase):
     @patch("powermeter.envoy.requests.Session")
     def test_raises_when_no_consumption_data(self, mock_session_class):
         data = {"production": [], "consumption": []}

@@ -204,7 +204,7 @@ def main():
     if not device_ids:
         cfg_device_ids = cfg.get("GENERAL", "DEVICE_IDS", fallback="").strip()
         if cfg_device_ids:
-            device_ids = [did.strip() for did in cfg_device_ids.split(",")]
+            device_ids = [did.strip() for did in cfg_device_ids.split(",") if did.strip()]
     # Fill missing device IDs with default format
     while len(device_ids) < len(device_types):
         device_type = device_types[len(device_ids)]
