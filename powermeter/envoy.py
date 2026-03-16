@@ -81,6 +81,8 @@ class Envoy(Powermeter):
         password="",
         serial="",
     ):
+        if not isinstance(phases, int) or phases < 1:
+            raise ValueError("PHASES must be a positive integer")
         self.host = host
         self.token = token
         self.phases = phases
@@ -126,7 +128,9 @@ class Envoy(Powermeter):
     def get_powermeter_watts(self):
         """Return grid power in watts as a list (one entry per phase)."""
         data = self._fetch()
-        consumption_list = data.get("consumption", [])
+        consumption_list = data.get("consumption") or []
+        if not isinstance(consumption_list, list):
+            raise ValueError("Invalid Envoy response: consumption must be a list")
 
         net_meter = _find_measurement(consumption_list, "net-consumption")
         if net_meter is None:
