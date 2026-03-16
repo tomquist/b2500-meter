@@ -1,5 +1,6 @@
 from .base import Powermeter
 import requests
+import urllib3
 from config.logger import logger
 
 
@@ -82,6 +83,8 @@ class Envoy(Powermeter):
         self.password = password
         self.serial = serial
         self.session = requests.Session()
+        if not verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     @property
     def _has_credentials(self):
