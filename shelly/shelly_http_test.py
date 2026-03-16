@@ -104,6 +104,7 @@ class TestBuildShellyConfig(unittest.TestCase):
 def _wait_for_server(port, timeout=5):
     """Wait until the server is accepting connections."""
     import time
+
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -288,11 +289,14 @@ class TestShellyWebSocket(unittest.TestCase):
 
     def test_ws_get_device_info(self):
         sock = self._ws_connect()
-        self._ws_send(sock, {
-            "id": 1,
-            "src": "test-client",
-            "method": "Shelly.GetDeviceInfo",
-        })
+        self._ws_send(
+            sock,
+            {
+                "id": 1,
+                "src": "test-client",
+                "method": "Shelly.GetDeviceInfo",
+            },
+        )
         resp = self._ws_recv(sock)
         self.assertEqual(resp["id"], 1)
         self.assertIn("result", resp)
@@ -303,12 +307,15 @@ class TestShellyWebSocket(unittest.TestCase):
 
     def test_ws_em_get_status(self):
         sock = self._ws_connect()
-        self._ws_send(sock, {
-            "id": 2,
-            "src": "test",
-            "method": "EM.GetStatus",
-            "params": {"id": 0},
-        })
+        self._ws_send(
+            sock,
+            {
+                "id": 2,
+                "src": "test",
+                "method": "EM.GetStatus",
+                "params": {"id": 0},
+            },
+        )
         resp = self._ws_recv(sock)
         self.assertEqual(resp["id"], 2)
         result = resp["result"]
@@ -318,11 +325,14 @@ class TestShellyWebSocket(unittest.TestCase):
 
     def test_ws_get_config(self):
         sock = self._ws_connect()
-        self._ws_send(sock, {
-            "id": 3,
-            "src": "test",
-            "method": "Shelly.GetConfig",
-        })
+        self._ws_send(
+            sock,
+            {
+                "id": 3,
+                "src": "test",
+                "method": "Shelly.GetConfig",
+            },
+        )
         resp = self._ws_recv(sock)
         self.assertEqual(resp["id"], 3)
         self.assertIn("em:0", resp["result"])
@@ -331,11 +341,14 @@ class TestShellyWebSocket(unittest.TestCase):
 
     def test_ws_unknown_method(self):
         sock = self._ws_connect()
-        self._ws_send(sock, {
-            "id": 4,
-            "src": "test",
-            "method": "Unknown.Method",
-        })
+        self._ws_send(
+            sock,
+            {
+                "id": 4,
+                "src": "test",
+                "method": "Unknown.Method",
+            },
+        )
         resp = self._ws_recv(sock)
         self.assertEqual(resp["id"], 4)
         self.assertIn("error", resp)
@@ -346,11 +359,14 @@ class TestShellyWebSocket(unittest.TestCase):
         """After the first RPC exchange, the server should push NotifyStatus."""
         sock = self._ws_connect()
         # Send any RPC to trigger the notify loop
-        self._ws_send(sock, {
-            "id": 1,
-            "src": "test",
-            "method": "Shelly.GetDeviceInfo",
-        })
+        self._ws_send(
+            sock,
+            {
+                "id": 1,
+                "src": "test",
+                "method": "Shelly.GetDeviceInfo",
+            },
+        )
         # Read the RPC response
         resp = self._ws_recv(sock)
         self.assertEqual(resp["id"], 1)

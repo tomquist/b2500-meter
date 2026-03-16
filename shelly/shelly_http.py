@@ -307,9 +307,7 @@ class ShellyHttpServer:
             daemon=True,
         )
         self._thread.start()
-        logger.info(
-            "Shelly HTTP RPC server listening on port %d", self._port
-        )
+        logger.info("Shelly HTTP RPC server listening on port %d", self._port)
 
     def stop(self):
         """Stop the uvicorn server."""
