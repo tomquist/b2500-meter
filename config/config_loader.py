@@ -23,6 +23,7 @@ from powermeter import (
     ESPHome,
     JsonHttpPowermeter,
     TQEnergyManager,
+    Envoy,
     ThrottledPowermeter,
 )
 
@@ -39,6 +40,7 @@ AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
 JSON_HTTP_SECTION = "JSON_HTTP"
 TQ_EM_SECTION = "TQ_EM"
+ENVOY_SECTION = "ENVOY"
 
 
 class ClientFilter:
@@ -125,6 +127,8 @@ def create_powermeter(
         return create_tq_em_powermeter(section, config)
     elif section.startswith(JSON_HTTP_SECTION):
         return create_json_http_powermeter(section, config)
+    elif section.startswith(ENVOY_SECTION):
+        return create_envoy_powermeter(section, config)
     elif section.startswith("MQTT"):
         return create_mqtt_powermeter(section, config)
     else:
@@ -323,6 +327,20 @@ def create_tasmota_powermeter(
         config.get(section, "JSON_POWER_INPUT_MQTT_LABEL", fallback=""),
         config.get(section, "JSON_POWER_OUTPUT_MQTT_LABEL", fallback=""),
         config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
+    )
+
+
+def create_envoy_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return Envoy(
+        host=config.get(section, "HOST", fallback=""),
+        token=config.get(section, "TOKEN", fallback=""),
+        phases=config.getint(section, "PHASES", fallback=1),
+        verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=False),
+        username=config.get(section, "USERNAME", fallback=""),
+        password=config.get(section, "PASSWORD", fallback=""),
+        serial=config.get(section, "SERIAL", fallback=""),
     )
 
 

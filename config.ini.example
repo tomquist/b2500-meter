@@ -142,6 +142,21 @@ THROTTLE_INTERVAL = 0
 #TIMEOUT = 5.0 (Optional)
 #THROTTLE_INTERVAL = 1
 
+#[ENVOY]
+## Enphase Envoy local API — reads net grid power from /production.json
+#HOST = 192.168.1.200
+## Static JWT token (optional if USERNAME/PASSWORD/SERIAL are provided)
+#TOKEN = your_envoy_jwt_token
+## Enlighten cloud credentials for automatic token renewal (optional)
+#USERNAME = your@email.com
+#PASSWORD = your_password
+#SERIAL = 122219012345
+## Number of phases: 1 (total only) or 3 (per-line)
+#PHASES = 1
+#VERIFY_SSL = False
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 2
+
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh
 ## Per-powermeter throttling override (optional)
