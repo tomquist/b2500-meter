@@ -1,6 +1,8 @@
 [GENERAL]
 # Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
 DEVICE_TYPE = ct001
+# Comma-separated list of device IDs (optional, auto-generated if not set)
+#DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
 # Sum power values of all phases and report on phase 1 (ct001 only and default is False)
