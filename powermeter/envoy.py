@@ -72,8 +72,14 @@ class Envoy(Powermeter):
     """
 
     def __init__(
-        self, host, token="", phases=1, verify_ssl=False,
-        username="", password="", serial="",
+        self,
+        host,
+        token="",
+        phases=1,
+        verify_ssl=False,
+        username="",
+        password="",
+        serial="",
     ):
         self.host = host
         self.token = token
@@ -134,7 +140,7 @@ class Envoy(Powermeter):
             return [int(net_meter.get("wNow", 0))]
         else:
             lines = net_meter.get("lines", [])
-            values = [int(line.get("wNow", 0)) for line in lines[:self.phases]]
+            values = [int(line.get("wNow", 0)) for line in lines[: self.phases]]
             while len(values) < self.phases:
                 values.append(0)
             return values

@@ -44,23 +44,17 @@ SAMPLE_RESPONSE = {
 
 class TestFindMeasurement(unittest.TestCase):
     def test_find_by_measurement_type(self):
-        result = _find_measurement(
-            SAMPLE_RESPONSE["consumption"], "net-consumption"
-        )
+        result = _find_measurement(SAMPLE_RESPONSE["consumption"], "net-consumption")
         self.assertIsNotNone(result)
         self.assertEqual(result["wNow"], -300.0)
 
     def test_find_by_type(self):
-        result = _find_measurement(
-            SAMPLE_RESPONSE["production"], "inverters"
-        )
+        result = _find_measurement(SAMPLE_RESPONSE["production"], "inverters")
         self.assertIsNotNone(result)
         self.assertEqual(result["wNow"], 2500)
 
     def test_not_found(self):
-        result = _find_measurement(
-            SAMPLE_RESPONSE["consumption"], "nonexistent"
-        )
+        result = _find_measurement(SAMPLE_RESPONSE["consumption"], "nonexistent")
         self.assertIsNone(result)
 
 
@@ -158,8 +152,12 @@ class TestEnvoyTokenRefreshOn401(unittest.TestCase):
         mock_session_class.return_value = mock_session
 
         envoy = Envoy(
-            host="192.168.1.200", token="expired-token", phases=1,
-            username="user@test.com", password="pass", serial="123456",
+            host="192.168.1.200",
+            token="expired-token",
+            phases=1,
+            username="user@test.com",
+            password="pass",
+            serial="123456",
         )
         result = envoy.get_powermeter_watts()
 
@@ -182,8 +180,12 @@ class TestEnvoyAutoObtainToken(unittest.TestCase):
         mock_session_class.return_value = mock_session
 
         envoy = Envoy(
-            host="192.168.1.200", token="", phases=1,
-            username="user@test.com", password="pass", serial="123456",
+            host="192.168.1.200",
+            token="",
+            phases=1,
+            username="user@test.com",
+            password="pass",
+            serial="123456",
         )
         result = envoy.get_powermeter_watts()
 
