@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Next
 - Added support for `POWER_MULTIPLIER = 0` to allow nulling individual phases
 - Added sign-flip and phase-nulling examples to README
 - Improved power transform logging: replaced print statements with structured logger calls and emit phase-mismatch warnings only once per mismatch
