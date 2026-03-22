@@ -55,7 +55,8 @@ class ThrottledPowermeter(Powermeter):
                 # Not enough time has passed, wait for the remaining time
                 wait_time = self.throttle_interval - time_since_last_update
                 logger.debug(
-                    f"Throttling: Waiting {wait_time:.1f}s before fetching fresh values..."
+                    "Throttling: Waiting %.1fs before fetching fresh values...",
+                    wait_time,
                 )
                 time.sleep(wait_time)
                 current_time = time.time()  # Update current time after sleep
@@ -71,15 +72,19 @@ class ThrottledPowermeter(Powermeter):
                     else self.last_update_time
                 )
                 logger.debug(
-                    f"Throttling: Fetched fresh values after {total_interval:.1f}s interval: {values}"
+                    "Throttling: Fetched fresh values after %.1fs interval: %s",
+                    total_interval,
+                    values,
                 )
                 return values
             except Exception as e:
-                logger.error(f"Throttling: Error getting fresh values: {e}")
                 # Fall back to cached values if available, otherwise re-raise
                 if self.last_values is not None:
+                    logger.warning("Throttling: Error getting fresh values: %s", e)
                     logger.debug(
-                        f"Throttling: Using cached values due to error: {self.last_values}"
+                        "Throttling: Using cached values due to error: %s",
+                        self.last_values,
                     )
                     return self.last_values
+                logger.error("Throttling: Error getting fresh values: %s", e)
                 raise
