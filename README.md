@@ -146,6 +146,38 @@ POLL_INTERVAL = 1
 THROTTLE_INTERVAL = 0
 ```
 
+### Value Transformation
+
+You can optionally apply a linear transformation to the power values returned by any powermeter. This is useful for calibrating readings (e.g., correcting a consistent offset) or scaling values (e.g., adjusting for a CT clamp ratio).
+
+The formula applied to each value is: `value * POWER_MULTIPLIER + POWER_OFFSET`
+
+For example, if your meter reads 1050W and you set `POWER_MULTIPLIER=0.95` and `POWER_OFFSET=-50`, the result is `1050 * 0.95 + (-50) = 947.5W`.
+
+Both settings are optional and can be added to any powermeter section:
+- `POWER_MULTIPLIER` — Scales each power value. Default: 1 (no scaling).
+- `POWER_OFFSET` — Added to each power value after the multiplier is applied. Default: 0 (no offset).
+
+For three-phase meters, you can specify a single value (applied to all phases) or comma-separated values (one per phase):
+
+```ini
+# Single value — applies to all phases
+[SHELLY_1]
+TYPE = 1PM
+IP = 192.168.1.100
+POWER_OFFSET = -50
+POWER_MULTIPLIER = 1.05
+
+# Per-phase values — one per phase (must match phase count)
+[SHELLY_2]
+TYPE = 3EMPro
+IP = 192.168.1.101
+POWER_OFFSET = -50,-30,-40
+POWER_MULTIPLIER = 1.05,1.02,1.03
+```
+
+**Note:** Transforms are applied before CT001's sum/absolute value operations.
+
 ### Shelly
 
 #### Shelly 1PM
