@@ -329,16 +329,12 @@ def test_read_all_configs_with_power_transform():
         "POWER_MULTIPLIER": "1.05",
     }
 
-    try:
-        powermeters = read_all_powermeter_configs(config)
-        assert len(powermeters) == 1
-        pm, _ = powermeters[0]
-        assert isinstance(pm, TransformedPowermeter)
-        assert pm.offsets == [-50.0]
-        assert pm.multipliers == [1.05]
-    except Exception as e:
-        if "Connection" not in str(e) and "timed out" not in str(e):
-            raise
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.offsets == [-50.0]
+    assert pm.multipliers == [1.05]
 
 
 def test_read_all_configs_with_per_phase_transform():
@@ -350,16 +346,12 @@ def test_read_all_configs_with_per_phase_transform():
         "POWER_MULTIPLIER": "1.05,1.02,1.03",
     }
 
-    try:
-        powermeters = read_all_powermeter_configs(config)
-        assert len(powermeters) == 1
-        pm, _ = powermeters[0]
-        assert isinstance(pm, TransformedPowermeter)
-        assert pm.offsets == [-10.0, -20.0, -30.0]
-        assert pm.multipliers == [1.05, 1.02, 1.03]
-    except Exception as e:
-        if "Connection" not in str(e) and "timed out" not in str(e):
-            raise
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.offsets == [-10.0, -20.0, -30.0]
+    assert pm.multipliers == [1.05, 1.02, 1.03]
 
 
 def test_read_all_configs_offset_only():
@@ -370,28 +362,27 @@ def test_read_all_configs_offset_only():
         "POWER_OFFSET": "10",
     }
 
-    try:
-        powermeters = read_all_powermeter_configs(config)
-        assert len(powermeters) == 1
-        pm, _ = powermeters[0]
-        assert isinstance(pm, TransformedPowermeter)
-        assert pm.offsets == [10.0]
-        assert pm.multipliers == [1.0]
-    except Exception as e:
-        if "Connection" not in str(e) and "timed out" not in str(e):
-            raise
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.offsets == [10.0]
+    assert pm.multipliers == [1.0]
 
 
-def test_read_all_configs_zero_multiplier_rejected():
-    """Test that a multiplier of 0 is rejected at config load time."""
+def test_read_all_configs_zero_multiplier_accepted():
+    """Test that a multiplier of 0 is accepted (e.g. to null a phase)."""
     config = configparser.ConfigParser()
     config["SCRIPT_1"] = {
         "COMMAND": 'echo "100"',
         "POWER_MULTIPLIER": "0",
     }
 
-    with pytest.raises(ValueError, match="POWER_MULTIPLIER cannot be 0"):
-        read_all_powermeter_configs(config)
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.multipliers == [0.0]
 
 
 def test_read_all_configs_no_transform_when_not_configured():
@@ -401,11 +392,7 @@ def test_read_all_configs_no_transform_when_not_configured():
         "COMMAND": 'echo "100"',
     }
 
-    try:
-        powermeters = read_all_powermeter_configs(config)
-        assert len(powermeters) == 1
-        pm, _ = powermeters[0]
-        assert not isinstance(pm, TransformedPowermeter)
-    except Exception as e:
-        if "Connection" not in str(e) and "timed out" not in str(e):
-            raise
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert not isinstance(pm, TransformedPowermeter)

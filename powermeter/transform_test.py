@@ -86,6 +86,14 @@ class TestTransformedPowermeter(unittest.TestCase):
         else:
             self.assertEqual(call_args[0][0], 30)
 
+    def test_empty_offsets_raises(self):
+        with self.assertRaises(ValueError, msg="offsets must be a non-empty list"):
+            TransformedPowermeter(self.mock_powermeter, [], [1.0])
+
+    def test_empty_multipliers_raises(self):
+        with self.assertRaises(ValueError, msg="multipliers must be a non-empty list"):
+            TransformedPowermeter(self.mock_powermeter, [0.0], [])
+
     def test_wait_for_message_default_timeout(self):
         t = TransformedPowermeter(self.mock_powermeter, [0.0], [1.0])
         t.wait_for_message()

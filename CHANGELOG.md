@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Added support for `POWER_MULTIPLIER = 0` to allow nulling individual phases
+- Added sign-flip and phase-nulling examples to README
+- Improved power transform logging: replaced print statements with structured logger calls and emit phase-mismatch warnings only once per mismatch
+- Added validation that offsets and multipliers lists are non-empty in TransformedPowermeter
+- Fixed exception chaining in float list parsing to preserve original traceback
+
 ## 1.0.8
 - Added support for Modbus holding registers through new `REGISTER_TYPE` configuration option ([#173](https://github.com/tomquist/b2500-meter/pull/173))
 - Improved Shelly emulator with threaded UDP handling for better performance under concurrent requests when throttle interval is used ([#168](https://github.com/tomquist/b2500-meter/pull/168))

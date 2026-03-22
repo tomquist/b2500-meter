@@ -66,10 +66,10 @@ def parse_float_list(value, key_name, section):
             continue
         try:
             result.append(float(token))
-        except ValueError:
+        except ValueError as err:
             raise ValueError(
                 f"Invalid {key_name} value '{token}' in section [{section}]"
-            )
+            ) from err
     return result if result else [0.0]
 
 
@@ -98,12 +98,7 @@ def read_all_powermeter_configs(
                     "POWER_MULTIPLIER",
                     section,
                 )
-                for m in multipliers:
-                    if m == 0:
-                        raise ValueError(
-                            f"POWER_MULTIPLIER cannot be 0 in section [{section}]"
-                        )
-                print(
+                logger.info(
                     f"Applying power transform (multiplier={multipliers}, offset={offsets}) to {section}"
                 )
                 powermeter = TransformedPowermeter(powermeter, offsets, multipliers)

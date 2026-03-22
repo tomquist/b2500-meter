@@ -1,5 +1,8 @@
+import logging
 from typing import List
 from .base import Powermeter
+
+logger = logging.getLogger(__name__)
 
 
 class TransformedPowermeter(Powermeter):
@@ -16,9 +19,15 @@ class TransformedPowermeter(Powermeter):
 
     def __init__(self, wrapped_powermeter, offsets, multipliers):
         # type: (Powermeter, List[float], List[float]) -> None
+        if not offsets:
+            raise ValueError("offsets must be a non-empty list")
+        if not multipliers:
+            raise ValueError("multipliers must be a non-empty list")
         self.wrapped_powermeter = wrapped_powermeter
         self.offsets = offsets
         self.multipliers = multipliers
+        self._offsets_mismatch_warned = False
+        self._multipliers_mismatch_warned = False
 
     def wait_for_message(self, timeout=5):
         return self.wrapped_powermeter.wait_for_message(timeout)
@@ -33,14 +42,25 @@ class TransformedPowermeter(Powermeter):
             result.append(value * multiplier + offset)
 
         if len(self.offsets) > 1 and len(self.offsets) != len(values):
-            print(
-                f"Warning: POWER_OFFSET has {len(self.offsets)} values but "
-                f"powermeter returned {len(values)} phases"
-            )
+            if not self._offsets_mismatch_warned:
+                logger.warning(
+                    "POWER_OFFSET has %d values but powermeter returned %d phases",
+                    len(self.offsets),
+                    len(values),
+                )
+                self._offsets_mismatch_warned = True
+        else:
+            self._offsets_mismatch_warned = False
+
         if len(self.multipliers) > 1 and len(self.multipliers) != len(values):
-            print(
-                f"Warning: POWER_MULTIPLIER has {len(self.multipliers)} values but "
-                f"powermeter returned {len(values)} phases"
-            )
+            if not self._multipliers_mismatch_warned:
+                logger.warning(
+                    "POWER_MULTIPLIER has %d values but powermeter returned %d phases",
+                    len(self.multipliers),
+                    len(values),
+                )
+                self._multipliers_mismatch_warned = True
+        else:
+            self._multipliers_mismatch_warned = False
 
         return result
