@@ -25,6 +25,7 @@ from powermeter import (
     TQEnergyManager,
     HomeWizardPowermeter,
     ThrottledPowermeter,
+    TransformedPowermeter,
 )
 
 SHELLY_SECTION = "SHELLY"
@@ -58,6 +59,22 @@ class ClientFilter:
             return False
 
 
+def parse_float_list(value, key_name, section):
+    # type: (str, str, str) -> List[float]
+    tokens = [t.strip() for t in value.split(",")]
+    result = []
+    for token in tokens:
+        if not token:
+            continue
+        try:
+            result.append(float(token))
+        except ValueError as err:
+            raise ValueError(
+                f"Invalid {key_name} value '{token}' in section [{section}]"
+            ) from err
+    return result if result else [0.0]
+
+
 def read_all_powermeter_configs(
     config: configparser.ConfigParser,
 ) -> List[Tuple[Powermeter, ClientFilter]]:
@@ -69,6 +86,25 @@ def read_all_powermeter_configs(
     for section in config.sections():
         powermeter = create_powermeter(section, config)
         if powermeter is not None:
+            # Apply power transform if configured
+            has_offset = config.has_option(section, "POWER_OFFSET")
+            has_multiplier = config.has_option(section, "POWER_MULTIPLIER")
+            if has_offset or has_multiplier:
+                offsets = parse_float_list(
+                    config.get(section, "POWER_OFFSET", fallback="0"),
+                    "POWER_OFFSET",
+                    section,
+                )
+                multipliers = parse_float_list(
+                    config.get(section, "POWER_MULTIPLIER", fallback="1"),
+                    "POWER_MULTIPLIER",
+                    section,
+                )
+                logger.info(
+                    f"Applying power transform (multiplier={multipliers}, offset={offsets}) to {section}"
+                )
+                powermeter = TransformedPowermeter(powermeter, offsets, multipliers)
+
             section_throttle_interval = config.getfloat(
                 section, "THROTTLE_INTERVAL", fallback=global_throttle_interval
             )
