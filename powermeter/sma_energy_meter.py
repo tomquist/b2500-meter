@@ -77,9 +77,7 @@ class SmaEnergyMeter(Powermeter):
 
     def _listen(self):
         try:
-            sock = socket.socket(
-                socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
-            )
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if hasattr(socket, "SO_REUSEPORT"):
                 try:
@@ -191,15 +189,9 @@ class SmaEnergyMeter(Powermeter):
             pos += 4 + channel_len
 
         if has_phase_data:
-            l1 = raw.get(CHANNEL_L1_POWER_PLUS, 0) - raw.get(
-                CHANNEL_L1_POWER_MINUS, 0
-            )
-            l2 = raw.get(CHANNEL_L2_POWER_PLUS, 0) - raw.get(
-                CHANNEL_L2_POWER_MINUS, 0
-            )
-            l3 = raw.get(CHANNEL_L3_POWER_PLUS, 0) - raw.get(
-                CHANNEL_L3_POWER_MINUS, 0
-            )
+            l1 = raw.get(CHANNEL_L1_POWER_PLUS, 0) - raw.get(CHANNEL_L1_POWER_MINUS, 0)
+            l2 = raw.get(CHANNEL_L2_POWER_PLUS, 0) - raw.get(CHANNEL_L2_POWER_MINUS, 0)
+            l3 = raw.get(CHANNEL_L3_POWER_PLUS, 0) - raw.get(CHANNEL_L3_POWER_MINUS, 0)
             values = [l1, l2, l3]
         elif CHANNEL_TOTAL_POWER_PLUS in raw or CHANNEL_TOTAL_POWER_MINUS in raw:
             total = raw.get(CHANNEL_TOTAL_POWER_PLUS, 0) - raw.get(

@@ -104,27 +104,31 @@ class TestGetChannelDataLength(unittest.TestCase):
 class TestHandlePacket(unittest.TestCase):
     def test_three_phase_consumption(self):
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_L1_POWER_PLUS, 1000),  # 100.0 W
-            _build_channel(CHANNEL_L1_POWER_MINUS, 0),
-            _build_channel(CHANNEL_L2_POWER_PLUS, 2000),  # 200.0 W
-            _build_channel(CHANNEL_L2_POWER_MINUS, 0),
-            _build_channel(CHANNEL_L3_POWER_PLUS, 3000),  # 300.0 W
-            _build_channel(CHANNEL_L3_POWER_MINUS, 0),
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_L1_POWER_PLUS, 1000),  # 100.0 W
+                _build_channel(CHANNEL_L1_POWER_MINUS, 0),
+                _build_channel(CHANNEL_L2_POWER_PLUS, 2000),  # 200.0 W
+                _build_channel(CHANNEL_L2_POWER_MINUS, 0),
+                _build_channel(CHANNEL_L3_POWER_PLUS, 3000),  # 300.0 W
+                _build_channel(CHANNEL_L3_POWER_MINUS, 0),
+            ]
+        )
         meter._handle_packet(packet)
         self.assertEqual(meter.get_powermeter_watts(), [100.0, 200.0, 300.0])
 
     def test_three_phase_net_power(self):
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_L1_POWER_PLUS, 1500),   # 150.0 W
-            _build_channel(CHANNEL_L1_POWER_MINUS, 500),   #  50.0 W
-            _build_channel(CHANNEL_L2_POWER_PLUS, 0),
-            _build_channel(CHANNEL_L2_POWER_MINUS, 2000),  # -200.0 W
-            _build_channel(CHANNEL_L3_POWER_PLUS, 1000),
-            _build_channel(CHANNEL_L3_POWER_MINUS, 1000),  # 0.0 W
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_L1_POWER_PLUS, 1500),  # 150.0 W
+                _build_channel(CHANNEL_L1_POWER_MINUS, 500),  #  50.0 W
+                _build_channel(CHANNEL_L2_POWER_PLUS, 0),
+                _build_channel(CHANNEL_L2_POWER_MINUS, 2000),  # -200.0 W
+                _build_channel(CHANNEL_L3_POWER_PLUS, 1000),
+                _build_channel(CHANNEL_L3_POWER_MINUS, 1000),  # 0.0 W
+            ]
+        )
         meter._handle_packet(packet)
         result = meter.get_powermeter_watts()
         self.assertAlmostEqual(result[0], 100.0)
@@ -133,19 +137,23 @@ class TestHandlePacket(unittest.TestCase):
 
     def test_total_only_fallback(self):
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_TOTAL_POWER_PLUS, 5000),   # 500.0 W
-            _build_channel(CHANNEL_TOTAL_POWER_MINUS, 0),
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_TOTAL_POWER_PLUS, 5000),  # 500.0 W
+                _build_channel(CHANNEL_TOTAL_POWER_MINUS, 0),
+            ]
+        )
         meter._handle_packet(packet)
         self.assertEqual(meter.get_powermeter_watts(), [500.0])
 
     def test_total_net_production(self):
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_TOTAL_POWER_PLUS, 100),
-            _build_channel(CHANNEL_TOTAL_POWER_MINUS, 3000),
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_TOTAL_POWER_PLUS, 100),
+                _build_channel(CHANNEL_TOTAL_POWER_MINUS, 3000),
+            ]
+        )
         meter._handle_packet(packet)
         result = meter.get_powermeter_watts()
         self.assertAlmostEqual(result[0], -290.0)
@@ -202,7 +210,8 @@ class TestHandlePacket(unittest.TestCase):
         # First packet from meter with serial 11111
         packet1 = _build_packet(
             [_build_channel(CHANNEL_TOTAL_POWER_PLUS, 1000)],
-            serial=11111, susy_id=349,
+            serial=11111,
+            susy_id=349,
         )
         meter._handle_packet(packet1)
         self.assertEqual(meter._detected_serial, 11111)
@@ -211,7 +220,8 @@ class TestHandlePacket(unittest.TestCase):
         # Second packet from different serial should be ignored
         packet2 = _build_packet(
             [_build_channel(CHANNEL_TOTAL_POWER_PLUS, 9999)],
-            serial=22222, susy_id=349,
+            serial=22222,
+            susy_id=349,
         )
         meter._handle_packet(packet2)
         # Should still have old value
@@ -221,7 +231,8 @@ class TestHandlePacket(unittest.TestCase):
         meter = _create_meter()
         packet = _build_packet(
             [_build_channel(CHANNEL_TOTAL_POWER_PLUS, 1000)],
-            serial=11111, susy_id=999,
+            serial=11111,
+            susy_id=999,
         )
         meter._handle_packet(packet)
         self.assertIsNone(meter._detected_serial)
@@ -230,33 +241,37 @@ class TestHandlePacket(unittest.TestCase):
     def test_energy_channels_skipped_correctly(self):
         """8-byte energy channels should be skipped without breaking power parsing."""
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_L1_POWER_PLUS, 1000),
-            _build_channel(CHANNEL_L1_POWER_MINUS, 0),
-            # 8-byte energy counter interspersed
-            _build_channel(CHANNEL_TOTAL_ENERGY_PLUS, 123456789, length=8),
-            _build_channel(CHANNEL_L2_POWER_PLUS, 2000),
-            _build_channel(CHANNEL_L2_POWER_MINUS, 0),
-            _build_channel(CHANNEL_L1_ENERGY_PLUS, 987654321, length=8),
-            _build_channel(CHANNEL_L3_POWER_PLUS, 3000),
-            _build_channel(CHANNEL_L3_POWER_MINUS, 0),
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_L1_POWER_PLUS, 1000),
+                _build_channel(CHANNEL_L1_POWER_MINUS, 0),
+                # 8-byte energy counter interspersed
+                _build_channel(CHANNEL_TOTAL_ENERGY_PLUS, 123456789, length=8),
+                _build_channel(CHANNEL_L2_POWER_PLUS, 2000),
+                _build_channel(CHANNEL_L2_POWER_MINUS, 0),
+                _build_channel(CHANNEL_L1_ENERGY_PLUS, 987654321, length=8),
+                _build_channel(CHANNEL_L3_POWER_PLUS, 3000),
+                _build_channel(CHANNEL_L3_POWER_MINUS, 0),
+            ]
+        )
         meter._handle_packet(packet)
         self.assertEqual(meter.get_powermeter_watts(), [100.0, 200.0, 300.0])
 
     def test_phase_data_preferred_over_total(self):
         """When both phase and total data present, phase data is used."""
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_TOTAL_POWER_PLUS, 6000),
-            _build_channel(CHANNEL_TOTAL_POWER_MINUS, 0),
-            _build_channel(CHANNEL_L1_POWER_PLUS, 1000),
-            _build_channel(CHANNEL_L1_POWER_MINUS, 0),
-            _build_channel(CHANNEL_L2_POWER_PLUS, 2000),
-            _build_channel(CHANNEL_L2_POWER_MINUS, 0),
-            _build_channel(CHANNEL_L3_POWER_PLUS, 3000),
-            _build_channel(CHANNEL_L3_POWER_MINUS, 0),
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_TOTAL_POWER_PLUS, 6000),
+                _build_channel(CHANNEL_TOTAL_POWER_MINUS, 0),
+                _build_channel(CHANNEL_L1_POWER_PLUS, 1000),
+                _build_channel(CHANNEL_L1_POWER_MINUS, 0),
+                _build_channel(CHANNEL_L2_POWER_PLUS, 2000),
+                _build_channel(CHANNEL_L2_POWER_MINUS, 0),
+                _build_channel(CHANNEL_L3_POWER_PLUS, 3000),
+                _build_channel(CHANNEL_L3_POWER_MINUS, 0),
+            ]
+        )
         meter._handle_packet(packet)
         result = meter.get_powermeter_watts()
         self.assertEqual(len(result), 3)
@@ -264,11 +279,13 @@ class TestHandlePacket(unittest.TestCase):
 
     def test_software_version_channel_skipped(self):
         meter = _create_meter()
-        packet = _build_packet([
-            _build_channel(CHANNEL_SOFTWARE_VERSION, 0x01020304),
-            _build_channel(CHANNEL_TOTAL_POWER_PLUS, 5000),
-            _build_channel(CHANNEL_TOTAL_POWER_MINUS, 0),
-        ])
+        packet = _build_packet(
+            [
+                _build_channel(CHANNEL_SOFTWARE_VERSION, 0x01020304),
+                _build_channel(CHANNEL_TOTAL_POWER_PLUS, 5000),
+                _build_channel(CHANNEL_TOTAL_POWER_MINUS, 0),
+            ]
+        )
         meter._handle_packet(packet)
         self.assertEqual(meter.get_powermeter_watts(), [500.0])
 
