@@ -166,6 +166,18 @@ THROTTLE_INTERVAL = 0
 ## Per-powermeter throttling override (optional)
 #THROTTLE_INTERVAL = 0
 
+#[SMA_ENERGY_METER]
+## SMA Energy Meter / Sunny Home Manager via Speedwire multicast
+## Listens for UDP multicast broadcasts and reports per-phase power (L1, L2, L3)
+#MULTICAST_GROUP = 239.12.255.254
+#PORT = 9522
+## Serial number of the meter (0 = auto-detect first meter found)
+#SERIAL_NUMBER = 0
+## Network interface IP to bind to (optional, leave empty for all interfaces)
+#INTERFACE =
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 0
+
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh
 ## Per-powermeter throttling override (optional)

@@ -16,3 +16,4 @@ from .throttling import ThrottledPowermeter
 from .transform import TransformedPowermeter
 from .tq_em import TQEnergyManager
 from .homewizard import HomeWizardPowermeter
+from .sma_energy_meter import SmaEnergyMeter
