@@ -1,7 +1,6 @@
 import socket
 import struct
 import threading
-import time
 
 from .base import Powermeter
 from config.logger import logger
@@ -70,6 +69,7 @@ class SmaEnergyMeter(Powermeter):
         self.interface = interface
         self.values = None
         self._lock = threading.Lock()
+        self._message_event = threading.Event()
         self._detected_serial = None
 
         thread = threading.Thread(target=self._listen, daemon=True)
@@ -99,7 +99,7 @@ class SmaEnergyMeter(Powermeter):
             )
 
             while True:
-                data, addr = sock.recvfrom(1024)
+                data, _addr = sock.recvfrom(1024)
                 try:
                     self._handle_packet(data)
                 except Exception as e:
@@ -133,17 +133,18 @@ class SmaEnergyMeter(Powermeter):
             if serial != self.serial_number:
                 return
         else:
-            if self._detected_serial is None:
-                device_name = SMA_SUSY_IDS.get(susy_id)
-                if device_name is None:
+            with self._lock:
+                if self._detected_serial is None:
+                    device_name = SMA_SUSY_IDS.get(susy_id)
+                    if device_name is None:
+                        return
+                    self._detected_serial = serial
+                    logger.info(
+                        f"SMA Energy Meter: auto-detected {device_name} "
+                        f"with serial {serial}"
+                    )
+                elif serial != self._detected_serial:
                     return
-                self._detected_serial = serial
-                logger.info(
-                    f"SMA Energy Meter: auto-detected {device_name} "
-                    f"with serial {serial}"
-                )
-            elif serial != self._detected_serial:
-                return
 
         self._parse_channels(data)
 
@@ -203,6 +204,7 @@ class SmaEnergyMeter(Powermeter):
 
         with self._lock:
             self.values = values
+            self._message_event.set()
 
     def get_powermeter_watts(self):
         with self._lock:
@@ -211,11 +213,5 @@ class SmaEnergyMeter(Powermeter):
         raise ValueError("No value received from SMA Energy Meter")
 
     def wait_for_message(self, timeout=5):
-        start_time = time.time()
-        while True:
-            with self._lock:
-                if self.values is not None:
-                    return
-            if time.time() - start_time > timeout:
-                raise TimeoutError("Timeout waiting for SMA Energy Meter data")
-            time.sleep(1)
+        if not self._message_event.wait(timeout):
+            raise TimeoutError("Timeout waiting for SMA Energy Meter data")

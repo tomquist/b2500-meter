@@ -313,6 +313,7 @@ class TestWaitForMessage(unittest.TestCase):
     def test_returns_when_data_available(self):
         meter = _create_meter()
         meter.values = [100.0]
+        meter._message_event.set()
         meter.wait_for_message(timeout=1)
 
 
