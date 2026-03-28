@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 import requests
 
 from .base import Powermeter
@@ -35,9 +37,10 @@ class Tasmota(Powermeter):
         if not self.user:
             response = self.get_json("/cm?cmnd=status%2010")
         else:
-            response = self.get_json(
-                f"/cm?user={self.user}&password={self.password}&cmnd=status%2010"
+            qs = urlencode(
+                {"user": self.user, "password": self.password, "cmnd": "status 10"}
             )
+            response = self.get_json(f"/cm?{qs}")
         value = response[self.json_status][self.json_payload_mqtt_prefix]
         if not self.json_power_calculate:
             return [int(value[self.json_power_mqtt_label])]

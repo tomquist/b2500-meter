@@ -15,10 +15,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
-RUN python3 -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
-
-RUN uv pip install --no-cache .
+RUN uv sync --frozen --no-dev --no-editable
 
 FROM ${BUILD_FROM:-ghcr.io/hassio-addons/base:17.0.1}
 
@@ -32,9 +29,9 @@ RUN apk add --no-cache python3
 
 WORKDIR /app
 
-COPY --from=builder /app/venv /app/venv
+COPY --from=builder /app/.venv /app/.venv
 
-ENV PATH="/app/venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH"
 
 COPY ha_addon/run.sh /run.sh
 RUN chmod a+x /run.sh

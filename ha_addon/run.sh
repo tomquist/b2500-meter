@@ -125,7 +125,7 @@ print_redacted_config "$CONFIG"
 # Wait for Home Assistant to be ready before starting
 wait_for_homeassistant
 
-. /app/venv/bin/activate
+. /app/.venv/bin/activate
 cd /app
 
 # Get log level from configuration (defaults to info)

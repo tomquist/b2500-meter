@@ -1,8 +1,6 @@
-import logging
+from b2500_meter.config.logger import logger
 
 from .base import Powermeter
-
-logger = logging.getLogger(__name__)
 
 
 class TransformedPowermeter(Powermeter):

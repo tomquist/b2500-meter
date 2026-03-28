@@ -56,17 +56,11 @@ class EnergyStats:
         p2 = _optional_w(by_obis, obis_l2, "phase L2 power")
         p3 = _optional_w(by_obis, obis_l3, "phase L3 power")
         if p1 is not None and p2 is not None and p3 is not None:
-            stats = cls(powers=[p1, p2, p3])
-            stats.when = datetime.datetime.now()
-            return stats
+            return cls(powers=[p1, p2, p3])
         agg = _optional_w(by_obis, obis_current, "aggregate power")
         if agg is not None:
-            stats = cls(powers=[agg])
-            stats.when = datetime.datetime.now()
-            return stats
-        stats = cls()
-        stats.when = datetime.datetime.now()
-        return stats
+            return cls(powers=[agg])
+        return cls()
 
 
 def _optional_w(by_obis: dict, obis_key: str, label: str) -> int | None:

@@ -63,12 +63,9 @@ class ThrottledPowermeter(Powermeter):
             try:
                 values = self.wrapped_powermeter.get_powermeter_watts()
                 self.last_values = values
+                prev_update_time = self.last_update_time
                 self.last_update_time = current_time
-                total_interval = current_time - (
-                    self.last_update_time - time_since_last_update
-                    if time_since_last_update < self.throttle_interval
-                    else self.last_update_time
-                )
+                total_interval = current_time - prev_update_time
                 logger.debug(
                     "Throttling: Fetched fresh values after %.1fs interval: %s",
                     total_interval,

@@ -72,12 +72,14 @@ jobs:
         run: uv run pytest --cov=b2500_meter --cov-report=xml --junitxml=test-results.xml
 
       - name: Upload test results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.python-version }}
           path: test-results.xml
 
       - name: Upload coverage XML
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.python-version }}
