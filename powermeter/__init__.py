@@ -12,6 +12,7 @@ from .modbus import ModbusPowermeter
 from .mqtt import MqttPowermeter
 from .json_http import JsonHttpPowermeter
 from .script import Script
+from .sml import Sml, parse_sml_obis_config
 from .throttling import ThrottledPowermeter
 from .transform import TransformedPowermeter
 from .tq_em import TQEnergyManager

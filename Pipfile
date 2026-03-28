@@ -10,6 +10,8 @@ paho-mqtt = "*"
 jsonpath-ng = "*"
 pymodbus = "==3.6.5"
 websocket-client = "==1.8.0"
+smllib = "*"
+pyserial = "*"
 
 [dev-packages]
 flake8 = "6.1.0"

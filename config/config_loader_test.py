@@ -21,6 +21,7 @@ from config.config_loader import (
     create_json_http_powermeter,
     create_tq_em_powermeter,
     create_homewizard_powermeter,
+    create_sml_powermeter,
     parse_float_list,
 )
 import unittest
@@ -263,6 +264,35 @@ def test_create_homewizard_powermeter():
             raise
 
 
+def test_create_sml_powermeter():
+    """Test SML powermeter creation: SERIAL required, OBIS overrides applied."""
+    config = configparser.ConfigParser()
+    config["SML"] = {"SERIAL": "/dev/ttyUSB0"}
+    pm = create_sml_powermeter("SML", config)
+    assert pm._serial_device == "/dev/ttyUSB0"
+
+    config = configparser.ConfigParser()
+    config["SML"] = {
+        "SERIAL": "/dev/ttyUSB0",
+        "OBIS_POWER_CURRENT": "0100100700ff",
+    }
+    pm = create_sml_powermeter("SML", config)
+    assert pm._obis_current == "0100100700ff"
+
+
+def test_create_sml_powermeter_requires_serial():
+    """Section [SML] must define non-empty SERIAL."""
+    config = configparser.ConfigParser()
+    config["SML"] = {}
+    with pytest.raises(ValueError, match="SERIAL"):
+        create_sml_powermeter("SML", config)
+
+    config = configparser.ConfigParser()
+    config["SML"] = {"SERIAL": "  \t  "}
+    with pytest.raises(ValueError, match="SERIAL"):
+        create_sml_powermeter("SML", config)
+
+
 def test_create_powermeter():
     """Test the main create_powermeter function."""
     config = configparser.ConfigParser()
@@ -287,6 +317,7 @@ def test_create_powermeter():
         "TOKEN": "ABCDEF1234567890ABCDEF1234567890",
         "SERIAL": "aabbccddee",
     }
+    config["SML_TEST"] = {"SERIAL": "/dev/ttyUSB0"}
     config["UNKNOWN_TEST"] = {"SOME_KEY": "some_value"}
 
     # Test each powermeter type

@@ -501,6 +501,24 @@ You can also use a custom script to get the power values. The script should outp
 COMMAND = /path/to/your/script.sh
 ```
 
+### SML
+
+```ini
+[SML]
+SERIAL = /dev/ttyUSB0
+# Optional: override default OBIS hex registers (12 hex digits each; defaults match common German eHZ meters)
+#OBIS_POWER_CURRENT = 0100100700ff
+#OBIS_POWER_L1 = 0100240700ff
+#OBIS_POWER_L2 = 0100380700ff
+#OBIS_POWER_L3 = 01004c0700ff
+```
+
+Read from a powermeter that is connected via USB and that transmits SML (Smart Message Language) data via an IR head. **`SERIAL` is required**: local device path to the serial interface (e.g. `/dev/ttyUSB0` on Linux).
+
+**Multi-phase:** If the meter exposes per-phase instantaneous active power for L1–L3 (`Summenwirkleistung` / default OBIS above), those three values are used automatically. Otherwise the aggregate instantaneous power register (`aktuelle Wirkleistung` / `OBIS_POWER_CURRENT`) is used as a single reading. When both are present in the same SML list, per-phase values take precedence.
+
+**OBIS overrides:** Only needed if your meter uses different register addresses; values must be exactly 12 hexadecimal characters (lowercase or uppercase).
+
 ### Multiple Powermeters
 
 You can configure multiple powermeters by adding additional sections with the same prefix (e.g. `[SHELLY<unique_suffix>]`). Each powermeter should specify which client IP addresses are allowed to access it using the NETMASK setting.
