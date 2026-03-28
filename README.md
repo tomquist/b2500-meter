@@ -463,6 +463,19 @@ SERIAL = your_device_serial
 # THROTTLE_INTERVAL = 0
 ```
 
+### SMA Energy Meter
+
+Reads an [SMA Energy Meter](https://www.sma.de/) (EM 1.0/2.0) or Sunny Home Manager via the **Speedwire** multicast protocol (UDP). The listener joins the default multicast group and reports per-phase active power (L1, L2, L3). Use `SERIAL_NUMBER = 0` to auto-detect the first meter seen on the network, or set the device serial to pin a specific unit. Like other UDP-based features, this requires the host to receive multicast traffic (use Docker host networking or equivalent).
+
+```ini
+[SMA_ENERGY_METER]
+MULTICAST_GROUP = 239.12.255.254
+PORT = 9522
+SERIAL_NUMBER = 0
+# INTERFACE = 192.168.1.10
+# THROTTLE_INTERVAL = 0
+```
+
 ### Modbus
 
 ```ini

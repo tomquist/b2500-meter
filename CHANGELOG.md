@@ -1,6 +1,7 @@
 # Changelog
 
 ## Next
+- Clarified README: emulated device types (CT001/Shelly) are listed separately from powermeter data sources such as SMA Energy Meter / Sunny Home Manager
 - Added HomeWizard P1 powermeter support via the device WebSocket API with token and serial configuration ([#231](https://github.com/tomquist/b2500-meter/pull/231)), including optional `VERIFY_SSL` to disable TLS certificate verification on trusted networks when needed ([#254](https://github.com/tomquist/b2500-meter/pull/254))
 - Added SMA Energy Meter / Sunny Home Manager support via Speedwire multicast protocol with auto-detection and per-phase power readings ([#231](https://github.com/tomquist/b2500-meter/pull/252))
 - Switched the Home Assistant powermeter integration from REST polling to the WebSocket API and improved missing/non-numeric sensor state handling ([#232](https://github.com/tomquist/b2500-meter/pull/232), [#193](https://github.com/tomquist/b2500-meter/pull/193))
