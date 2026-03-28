@@ -135,6 +135,8 @@ Configuration is managed via `config.ini`. Each powermeter type has specific set
 [GENERAL]
 # Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
 DEVICE_TYPE = ct001
+# Optional: comma-separated device IDs, same order as DEVICE_TYPE (auto-generated if omitted). Use for stable IDs across reinstalls or to match an existing device.
+#DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
 # Sum power values of all phases and report on phase 1 (ct001 only and default is False)
