@@ -1,20 +1,49 @@
 import importlib
 import logging
+import re
 from unittest.mock import patch
+
+import pytest
 
 from b2500_meter.config.logger import setLogLevel
 
 logger_module = importlib.import_module("b2500_meter.config.logger")
 
 
-def test_set_log_level_uses_timestamped_format():
+@pytest.mark.parametrize(
+    ("level_name", "expected_level"),
+    [("info", logging.INFO), ("debug", logging.DEBUG), ("invalid", logging.WARNING)],
+)
+def test_set_log_level_configures_expected_level(level_name, expected_level):
+    with patch.object(logger_module.logging, "basicConfig") as basic_config:
+        setLogLevel(level_name)
+
+    basic_config.assert_called_once()
+    assert basic_config.call_args.kwargs["level"] == expected_level
+
+
+def test_set_log_level_configures_timestamped_log_output():
     with patch.object(logger_module.logging, "basicConfig") as basic_config:
         setLogLevel("info")
 
     basic_config.assert_called_once()
-    assert basic_config.call_args.kwargs == {
-        "level": logging.INFO,
-        "format": "%(asctime)s %(levelname)s:%(name)s:%(message)s",
-        "datefmt": "%Y-%m-%d %H:%M:%S",
-        "force": True,
-    }
+    kwargs = basic_config.call_args.kwargs
+
+    formatter = logging.Formatter(kwargs["format"], kwargs["datefmt"])
+    record = logging.LogRecord(
+        name="b2500-meter",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="hello",
+        args=(),
+        exc_info=None,
+    )
+    record.created = 0
+
+    formatted = formatter.format(record)
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} INFO:b2500-meter:hello",
+        formatted,
+    )
+    assert kwargs["force"] is True
