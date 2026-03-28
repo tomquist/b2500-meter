@@ -43,6 +43,9 @@ jobs:
             type=ref,event=pr
             type=sha
             type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.ref_type == 'tag' }}
+            type=semver,pattern={{major}},enable=${{ github.ref_type == 'tag' }}
           flavor: |
             latest=${{ github.ref == 'refs/heads/main' }}
       - name: Log in to Container registry

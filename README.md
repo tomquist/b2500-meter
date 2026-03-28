@@ -91,6 +91,30 @@ The B2500 Meter project can be installed and run in several ways depending on yo
    defaults to `info`.
 Note: Host network mode is required because the B2500 device uses UDP broadcasts for device discovery. Without host networking, the container won't be able to receive these broadcasts properly.
 
+### Pre-release builds (`next`)
+
+CI publishes **pre-release** container images from the **`develop`** branch with the **`next`** tag on GitHub Container Registry. These track the latest changes before a stable release and **may be less stable** than **`latest`**—use them to try fixes early or to validate the add-on before it lands on **`main`**.
+
+**Home Assistant Add-on**
+
+1. Add the repository pointing at the **`develop`** branch (same flow as [Home Assistant Add-on Installation](#home-assistant-add-on-installation), but use this URL):
+
+   `https://github.com/tomquist/b2500-meter#develop`
+
+   [![Add develop repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftomquist%2Fb2500-meter%23develop)
+
+2. Install or update the **B2500 Meter** add-on from the store. Supervisor will pull the **`next`**-tagged image (`ghcr.io/tomquist/b2500-meter-addon:next`).
+
+To return to stable releases, remove this repository and add the normal URL without `#develop` ([step 1 under Home Assistant Add-on Installation](#home-assistant-add-on-installation)), then reinstall or wait for an update to the **`latest`** track.
+
+**Docker**
+
+Use the **`next`** image instead of **`latest`** in `docker-compose.yaml` (or `docker run`):
+
+```yaml
+image: ghcr.io/tomquist/b2500-meter:next
+```
+
 ### Direct Installation
 
 #### Prerequisites
