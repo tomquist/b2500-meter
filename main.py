@@ -14,6 +14,7 @@ from collections import OrderedDict
 from config.logger import logger, setLogLevel
 from health_service import start_health_service, stop_health_service
 from marstek_api import MarstekConfig, ensure_managed_fake_device, MarstekApiError
+from version_info import get_git_commit_sha
 
 # CT002/CT003 phase assignment is auto-managed by emulator runtime.
 
@@ -310,6 +311,13 @@ def main():
     # configure logger
     setLogLevel(args.loglevel)
     logger.info("startet b2500-meter application")
+    _sha = get_git_commit_sha()
+    if _sha:
+        logger.info("Git commit: %s", _sha)
+    else:
+        logger.debug(
+            "Git commit not logged (set GIT_COMMIT_SHA at image build for CI images)"
+        )
 
     # Load general settings
     device_types = (
@@ -415,7 +423,11 @@ def main():
                     logger.info(
                         "Pairing hint: refresh the CT device list (or log out/in if needed), select %s, switch battery mode to Automatic, and choose that CT."
                         " The CT should be selectable as soon as it appears in the device list.",
-                        " / ".join(ct_names) if ct_names else "the managed B2500-Meter CT",
+                        (
+                            " / ".join(ct_names)
+                            if ct_names
+                            else "the managed B2500-Meter CT"
+                        ),
                     )
                     logger.info(
                         "Credentials are only needed for one-time registration. You can remove MARSTEK mailbox/password from config now."

@@ -26,6 +26,9 @@ RUN pip3 install --no-cache-dir pipenv && \
 # Final stage
 FROM ${BUILD_FROM:-ghcr.io/hassio-addons/base:17.0.1}
 
+ARG GIT_COMMIT_SHA=
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 

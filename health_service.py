@@ -5,10 +5,20 @@ Provides HTTP health check endpoints for monitoring service health.
 Compatible with both Home Assistant addon watchdog and Docker health checks.
 """
 
+import json
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from config.logger import logger
+from version_info import get_git_commit_sha
+
+
+def _health_json_bytes():
+    payload = {"status": "healthy", "service": "b2500-meter"}
+    sha = get_git_commit_sha()
+    if sha:
+        payload["git_commit"] = sha
+    return json.dumps(payload).encode("utf-8")
 
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -26,8 +36,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            response = b'{"status": "healthy", "service": "b2500-meter"}'
-            self.wfile.write(response)
+            self.wfile.write(_health_json_bytes())
         else:
             logger.debug(
                 f"Invalid request {self.path} from {self.client_address[0]}:{self.client_address[1]}"
