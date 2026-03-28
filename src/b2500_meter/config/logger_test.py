@@ -1,16 +1,16 @@
 import logging
+from unittest.mock import patch
 
 from b2500_meter.config.logger import setLogLevel
 
 
 def test_set_log_level_uses_timestamped_format():
-    setLogLevel("info")
+    with patch("logging.basicConfig") as basic_config:
+        setLogLevel("info")
 
-    root = logging.getLogger()
-    assert root.level == logging.INFO
-    assert root.handlers
-
-    formatter = root.handlers[0].formatter
-    assert formatter is not None
-    assert formatter._fmt == "%(asctime)s %(levelname)s:%(name)s:%(message)s"
-    assert formatter.datefmt == "%Y-%m-%d %H:%M:%S"
+    basic_config.assert_called_once_with(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
