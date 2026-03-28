@@ -1,8 +1,7 @@
 # Changelog
 
 ## Next
-- Added optional `VERIFY_SSL` for the HomeWizard powermeter to disable TLS certificate verification when needed on trusted networks
-- Added HomeWizard P1 powermeter support via the device WebSocket API with token and serial configuration ([#231](https://github.com/tomquist/b2500-meter/pull/231))
+- Added HomeWizard P1 powermeter support via the device WebSocket API with token and serial configuration ([#231](https://github.com/tomquist/b2500-meter/pull/231)), including optional `VERIFY_SSL` to disable TLS certificate verification on trusted networks when needed ([#254](https://github.com/tomquist/b2500-meter/pull/254))
 - Switched the Home Assistant powermeter integration from REST polling to the WebSocket API and improved missing/non-numeric sensor state handling ([#232](https://github.com/tomquist/b2500-meter/pull/232), [#193](https://github.com/tomquist/b2500-meter/pull/193))
 - Added optional Marstek cloud auto-registration for managed fake `ct002` and `ct003` devices at startup ([#237](https://github.com/tomquist/b2500-meter/pull/237))
 - Added battery activity info logs for Shelly emulation to report detection, inactivity, and reconnection events ([#241](https://github.com/tomquist/b2500-meter/pull/241))
