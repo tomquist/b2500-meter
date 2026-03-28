@@ -8,6 +8,7 @@
 - Added `POWER_OFFSET` and `POWER_MULTIPLIER` transforms for any powermeter, including per-phase calibration, sign flipping, and phase nulling support ([#250](https://github.com/tomquist/b2500-meter/pull/250))
 - Improved power transform validation and logging, including support for `POWER_MULTIPLIER = 0`, one-time phase-mismatch warnings, and preserved exception chaining for invalid float lists ([#250](https://github.com/tomquist/b2500-meter/pull/250))
 - Added `LOG_LEVEL` environment variable support for Docker and CLI runs ([#174](https://github.com/tomquist/b2500-meter/pull/174))
+- Reduced throttling output noise by replacing unconditional `print` calls in `ThrottledPowermeter` with structured logging (`logger.debug` for routine wait/fetch/cache messages; failures remain at error level) ([#251](https://github.com/tomquist/b2500-meter/pull/251))
 - Improved Shelly UDP server robustness by adding socket timeouts to avoid hangs during shutdown and testing ([#233](https://github.com/tomquist/b2500-meter/pull/233))
 - Fixed Modbus `UNIT_ID` handling and clarified Home Assistant entity ID configuration in the docs ([#191](https://github.com/tomquist/b2500-meter/pull/191), [#195](https://github.com/tomquist/b2500-meter/pull/195))
 
