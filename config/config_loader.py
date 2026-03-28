@@ -24,6 +24,7 @@ from powermeter import (
     JsonHttpPowermeter,
     TQEnergyManager,
     HomeWizardPowermeter,
+    SmaEnergyMeter,
     ThrottledPowermeter,
     TransformedPowermeter,
 )
@@ -42,6 +43,7 @@ MODBUS_SECTION = "MODBUS"
 JSON_HTTP_SECTION = "JSON_HTTP"
 TQ_EM_SECTION = "TQ_EM"
 HOMEWIZARD_SECTION = "HOMEWIZARD"
+SMA_ENERGY_METER_SECTION = "SMA_ENERGY_METER"
 
 
 class ClientFilter:
@@ -165,6 +167,8 @@ def create_powermeter(
         return create_json_http_powermeter(section, config)
     elif section.startswith(HOMEWIZARD_SECTION):
         return create_homewizard_powermeter(section, config)
+    elif section.startswith(SMA_ENERGY_METER_SECTION):
+        return create_sma_energy_meter_powermeter(section, config)
     elif section.startswith("MQTT"):
         return create_mqtt_powermeter(section, config)
     else:
@@ -384,4 +388,15 @@ def create_homewizard_powermeter(
         config.get(section, "TOKEN", fallback=""),
         config.get(section, "SERIAL", fallback=""),
         verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=True),
+    )
+
+
+def create_sma_energy_meter_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return SmaEnergyMeter(
+        config.get(section, "MULTICAST_GROUP", fallback="239.12.255.254"),
+        config.getint(section, "PORT", fallback=9522),
+        config.getint(section, "SERIAL_NUMBER", fallback=0),
+        config.get(section, "INTERFACE", fallback=""),
     )
