@@ -1,5 +1,11 @@
 # Agent notes
 
+Resolved versions live in `Pipfile.lock`; install dev deps the same way CI does:
+
+```bash
+pipenv sync --dev
+```
+
 Before finishing Python changes, run (from repo root, with dev deps):
 
 ```bash
