@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   b2500-meter:
     image: ghcr.io/tomquist/b2500-meter:latest

@@ -1,14 +1,14 @@
 import logging
 
-from ct002.ct002 import (
-    build_payload,
-    parse_request,
-    calculate_checksum,
+from b2500_meter.ct002.ct002 import (
+    CT002,
+    ETX,
+    RESPONSE_LABELS,
     SOH,
     STX,
-    ETX,
-    CT002,
-    RESPONSE_LABELS,
+    build_payload,
+    calculate_checksum,
+    parse_request,
 )
 
 

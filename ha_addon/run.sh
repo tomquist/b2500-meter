@@ -131,4 +131,4 @@ cd /app
 # Get log level from configuration (defaults to info)
 LOG_LEVEL=$(bashio::config 'log_level')
 bashio::log.info "Starting B2500 Meter with log level: $LOG_LEVEL"
-python3 main.py --loglevel "$LOG_LEVEL"
+b2500-meter --loglevel "$LOG_LEVEL"

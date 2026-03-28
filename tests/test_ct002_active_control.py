@@ -2,7 +2,7 @@
 
 import time
 
-from ct002.ct002 import CT002
+from b2500_meter.ct002.ct002 import CT002
 
 
 class TestActiveControl:

@@ -1,5 +1,5 @@
-from collections import OrderedDict
 import configparser
+from collections import OrderedDict
 from io import StringIO
 
 

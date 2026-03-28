@@ -95,7 +95,7 @@ Note: Host network mode is required because the B2500 device uses UDP broadcasts
 
 #### Prerequisites
 
-1. **Python Installation:** Make sure you have Python 3.8 or higher installed. You can download it from the [official Python website](https://www.python.org/downloads/).
+1. **Python Installation:** Use Python **3.10 or newer** (see [CONTRIBUTING.md](CONTRIBUTING.md)). You can download Python from the [official Python website](https://www.python.org/downloads/).
 2. **Configuration:** Create a `config.ini` file in the root directory of the project and add the appropriate configuration as described in the [Configuration](#configuration) section.
 
 #### Installation Steps
@@ -110,15 +110,14 @@ Note: Host network mode is required because the B2500 device uses UDP broadcasts
    cd path/to/b2500-meter
    ```
 
-3. **Install Dependencies**
-   ```bash
-   pipenv install
-   ```
+3. **Install [uv](https://docs.astral.sh/uv/getting-started/installation/)** (dependency manager).
 
-4. **Run the Script**
+4. **Install dependencies and run**
    ```bash
-   pipenv run python main.py
+   uv sync
+   uv run b2500-meter
    ```
+   With dev tools (tests, ruff, mypy): `uv sync --extra dev`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
 All commands above work across Windows, macOS, and Linux. The only difference is how you open your terminal.
 
