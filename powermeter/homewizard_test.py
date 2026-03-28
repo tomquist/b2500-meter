@@ -10,7 +10,9 @@ class TestHomeWizardPowermeter(unittest.TestCase):
     def _create_powermeter(self, **kwargs):
         with patch("powermeter.homewizard.websocket.WebSocketApp"):
             with patch("powermeter.homewizard.threading.Thread"):
-                pm = HomeWizardPowermeter("192.168.1.1", "ABCD1234", "aabbccddee", **kwargs)
+                pm = HomeWizardPowermeter(
+                    "192.168.1.1", "ABCD1234", "aabbccddee", **kwargs
+                )
         return pm
 
     def test_on_message_authorization_requested(self):
@@ -168,9 +170,7 @@ class TestHomeWizardPowermeter(unittest.TestCase):
         sslopt = pm._build_sslopt()
         self.assertEqual(sslopt["context"].verify_mode, ssl.CERT_NONE)
         self.assertFalse(sslopt["context"].check_hostname)
-        self.assertEqual(
-            sslopt["server_hostname"], "appliance/p1dongle/aabbccddee"
-        )
+        self.assertEqual(sslopt["server_hostname"], "appliance/p1dongle/aabbccddee")
 
     def test_verify_ssl_default_validates_certificate(self):
         pm = self._create_powermeter()
