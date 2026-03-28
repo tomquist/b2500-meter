@@ -15,10 +15,12 @@
 - Improved Shelly UDP server robustness by adding socket timeouts to avoid hangs during shutdown and testing ([#233](https://github.com/tomquist/b2500-meter/pull/233))
 - Fixed Modbus `UNIT_ID` handling and clarified Home Assistant entity ID configuration in the docs ([#191](https://github.com/tomquist/b2500-meter/pull/191), [#195](https://github.com/tomquist/b2500-meter/pull/195))
 - CI-built container images embed **`GIT_COMMIT_SHA`**; startup logs the git commit and `/health` JSON includes **`git_commit`** when set
+- **Developer tooling:** Python **3.10+**; **uv** + **pyproject.toml** replace Pipenv; application code lives under **src/b2500_meter/**; **ruff**, **mypy**, and **pytest** (see [CONTRIBUTING.md](CONTRIBUTING.md)); CLI entry point **`b2500-meter`**; Docker and Home Assistant add-on images install the wheel and use the same command instead of `python main.py`.
 
 ### Breaking
 - The Home Assistant add-on no longer publishes images for 32-bit ARM (`armhf` / `armv7`). Installations must use a 64-bit Home Assistant OS or supervisor environment (`amd64` or `aarch64`), consistent with Home Assistant dropping 32-bit support.
 - **CT001 emulation removed** (Python `ct001` package and the `nodered.json` flow). Use `ct002` or `ct003` for multiple storage devices; use a Shelly `DEVICE_TYPE` otherwise (replacing `ct001`). Drop obsolete `[GENERAL]` options `DISABLE_SUM_PHASES`, `DISABLE_ABSOLUTE_VALUES`, and `POLL_INTERVAL` if present. The Home Assistant add-on no longer offers `poll_interval` or `disable_absolute_values`; remove those keys from saved add-on configuration if validation fails after upgrade ([#258](https://github.com/tomquist/b2500-meter/pull/258)).
+- **From-source / contributor workflow:** Pipenv, `Pipfile`, and running `python main.py` from the repo root are removed—use **uv** and the **`b2500-meter`** command (or `uv run b2500-meter`) per [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 1.0.8
 - Added support for Modbus holding registers through new `REGISTER_TYPE` configuration option ([#173](https://github.com/tomquist/b2500-meter/pull/173))

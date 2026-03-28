@@ -19,7 +19,6 @@ hassio_api: true
 hassio_role: homeassistant
 host_network: true
 ports:
-  12345/tcp: 12345
   12345/udp: 12345
   1010/udp: 1010
   2220/udp: 2220
