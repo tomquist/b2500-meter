@@ -1,4 +1,5 @@
 import json
+import ssl
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -6,10 +7,10 @@ from .homewizard import HomeWizardPowermeter
 
 
 class TestHomeWizardPowermeter(unittest.TestCase):
-    def _create_powermeter(self):
+    def _create_powermeter(self, **kwargs):
         with patch("powermeter.homewizard.websocket.WebSocketApp"):
             with patch("powermeter.homewizard.threading.Thread"):
-                pm = HomeWizardPowermeter("192.168.1.1", "ABCD1234", "aabbccddee")
+                pm = HomeWizardPowermeter("192.168.1.1", "ABCD1234", "aabbccddee", **kwargs)
         return pm
 
     def test_on_message_authorization_requested(self):
@@ -161,6 +162,21 @@ class TestHomeWizardPowermeter(unittest.TestCase):
             ),
         )
         self.assertEqual(pm.get_powermeter_watts(), [-1500])
+
+    def test_verify_ssl_disabled_skips_certificate_validation(self):
+        pm = self._create_powermeter(verify_ssl=False)
+        sslopt = pm._build_sslopt()
+        self.assertEqual(sslopt["context"].verify_mode, ssl.CERT_NONE)
+        self.assertFalse(sslopt["context"].check_hostname)
+        self.assertEqual(
+            sslopt["server_hostname"], "appliance/p1dongle/aabbccddee"
+        )
+
+    def test_verify_ssl_default_validates_certificate(self):
+        pm = self._create_powermeter()
+        sslopt = pm._build_sslopt()
+        self.assertEqual(sslopt["context"].verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(sslopt["context"].check_hostname)
 
 
 if __name__ == "__main__":

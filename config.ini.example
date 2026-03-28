@@ -160,6 +160,9 @@ THROTTLE_INTERVAL = 0
 #IP = 192.168.1.110
 #TOKEN = YOUR_32_CHAR_HEX_TOKEN
 #SERIAL = your_device_serial
+## Verify server TLS using the bundled HomeWizard CA (default True).
+## Set False only if you get certificate errors on a trusted LAN (insecure).
+#VERIFY_SSL = True
 ## Per-powermeter throttling override (optional)
 #THROTTLE_INTERVAL = 0
 
