@@ -3,8 +3,7 @@ import threading
 import logging
 from typing import List, Optional
 from .base import Powermeter
-
-logger = logging.getLogger(__name__)
+from config.logger import logger
 
 
 class ThrottledPowermeter(Powermeter):

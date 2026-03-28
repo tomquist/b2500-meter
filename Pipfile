@@ -24,3 +24,4 @@ typing_extensions = "*"
 
 [scripts]
 format = "black ."
+test = "env PYTHONPATH=. pytest"

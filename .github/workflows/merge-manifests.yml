@@ -37,6 +37,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ steps.lower-repo.outputs.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=sha
+            type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
           flavor: |
             latest=${{ github.ref == 'refs/heads/main' }}
       - name: Log in to Container registry

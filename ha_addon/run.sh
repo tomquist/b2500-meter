@@ -41,8 +41,31 @@ print_redacted_config() {
 # Check if custom config is provided
 if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'custom_config')" ]; then
     bashio::log.info "Using custom config file: $(bashio::config 'custom_config')"
+    if bashio::config.has_value 'marstek_mailbox' || bashio::config.has_value 'marstek_password' || bashio::config.has_value 'marstek_auto_register_ct_device'; then
+        bashio::log.warning "Add-on UI Marstek settings are ignored when custom_config is used; values from custom config file take precedence"
+    fi
     cp "/config/$(bashio::config 'custom_config')" "$CONFIG"
 else
+    device_types="$(bashio::config 'device_types')"
+    has_ct002=0
+    has_ct003=0
+    if echo "$device_types" | grep -qi 'ct002'; then
+        has_ct002=1
+    fi
+    if echo "$device_types" | grep -qi 'ct003'; then
+        has_ct003=1
+    fi
+
+    ct_section="CT002"
+    if [ "$has_ct003" -eq 1 ] && [ "$has_ct002" -eq 0 ]; then
+        ct_section="CT003"
+    fi
+
+    ct_mac=""
+    if bashio::config.has_value 'ct_mac'; then
+        ct_mac="$(bashio::config 'ct_mac')"
+    fi
+
     # Generate default config
     {
         echo "[GENERAL]"
@@ -52,6 +75,22 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
+        if [ "$has_ct002" -eq 1 ] && [ "$has_ct003" -eq 1 ]; then
+            echo "[CT002]"
+            echo "CT_MAC=$ct_mac"
+            # CT002/CT003 control behavior is fixed by emulator
+            echo ""
+            echo "[CT003]"
+            echo "CT_MAC=$ct_mac"
+            # CT002/CT003 control behavior is fixed by emulator
+            echo ""
+        else
+            echo "[$ct_section]"
+            echo "CT_MAC=$ct_mac"
+            # CT002/CT003 control behavior is fixed by emulator
+            echo ""
+        fi
+
         marstek_auto_register_ct_device="false"
         if bashio::config.has_value 'marstek_auto_register_ct_device'; then
             marstek_auto_register_ct_device="$(bashio::config 'marstek_auto_register_ct_device')"

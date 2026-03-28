@@ -1,7 +1,7 @@
 # Changelog
 
 ## Next
-- Clarified README: emulated device types (CT001/Shelly) are listed separately from powermeter data sources such as SMA Energy Meter / Sunny Home Manager
+- Added support for emulating a *CT002/CT003*, which is recommended to steer multiple devices
 - Added HomeWizard P1 powermeter support via the device WebSocket API with token and serial configuration ([#231](https://github.com/tomquist/b2500-meter/pull/231)), including optional `VERIFY_SSL` to disable TLS certificate verification on trusted networks when needed ([#254](https://github.com/tomquist/b2500-meter/pull/254))
 - Added SMA Energy Meter / Sunny Home Manager support via Speedwire multicast protocol with auto-detection and per-phase power readings ([#231](https://github.com/tomquist/b2500-meter/pull/252))
 - Added SML powermeter support for power readings from a smart meter over a local serial port (Smart Message Language / IR head), with optional per-phase OBIS overrides ([#229](https://github.com/tomquist/b2500-meter/pull/229))
@@ -14,6 +14,7 @@
 - Reduced throttling output noise by replacing unconditional `print` calls in `ThrottledPowermeter` with structured logging (`logger.debug` for routine wait/fetch/cache messages; failures remain at error level) ([#251](https://github.com/tomquist/b2500-meter/pull/251))
 - Improved Shelly UDP server robustness by adding socket timeouts to avoid hangs during shutdown and testing ([#233](https://github.com/tomquist/b2500-meter/pull/233))
 - Fixed Modbus `UNIT_ID` handling and clarified Home Assistant entity ID configuration in the docs ([#191](https://github.com/tomquist/b2500-meter/pull/191), [#195](https://github.com/tomquist/b2500-meter/pull/195))
+- CI-built container images embed **`GIT_COMMIT_SHA`**; startup logs the git commit and `/health` JSON includes **`git_commit`** when set
 
 ### Breaking
 - The Home Assistant add-on no longer publishes images for 32-bit ARM (`armhf` / `armv7`). Installations must use a 64-bit Home Assistant OS or supervisor environment (`amd64` or `aarch64`), consistent with Home Assistant dropping 32-bit support.

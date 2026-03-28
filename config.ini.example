@@ -1,11 +1,11 @@
 [GENERAL]
-# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50)
+# Comma-separated list of device types to emulate (ct001, ct002, ct003, shellypro3em, shellyemg3, shellyproem50)
 DEVICE_TYPE = ct001
 # Comma-separated list of device IDs (optional, auto-generated if not set)
 #DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# Sum power values of all phases and report on phase 1 (ct001 only and default is False)
+# Sum power values of all phases and report on phase 1 (ct001 only; default is False)
 DISABLE_SUM_PHASES = False
 # Send absolute values (necessary for storage system) (ct001 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
@@ -19,13 +19,41 @@ POLL_INTERVAL = 1
 # Can be overridden per powermeter section
 THROTTLE_INTERVAL = 0
 
+#[CT002]
+## CT type is derived from the emulated device (ct002 -> HME-4, ct003 -> HME-3).
+## Note: CT003 can optionally use its own [CT003] section with the same keys.
+## CT MAC (12 hex digits, from Marstek app).
+## If empty, the emulator accepts any request CT MAC and echoes the request's
+## CT MAC in responses. If set, the emulator responds only to the configured MAC.
+#CT_MAC = 001122334455
+## UDP port to bind for CT002/CT003 (default 12345).
+#UDP_PORT = 12345
+## WiFi RSSI reported to the storage system
+#WIFI_RSSI = -50
+## Ignore repeated requests from the same client within this window (seconds)
+#DEDUPE_TIME_WINDOW = 0
+## Forget consumers after this many seconds without updates (multi-consumer support)
+#CONSUMER_TTL = 120
+## Log concise status (phase consumption + consumer charge/discharge) on each request when enabled
+#DEBUG_STATUS = False
+## Active control: smooth raw grid reading and split target across consumers (reduces oscillation). Default: True
+#ACTIVE_CONTROL = True
+## EMA alpha for target smoothing (0.05-0.2 typical; lower = smoother)
+#SMOOTH_TARGET_ALPHA = 0.08
+## Max change to smoothed target per step (W); 0 disables
+#MAX_SMOOTH_STEP = 0
+## Balance deadband (W): skip fair-distribution correction when consumer imbalance below this
+#BALANCE_DEADBAND = 15
+## Deadband (W): no target change when |meter| below this; reduces oscillation near zero
+#DEADBAND = 20
+
 #[MARSTEK]
 ## Optional: auto-register managed fake CT devices in Marstek cloud on startup.
 #ENABLE = False
 #BASE_URL = https://eu.hamedata.com
 #MAILBOX = your@email.example
 #PASSWORD = your_password
-## Prefix is fixed to acde48 for managed fake devices.
+## Prefix is fixed to 02b250 (locally administered MAC space) for managed fake devices.
 ## Used for add-device request
 #TIMEZONE = Europe/Berlin
 

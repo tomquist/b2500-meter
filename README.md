@@ -2,6 +2,7 @@
 
 This project emulates Smart Meter devices for Marstek storage systems such as the B2500, Marstek Jupiter, and Marstek Venus energy storage systems while allowing integration with almost any smart meter. It does this by emulating one or more of the following devices:
 - CT001
+- CT002 / CT003
 - Shelly Pro 3EM
   - Uses port 1010 (B2500 firmware up to version 224) and port 2220 (B2500 firmware version 226+)
   - Can be specifically targeted with shellypro3em_old (port 1010) or shellypro3em_new (port 2220)
@@ -53,6 +54,8 @@ The B2500 Meter project can be installed and run in several ways depending on yo
      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate:
      - `ct001`: CT001 emulator
+     - `ct002`: CT002 emulator (Marstek CT002 protocol)
+     - `ct003`: CT003 emulator (same protocol as CT002)
      - `shellypro3em`: Shelly Pro 3EM emulator (uses both ports 1010 and 2220 for compatibility with all B2500 firmware versions)
      - `shellypro3em_old`: Shelly Pro 3EM emulator using port 1010 (for B2500 firmware up to v224)
      - `shellypro3em_new`: Shelly Pro 3EM emulator using port 2220 (for B2500 firmware v226+)
@@ -125,6 +128,8 @@ All commands above work across Windows, macOS, and Linux. The only difference is
 
 When the script is running, switch your B2500 to "Self-Adaptation" mode to enable the powermeter functionality.
 
+For details on the CT002/CT003 UDP protocol used by Marstek storage systems, see [docs/ct002-ct003-protocol.md](docs/ct002-ct003-protocol.md).
+
 ## Configuration
 
 Configuration is managed via `config.ini`. Each powermeter type has specific settings.
@@ -133,13 +138,13 @@ Configuration is managed via `config.ini`. Each powermeter type has specific set
 
 ```ini
 [GENERAL]
-# Comma-separated list of device types to emulate (ct001, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
+# Comma-separated list of device types to emulate (ct001, ct002, ct003, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
 DEVICE_TYPE = ct001
 # Optional: comma-separated device IDs, same order as DEVICE_TYPE (auto-generated if omitted). Use for stable IDs across reinstalls or to match an existing device.
 #DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# Sum power values of all phases and report on phase 1 (ct001 only and default is False)
+# Sum power values of all phases and report on phase 1 (ct001/ct002/ct003 only and default is False)
 DISABLE_SUM_PHASES = False
 # Send absolute values (necessary for storage system) (ct001 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
@@ -151,6 +156,38 @@ POLL_INTERVAL = 1
 THROTTLE_INTERVAL = 0
 ```
 
+Per-powermeter options (e.g. in `[TASMOTA]`):
+- **THROTTLE_INTERVAL** — Override global throttling for this powermeter
+
+CT002/CT003 options:
+- **ACTIVE_CONTROL** — When true (default), emulator computes per-consumer targets from meter data.
+  When false, emulator relays consumer aggregates (batteries decide their own charge/discharge).
+- **SMOOTH_TARGET_ALPHA** — EMA alpha for target smoothing (0.05–0.2 typical; default 0.08; lower = smoother)
+- **FAIR_DISTRIBUTION** — Balance load across consumers (default: true)
+- **BALANCE_GAIN** — Correction strength for fair distribution (0.3 typical)
+- **ERROR_BOOST_THRESHOLD** / **ERROR_BOOST_MAX** — Faster correction when offset is large
+- **ERROR_REDUCE_THRESHOLD** — Smaller corrections when offset is small (avoids oscillation)
+- **SATURATION_DETECTION** — Reduce share for full/empty batteries (default: true)
+
+### CT002 / CT003
+
+```ini
+[CT002]
+# CT type is derived from the emulated device (ct002 -> HME-4, ct003 -> HME-3).
+# CT MAC (12 hex digits, from Marstek app).
+# If empty, the emulator accepts any request CT MAC and echoes the request’s
+# CT MAC in responses. If set, the emulator responds only to that CT MAC.
+CT_MAC = 001122334455
+# UDP port to bind for CT002/CT003 (default 12345).
+UDP_PORT = 12345
+# WiFi RSSI reported to the storage system
+WIFI_RSSI = -50
+# Ignore repeated requests from the same client within this window (seconds)
+DEDUPE_TIME_WINDOW = 0
+# Forget consumers after this many seconds without updates (multi-consumer support)
+CONSUMER_TTL = 120
+```
+
 Optional Marstek cloud auto-registration:
 - **MARSTEK.ENABLE** — auto-create/check managed fake CT device(s) at startup
 - **MARSTEK.MAILBOX / PASSWORD** — credentials used to call Marstek API
@@ -160,6 +197,11 @@ Optional Marstek cloud auto-registration:
   - `bluetooth_name = MST-SMR_<last4(mac)>`
   - `name = B2500-Meter CT002` / `B2500-Meter CT003`
 - If a matching managed device of expected type already exists, no new device is created.
+- Important behavior notes:
+  - Managed fake CT devices appear as **offline** in the app CT list (expected behavior).
+  - Refresh the CT device list after registration (or log out/in if needed). Then select `B2500-Meter CT002` / `B2500-Meter CT003`, switch battery mode to automatic, and choose that CT. It should be selectable as soon as it appears in the device list.
+  - Marstek credentials are only needed for one-time registration. You can remove `MARSTEK.MAILBOX` / `MARSTEK.PASSWORD` immediately after registration succeeds (or if the managed device already exists).
+  - If you use Home Assistant add-on `custom_config`, values from that file take precedence over add-on UI fields.
 
 ### Value Transformation
 
@@ -587,6 +629,8 @@ A: Common causes include:
 - **Network setup:** Ensure both devices are on the same subnet (255.255.255.0)
 - **Bluetooth interference:** Disconnect any Bluetooth connections during setup
 - **Docker configuration:** When using Docker, set `network_mode: host` to enable UDP broadcast reception
+- **CT002/CT003 pairing flow:** For managed fake CTs, refresh the CT device list (or log out/in), then pick `B2500-Meter CT002` / `B2500-Meter CT003`, switch battery mode to automatic, and select that CT. It should be selectable as soon as it appears in the device list. The fake CT appears as offline in the CT list (expected).
+- **Config source confusion:** If Home Assistant add-on `custom_config` is used, it overrides add-on UI credentials/options.
 
 ### The emulator isn't visible in the Shelly app or network scanners. Is this normal?
 

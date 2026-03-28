@@ -37,5 +37,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Default log level for container startup
 ENV LOG_LEVEL=info
 
+# Set at build time in CI (see .github/workflows/build-image.yml)
+ARG GIT_COMMIT_SHA=
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
 # Run the SmartMeter script when the container starts
 CMD ["pipenv", "run", "python", "main.py"]
