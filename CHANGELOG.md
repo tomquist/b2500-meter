@@ -1,11 +1,15 @@
 # Changelog
 
 ## Next
-- Added support for `POWER_MULTIPLIER = 0` to allow nulling individual phases
-- Added sign-flip and phase-nulling examples to README
-- Improved power transform logging: replaced print statements with structured logger calls and emit phase-mismatch warnings only once per mismatch
-- Added validation that offsets and multipliers lists are non-empty in TransformedPowermeter
-- Fixed exception chaining in float list parsing to preserve original traceback
+- Added HomeWizard P1 powermeter support via the device WebSocket API with token and serial configuration ([#231](https://github.com/tomquist/b2500-meter/pull/231))
+- Switched the Home Assistant powermeter integration from REST polling to the WebSocket API and improved missing/non-numeric sensor state handling ([#232](https://github.com/tomquist/b2500-meter/pull/232), [#193](https://github.com/tomquist/b2500-meter/pull/193))
+- Added optional Marstek cloud auto-registration for managed fake `ct002` and `ct003` devices at startup ([#237](https://github.com/tomquist/b2500-meter/pull/237))
+- Added battery activity info logs for Shelly emulation to report detection, inactivity, and reconnection events ([#241](https://github.com/tomquist/b2500-meter/pull/241))
+- Added `POWER_OFFSET` and `POWER_MULTIPLIER` transforms for any powermeter, including per-phase calibration, sign flipping, and phase nulling support ([#250](https://github.com/tomquist/b2500-meter/pull/250))
+- Improved power transform validation and logging, including support for `POWER_MULTIPLIER = 0`, one-time phase-mismatch warnings, and preserved exception chaining for invalid float lists ([#250](https://github.com/tomquist/b2500-meter/pull/250))
+- Added `LOG_LEVEL` environment variable support for Docker and CLI runs ([#174](https://github.com/tomquist/b2500-meter/pull/174))
+- Improved Shelly UDP server robustness by adding socket timeouts to avoid hangs during shutdown and testing ([#233](https://github.com/tomquist/b2500-meter/pull/233))
+- Fixed Modbus `UNIT_ID` handling and clarified Home Assistant entity ID configuration in the docs ([#191](https://github.com/tomquist/b2500-meter/pull/191), [#195](https://github.com/tomquist/b2500-meter/pull/195))
 
 ## 1.0.8
 - Added support for Modbus holding registers through new `REGISTER_TYPE` configuration option ([#173](https://github.com/tomquist/b2500-meter/pull/173))
