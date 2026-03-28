@@ -1,12 +1,10 @@
 import configparser
 import argparse
-import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List, Tuple
 from config.config_loader import read_all_powermeter_configs, ClientFilter
-from ct001 import CT001
 from ct002 import CT002, UDP_PORT
 from powermeter import Powermeter
 from shelly import Shelly
@@ -71,57 +69,7 @@ def run_device(
 ):
     logger.debug(f"Starting device: {device_type}")
 
-    if device_type == "ct001":
-        disable_sum = (
-            args.disable_sum
-            if args.disable_sum is not None
-            else cfg.getboolean("GENERAL", "DISABLE_SUM_PHASES", fallback=False)
-        )
-        disable_absolute = (
-            args.disable_absolute
-            if args.disable_absolute is not None
-            else cfg.getboolean("GENERAL", "DISABLE_ABSOLUTE_VALUES", fallback=False)
-        )
-        poll_interval = (
-            args.poll_interval
-            if args.poll_interval is not None
-            else cfg.getint("GENERAL", "POLL_INTERVAL", fallback=1)
-        )
-
-        logger.debug(f"CT001 Settings for {device_id}:")
-        logger.debug(f"Disable Sum Phases: {disable_sum}")
-        logger.debug(f"Disable Absolute Values: {disable_absolute}")
-        logger.debug(f"Poll Interval: {poll_interval}")
-
-        device = CT001(poll_interval=poll_interval)
-
-        def update_readings(addr):
-            powermeter = None
-            for pm, client_filter in powermeters:
-                if client_filter.matches(addr[0]):
-                    powermeter = pm
-                    break
-            if powermeter is None:
-                logger.debug(f"No powermeter found for client {addr[0]}")
-                device.value = None
-                return
-            values = powermeter.get_powermeter_watts()
-            value1 = values[0] if len(values) > 0 else 0
-            value2 = values[1] if len(values) > 1 else 0
-            value3 = values[2] if len(values) > 2 else 0
-
-            if not disable_sum:
-                value1 = value1 + value2 + value3
-                value2 = value3 = 0
-
-            if not disable_absolute:
-                value1, value2, value3 = map(abs, (value1, value2, value3))
-
-            device.value = [value1, value2, value3]
-
-        device.before_send = update_readings
-
-    elif device_type in ["ct002", "ct003"]:
+    if device_type in ["ct002", "ct003"]:
         ct_section = get_ct_section(device_type, cfg)
         ct_type = "HME-4" if device_type == "ct002" else "HME-3"
         ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
@@ -273,7 +221,6 @@ def main():
         "--device-types",
         nargs="+",
         choices=[
-            "ct001",
             "ct002",
             "ct003",
             "shellypro3em",
@@ -292,10 +239,6 @@ def main():
         help="Provide logging level. Example --loglevel debug. Can also be set via LOG_LEVEL env var",
     )
 
-    # B2500-specific arguments
-    parser.add_argument("-s", "--disable-sum", action="store_true", default=None)
-    parser.add_argument("-a", "--disable-absolute", action="store_true", default=None)
-    parser.add_argument("-p", "--poll-interval", type=int)
     parser.add_argument(
         "--throttle-interval",
         type=float,
@@ -325,7 +268,9 @@ def main():
         if args.device_types is not None
         else [
             dt.strip()
-            for dt in cfg.get("GENERAL", "DEVICE_TYPE", fallback="ct001").split(",")
+            for dt in cfg.get("GENERAL", "DEVICE_TYPE", fallback="shellypro3em").split(
+                ","
+            )
         ]
     )
     skip_test = (

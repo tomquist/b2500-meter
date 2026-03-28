@@ -5,15 +5,9 @@ configuration:
   power_output_alias:
     name: Power Output Entity ID
     description: "The entity ID of the sensor(s) that provide the current power output. For multi-phase setups, enter multiple entity IDs separated by commas (e.g., 'sensor.phase1_out,sensor.phase2_out,sensor.phase3_out'). If you only have one sensor for both input and output, leave this empty."
-  poll_interval:
-    name: Poll Interval
-    description: "The interval in seconds at which the ct001 should poll the power input and output sensors. Usually you should leave this at 1 second. Ignore this if you are emulating a different device."
-  disable_absolute_values:
-    name: Allow Negative Values
-    description: "If enabled, the ct001 emulator will allow negative values. This is only compatible with newer versions of the B2500 firmware. Ignore this if you are emulating a different device."
   device_types:
     name: Emulated Devices
-    description: "Comma-separated list of devices to emulate (ct001, ct002, ct003, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new). The device type shellypro3em_old uses port 1010 (used up until B2500 firmware version 224). The device type shellypro3em_new uses the new port 2220 (used for B2500 firmware >=226). If you use shellypro3em, it will use shellypro3em_old and shellypro3em_new simultaneously for backwards compatibility."
+    description: "Comma-separated list of devices to emulate (ct002, ct003, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new). Use ct002 or ct003 for multiple storage devices; use a Shelly type otherwise. The device type shellypro3em_old uses port 1010 (used up until B2500 firmware version 224). The device type shellypro3em_new uses the new port 2220 (used for B2500 firmware >=226). If you use shellypro3em, it will use shellypro3em_old and shellypro3em_new simultaneously for backwards compatibility."
   ct_mac:
     name: CT MAC Override
     description: "Optional MAC address of the emulated CT device (the CT MAC addressed in incoming requests). Leave empty to respond regardless of addressed CT MAC and mirror that addressed CT MAC in the response. If set, only requests addressed to this CT MAC are answered."
