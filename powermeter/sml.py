@@ -88,8 +88,7 @@ def _expect_unit(ov, expected: str, label: str) -> None:
 
 @contextmanager
 def _open_serial_endpoint(endpoint: str) -> Iterator[serial.Serial]:
-    """Open serial transport for endpoint (device path; PySerial URLs later)."""
-    # Forward-compatible: branch on serial_for_url() when adding socket:// / rfc2217://
+    """Open serial transport for a local device path."""
     with serial.Serial(endpoint, 9600, timeout=10) as ser:
         yield ser
 
@@ -97,14 +96,16 @@ def _open_serial_endpoint(endpoint: str) -> Iterator[serial.Serial]:
 class Sml(Powermeter):
     def __init__(
         self,
-        serial_device: str = "/dev/ttyUSB0",
+        serial_device: str,
         *,
         obis_power_current: str = _OBIS_POWER_CURRENT,
         obis_power_l1: str = _OBIS_POWER_L1,
         obis_power_l2: str = _OBIS_POWER_L2,
         obis_power_l3: str = _OBIS_POWER_L3,
     ):
-        self._serial_device = serial_device
+        if not serial_device.strip():
+            raise ValueError("serial_device must be non-empty (config: SERIAL)")
+        self._serial_device = serial_device.strip()
         self._obis_current = obis_power_current
         self._obis_l1 = obis_power_l1
         self._obis_l2 = obis_power_l2

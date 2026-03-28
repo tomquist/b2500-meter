@@ -511,7 +511,7 @@ SERIAL = /dev/ttyUSB0
 #OBIS_POWER_L3 = 01004c0700ff
 ```
 
-Read from a powermeter that is connected via USB and that transmits SML (Smart Message Language) data via an IR head. `SERIAL` is the device path (e.g. `/dev/ttyUSB0`); URL-based serial bridges may use the same option in a future release.
+Read from a powermeter that is connected via USB and that transmits SML (Smart Message Language) data via an IR head. **`SERIAL` is required**: local device path to the serial interface (e.g. `/dev/ttyUSB0` on Linux).
 
 **Multi-phase:** If the meter exposes per-phase instantaneous active power for L1–L3 (`Summenwirkleistung` / default OBIS above), those three values are used automatically. Otherwise the aggregate instantaneous power register (`aktuelle Wirkleistung` / `OBIS_POWER_CURRENT`) is used as a single reading. When both are present in the same SML list, per-phase values take precedence.
 

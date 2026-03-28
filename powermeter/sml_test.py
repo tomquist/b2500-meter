@@ -100,14 +100,14 @@ class TestParseSmlObisConfig(unittest.TestCase):
 
 
 class TestCreateSmlPowermeter(unittest.TestCase):
-    def test_empty_serial_uses_default_device(self):
+    def test_missing_serial_raises(self):
         config = configparser.ConfigParser()
         config.read_string("""
             [SML]
             """)
-        pm = create_sml_powermeter("SML", config)
-        self.assertIsInstance(pm, Sml)
-        self.assertEqual(pm._serial_device, "/dev/ttyUSB0")
+        with self.assertRaises(ValueError) as ctx:
+            create_sml_powermeter("SML", config)
+        self.assertIn("SERIAL", str(ctx.exception))
 
     def test_serial_trimmed(self):
         config = configparser.ConfigParser()
@@ -122,6 +122,7 @@ class TestCreateSmlPowermeter(unittest.TestCase):
         config = configparser.ConfigParser()
         config.read_string("""
             [SML]
+            SERIAL = /dev/ttyUSB0
             OBIS_POWER_CURRENT = 0100100700ff
             OBIS_POWER_L1 = 0100240700ff
             OBIS_POWER_L2 = 0100380700ff

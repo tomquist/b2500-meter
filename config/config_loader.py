@@ -224,7 +224,9 @@ def create_sml_powermeter(
     )
     raw = config.get(section, "SERIAL", fallback="").strip()
     if not raw:
-        return Sml(**kwargs)
+        raise ValueError(
+            f"Section [{section}] requires SERIAL (device path, e.g. /dev/ttyUSB0)."
+        )
     return Sml(raw, **kwargs)
 
 
