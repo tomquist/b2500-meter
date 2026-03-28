@@ -94,8 +94,6 @@ jobs:
         config:
           - platform: linux/amd64
             cache_scope: base-linux-amd64
-          - platform: linux/arm/v6
-            cache_scope: base-linux-arm-v6
           - platform: linux/arm/v7
             cache_scope: base-linux-arm-v7
           - platform: linux/arm64
