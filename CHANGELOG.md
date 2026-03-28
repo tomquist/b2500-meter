@@ -16,6 +16,7 @@
 - Fixed Modbus `UNIT_ID` handling and clarified Home Assistant entity ID configuration in the docs ([#191](https://github.com/tomquist/b2500-meter/pull/191), [#195](https://github.com/tomquist/b2500-meter/pull/195))
 - CI-built container images embed **`GIT_COMMIT_SHA`**; startup logs the git commit and `/health` JSON includes **`git_commit`** when set
 - **Developer tooling:** Python **3.10+**; **uv** + **pyproject.toml** replace Pipenv; application code lives under **src/b2500_meter/**; **ruff**, **mypy**, and **pytest** (see [CONTRIBUTING.md](CONTRIBUTING.md)); CLI entry point **`b2500-meter`**; Docker and Home Assistant add-on images install the wheel and use the same command instead of `python main.py`.
+- Added timestamps to application log lines ([#260](https://github.com/tomquist/b2500-meter/pull/260))
 
 ### Breaking
 - The Home Assistant add-on no longer publishes images for 32-bit ARM (`armhf` / `armv7`). Installations must use a 64-bit Home Assistant OS or supervisor environment (`amd64` or `aarch64`), consistent with Home Assistant dropping 32-bit support.
