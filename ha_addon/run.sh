@@ -34,9 +34,7 @@ CONFIG="/app/config.ini"
 
 print_redacted_config() {
     sed -E \
-        -e 's/^(MAILBOX=).*/\1REDACTED/' \
-        -e 's/^(PASSWORD=).*/\1REDACTED/' \
-        -e 's/^(ACCESSTOKEN=).*/\1REDACTED/' \
+        -e 's/^((MAILBOX|PASSWORD|ACCESSTOKEN|TOKEN|SECRET))\s*=\s*.*/\1 = REDACTED/i' \
         "$1"
 }
 
