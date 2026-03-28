@@ -1,7 +1,11 @@
 import time
 import threading
+import logging
 from typing import List, Optional
 from .base import Powermeter
+
+
+logger = logging.getLogger(__name__)
 
 
 class ThrottledPowermeter(Powermeter):
@@ -50,8 +54,9 @@ class ThrottledPowermeter(Powermeter):
             if time_since_last_update < self.throttle_interval:
                 # Not enough time has passed, wait for the remaining time
                 wait_time = self.throttle_interval - time_since_last_update
-                print(
-                    f"Throttling: Waiting {wait_time:.1f}s before fetching fresh values..."
+                logger.debug(
+                    "Throttling: Waiting %.1fs before fetching fresh values...",
+                    wait_time,
                 )
                 time.sleep(wait_time)
                 current_time = time.time()  # Update current time after sleep
@@ -66,16 +71,20 @@ class ThrottledPowermeter(Powermeter):
                     if time_since_last_update < self.throttle_interval
                     else self.last_update_time
                 )
-                print(
-                    f"Throttling: Fetched fresh values after {total_interval:.1f}s interval: {values}"
+                logger.debug(
+                    "Throttling: Fetched fresh values after %.1fs interval: %s",
+                    total_interval,
+                    values,
                 )
                 return values
             except Exception as e:
-                print(f"Throttling: Error getting fresh values: {e}")
                 # Fall back to cached values if available, otherwise re-raise
                 if self.last_values is not None:
-                    print(
-                        f"Throttling: Using cached values due to error: {self.last_values}"
+                    logger.warning("Throttling: Error getting fresh values: %s", e)
+                    logger.debug(
+                        "Throttling: Using cached values due to error: %s",
+                        self.last_values,
                     )
                     return self.last_values
+                logger.error("Throttling: Error getting fresh values: %s", e)
                 raise
