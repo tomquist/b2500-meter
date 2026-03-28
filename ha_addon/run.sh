@@ -32,6 +32,14 @@ wait_for_homeassistant() {
 
 CONFIG="/app/config.ini"
 
+print_redacted_config() {
+    sed -E \
+        -e 's/^(MAILBOX=).*/\1REDACTED/' \
+        -e 's/^(PASSWORD=).*/\1REDACTED/' \
+        -e 's/^(ACCESSTOKEN=).*/\1REDACTED/' \
+        "$1"
+}
+
 # Check if custom config is provided
 if bashio::config.has_value 'custom_config' && [ -f "/config/$(bashio::config 'custom_config')" ]; then
     bashio::log.info "Using custom config file: $(bashio::config 'custom_config')"
@@ -46,6 +54,21 @@ else
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""
+        marstek_auto_register_ct_device="false"
+        if bashio::config.has_value 'marstek_auto_register_ct_device'; then
+            marstek_auto_register_ct_device="$(bashio::config 'marstek_auto_register_ct_device')"
+        fi
+
+        if [ "$marstek_auto_register_ct_device" = "true" ] && bashio::config.has_value 'marstek_mailbox' && bashio::config.has_value 'marstek_password'; then
+            echo "[MARSTEK]"
+            echo "ENABLE=True"
+            echo "BASE_URL=https://eu.hamedata.com"
+            echo "MAILBOX=$(bashio::config 'marstek_mailbox')"
+            echo "PASSWORD=$(bashio::config 'marstek_password')"
+            echo "TIMEZONE=Europe/Berlin"
+            echo ""
+        fi
+
         echo "[HOMEASSISTANT]"
         echo "IP=supervisor"
         echo "PORT=80"
@@ -62,7 +85,7 @@ else
     } > "$CONFIG"
 fi
 
-cat "$CONFIG"
+print_redacted_config "$CONFIG"
 
 # Wait for Home Assistant to be ready before starting
 wait_for_homeassistant

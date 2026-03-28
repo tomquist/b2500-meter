@@ -46,10 +46,10 @@ The B2500 Meter project can be installed and run in several ways depending on yo
    A) Using the Add-on Configuration Interface:
    - After installation, go to the add-on's Configuration tab
    - For single-phase monitoring:
-     - Set the `Power Input Alias` and optionally the `Power Output Alias` to the entity IDs of your power sensors
+     - Set the `Power Input Entity ID` and optionally the `Power Output Entity ID` to the entity IDs of your power sensors
    - For three-phase monitoring:
-     - Set the `Power Input Alias` to a comma-separated list of three entity IDs (one for each phase)
-     - If using calculated power, also set the `Power Output Alias` to a comma-separated list of three entity IDs
+     - Set the `Power Input Entity ID` to a comma-separated list of three entity IDs (one for each phase)
+     - If using calculated power, also set the `Power Output Entity ID` to a comma-separated list of three entity IDs
      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate:
      - `ct001`: CT001 emulator
@@ -85,6 +85,9 @@ The B2500 Meter project can be installed and run in several ways depending on yo
    ```bash
    docker-compose up -d
    ```
+   You can control the verbosity by setting the `LOG_LEVEL` environment
+   variable (for example `-e LOG_LEVEL=debug`). If not set the container
+   defaults to `info`.
 Note: Host network mode is required because the B2500 device uses UDP broadcasts for device discovery. Without host networking, the container won't be able to receive these broadcasts properly.
 
 ### Direct Installation
@@ -145,6 +148,61 @@ POLL_INTERVAL = 1
 # Can be overridden per powermeter section
 THROTTLE_INTERVAL = 0
 ```
+
+Optional Marstek cloud auto-registration:
+- **MARSTEK.ENABLE** — auto-create/check managed fake CT device(s) at startup
+- **MARSTEK.MAILBOX / PASSWORD** — credentials used to call Marstek API
+- For `ct002` a managed `HME-4` device is ensured, for `ct003` a managed `HME-3` device.
+- Device fields created by b2500-meter:
+  - `devid == mac` (random lowercase hex)
+  - `bluetooth_name = MST-SMR_<last4(mac)>`
+  - `name = B2500-Meter CT002` / `B2500-Meter CT003`
+- If a matching managed device of expected type already exists, no new device is created.
+
+### Value Transformation
+
+You can optionally apply a linear transformation to the power values returned by any powermeter. This is useful for calibrating readings (e.g., correcting a consistent offset) or scaling values (e.g., adjusting for a CT clamp ratio).
+
+The formula applied to each value is: `value * POWER_MULTIPLIER + POWER_OFFSET`
+
+For example, if your meter reads 1050W and you set `POWER_MULTIPLIER=0.95` and `POWER_OFFSET=-50`, the result is `1050 * 0.95 + (-50) = 947.5W`.
+
+Both settings are optional and can be added to any powermeter section:
+- `POWER_MULTIPLIER` — Scales each power value. Default: 1 (no scaling).
+- `POWER_OFFSET` — Added to each power value after the multiplier is applied. Default: 0 (no offset).
+
+For three-phase meters, you can specify a single value (applied to all phases) or comma-separated values (one per phase):
+
+```ini
+# Single value — applies to all phases
+[SHELLY_1]
+TYPE = 1PM
+IP = 192.168.1.100
+POWER_OFFSET = -50
+POWER_MULTIPLIER = 1.05
+
+# Per-phase values — if the list length does not match the device phase count,
+# values are applied cyclically and a runtime warning is emitted
+[SHELLY_2]
+TYPE = 3EMPro
+IP = 192.168.1.101
+POWER_OFFSET = -50,-30,-40
+POWER_MULTIPLIER = 1.05,1.02,1.03
+
+# Flip the sign of all readings (e.g. when import/export polarity is reversed)
+[SHELLY_3]
+TYPE = 1PM
+IP = 192.168.1.102
+POWER_MULTIPLIER = -1
+
+# Null a single phase on a three-phase meter
+[SHELLY_4]
+TYPE = 3EMPro
+IP = 192.168.1.103
+POWER_MULTIPLIER = 1,0,1
+```
+
+**Note:** Transforms are applied before CT001's sum/absolute value operations.
 
 ### Shelly
 
@@ -255,9 +313,9 @@ ACCESSTOKEN = YOUR_ACCESS_TOKEN
 CURRENT_POWER_ENTITY = ""|sensor.current_power|sensor.phase1,sensor.phase2,sensor.phase3
 # If False or Empty the power is not calculated - if empty False is Fallback
 POWER_CALCULATE = ""|True|False 
-# The entity or entities (comma-separated for 3-phase) that provide power input
+# The entity ID or IDs (comma-separated for 3-phase) that provide power input
 POWER_INPUT_ALIAS = ""|sensor.power_input|sensor.power_in_1,sensor.power_in_2,sensor.power_in_3
-# The entity or entities (comma-separated for 3-phase) that provide power output
+# The entity ID or IDs (comma-separated for 3-phase) that provide power output
 POWER_OUTPUT_ALIAS = ""|sensor.power_output|sensor.power_out_1,sensor.power_out_2,sensor.power_out_3
 # Is a Path Prefix needed?
 API_PATH_PREFIX = ""|/core
@@ -389,6 +447,33 @@ HEADERS = Authorization: Bearer token
 IP = 192.168.1.100
 #PASSWORD = pass
 #TIMEOUT = 5.0 (Optional)
+```
+
+### HomeWizard
+
+Reads a [HomeWizard](https://www.homewizard.com/) P1 dongle (or compatible device) over the local **WebSocket** API (`wss://`). Obtain a token once via `POST /api/user` while confirming on the device; see the [HomeWizard API docs](https://api-documentation.homewizard.com/docs/v2/).
+
+```ini
+[HOMEWIZARD]
+IP = 192.168.1.110
+TOKEN = YOUR_32_CHAR_HEX_TOKEN
+SERIAL = your_device_serial
+# Optional: disable TLS certificate verification on a trusted LAN if verification fails (default True)
+# VERIFY_SSL = True
+# THROTTLE_INTERVAL = 0
+```
+
+### SMA Energy Meter
+
+Reads an [SMA Energy Meter](https://www.sma.de/) (EM 1.0/2.0) or Sunny Home Manager via the **Speedwire** multicast protocol (UDP). The listener joins the default multicast group and reports per-phase active power (L1, L2, L3). Use `SERIAL_NUMBER = 0` to auto-detect the first meter seen on the network, or set the device serial to pin a specific unit. Like other UDP-based features, this requires the host to receive multicast traffic (use Docker host networking or equivalent).
+
+```ini
+[SMA_ENERGY_METER]
+MULTICAST_GROUP = 239.12.255.254
+PORT = 9522
+SERIAL_NUMBER = 0
+# INTERFACE = 192.168.1.10
+# THROTTLE_INTERVAL = 0
 ```
 
 ### Modbus
@@ -532,7 +617,7 @@ sensor.phase1,sensor.phase2,sensor.phase3
 
 A: 
 - `CURRENT_POWER_ENTITY`: For a single bidirectional sensor (positive/negative values)
-- `POWER_INPUT_ALIAS`/`POWER_OUTPUT_ALIAS`: For separate import/export sensors (with `POWER_CALCULATE = True`)
+  - `POWER_INPUT_ALIAS`/`POWER_OUTPUT_ALIAS`: Entity IDs for separate import/export sensors (with `POWER_CALCULATE = True`)
 
 ## Device and Firmware Specific
 

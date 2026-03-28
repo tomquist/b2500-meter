@@ -20,10 +20,12 @@ from config.config_loader import (
     create_mqtt_powermeter,
     create_json_http_powermeter,
     create_tq_em_powermeter,
+    create_homewizard_powermeter,
+    parse_float_list,
 )
 import unittest
 from unittest.mock import patch, Mock
-from powermeter import ThrottledPowermeter
+from powermeter import ThrottledPowermeter, TransformedPowermeter
 
 
 def test_client_filter():
@@ -245,6 +247,22 @@ def test_create_tq_em_powermeter():
             raise
 
 
+def test_create_homewizard_powermeter():
+    """Test HomeWizard powermeter creation."""
+    config = configparser.ConfigParser()
+    config["HOMEWIZARD"] = {
+        "IP": "127.0.0.1",
+        "TOKEN": "ABCDEF1234567890ABCDEF1234567890",
+        "SERIAL": "aabbccddee",
+    }
+
+    try:
+        create_homewizard_powermeter("HOMEWIZARD", config)
+    except Exception as e:
+        if "Connection" not in str(e) and "timed out" not in str(e):
+            raise
+
+
 def test_create_powermeter():
     """Test the main create_powermeter function."""
     config = configparser.ConfigParser()
@@ -264,6 +282,11 @@ def test_create_powermeter():
     config["MQTT_TEST"] = {"BROKER": "127.0.0.1"}
     config["JSON_HTTP_TEST"] = {"URL": "http://localhost", "JSON_PATHS": "$.power"}
     config["TQ_EM_TEST"] = {"IP": "127.0.0.1"}
+    config["HOMEWIZARD_TEST"] = {
+        "IP": "127.0.0.1",
+        "TOKEN": "ABCDEF1234567890ABCDEF1234567890",
+        "SERIAL": "aabbccddee",
+    }
     config["UNKNOWN_TEST"] = {"SOME_KEY": "some_value"}
 
     # Test each powermeter type
@@ -302,3 +325,96 @@ def test_read_all_powermeter_configs():
     except Exception as e:
         if "Connection" not in str(e) and "timed out" not in str(e):
             raise
+
+
+def test_parse_float_list():
+    """Test parsing comma-separated float lists."""
+    assert parse_float_list("10", "KEY", "SECTION") == [10.0]
+    assert parse_float_list("1.5, 2.5, 3.5", "KEY", "SECTION") == [1.5, 2.5, 3.5]
+    assert parse_float_list("-50", "KEY", "SECTION") == [-50.0]
+    assert parse_float_list(" 10 , 20 ", "KEY", "SECTION") == [10.0, 20.0]
+    assert parse_float_list("", "KEY", "SECTION") == [0.0]
+
+
+def test_parse_float_list_invalid():
+    """Test that invalid float values raise ValueError with clear message."""
+    with pytest.raises(ValueError, match="Invalid POWER_OFFSET value 'abc'"):
+        parse_float_list("abc", "POWER_OFFSET", "SHELLY_1")
+
+
+def test_read_all_configs_with_power_transform():
+    """Test that POWER_OFFSET and POWER_MULTIPLIER wrap the powermeter."""
+    config = configparser.ConfigParser()
+    config["SCRIPT_1"] = {
+        "COMMAND": 'echo "100"',
+        "POWER_OFFSET": "-50",
+        "POWER_MULTIPLIER": "1.05",
+    }
+
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.offsets == [-50.0]
+    assert pm.multipliers == [1.05]
+
+
+def test_read_all_configs_with_per_phase_transform():
+    """Test per-phase offset and multiplier values."""
+    config = configparser.ConfigParser()
+    config["SCRIPT_1"] = {
+        "COMMAND": 'echo "100"',
+        "POWER_OFFSET": "-10,-20,-30",
+        "POWER_MULTIPLIER": "1.05,1.02,1.03",
+    }
+
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.offsets == [-10.0, -20.0, -30.0]
+    assert pm.multipliers == [1.05, 1.02, 1.03]
+
+
+def test_read_all_configs_offset_only():
+    """Test that setting only POWER_OFFSET wraps with default multiplier."""
+    config = configparser.ConfigParser()
+    config["SCRIPT_1"] = {
+        "COMMAND": 'echo "100"',
+        "POWER_OFFSET": "10",
+    }
+
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.offsets == [10.0]
+    assert pm.multipliers == [1.0]
+
+
+def test_read_all_configs_zero_multiplier_accepted():
+    """Test that a multiplier of 0 is accepted (e.g. to null a phase)."""
+    config = configparser.ConfigParser()
+    config["SCRIPT_1"] = {
+        "COMMAND": 'echo "100"',
+        "POWER_MULTIPLIER": "0",
+    }
+
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert isinstance(pm, TransformedPowermeter)
+    assert pm.multipliers == [0.0]
+
+
+def test_read_all_configs_no_transform_when_not_configured():
+    """Test that no transform wrapper is applied when keys are absent."""
+    config = configparser.ConfigParser()
+    config["SCRIPT_1"] = {
+        "COMMAND": 'echo "100"',
+    }
+
+    powermeters = read_all_powermeter_configs(config)
+    assert len(powermeters) == 1
+    pm, _ = powermeters[0]
+    assert not isinstance(pm, TransformedPowermeter)

@@ -24,7 +24,10 @@ from powermeter import (
     ESPHome,
     JsonHttpPowermeter,
     TQEnergyManager,
+    HomeWizardPowermeter,
+    SmaEnergyMeter,
     ThrottledPowermeter,
+    TransformedPowermeter,
 )
 
 SHELLY_SECTION = "SHELLY"
@@ -41,6 +44,8 @@ AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
 JSON_HTTP_SECTION = "JSON_HTTP"
 TQ_EM_SECTION = "TQ_EM"
+HOMEWIZARD_SECTION = "HOMEWIZARD"
+SMA_ENERGY_METER_SECTION = "SMA_ENERGY_METER"
 
 
 class ClientFilter:
@@ -58,6 +63,22 @@ class ClientFilter:
             return False
 
 
+def parse_float_list(value, key_name, section):
+    # type: (str, str, str) -> List[float]
+    tokens = [t.strip() for t in value.split(",")]
+    result = []
+    for token in tokens:
+        if not token:
+            continue
+        try:
+            result.append(float(token))
+        except ValueError as err:
+            raise ValueError(
+                f"Invalid {key_name} value '{token}' in section [{section}]"
+            ) from err
+    return result if result else [0.0]
+
+
 def read_all_powermeter_configs(
     config: configparser.ConfigParser,
 ) -> List[Tuple[Powermeter, ClientFilter]]:
@@ -69,6 +90,25 @@ def read_all_powermeter_configs(
     for section in config.sections():
         powermeter = create_powermeter(section, config)
         if powermeter is not None:
+            # Apply power transform if configured
+            has_offset = config.has_option(section, "POWER_OFFSET")
+            has_multiplier = config.has_option(section, "POWER_MULTIPLIER")
+            if has_offset or has_multiplier:
+                offsets = parse_float_list(
+                    config.get(section, "POWER_OFFSET", fallback="0"),
+                    "POWER_OFFSET",
+                    section,
+                )
+                multipliers = parse_float_list(
+                    config.get(section, "POWER_MULTIPLIER", fallback="1"),
+                    "POWER_MULTIPLIER",
+                    section,
+                )
+                logger.info(
+                    f"Applying power transform (multiplier={multipliers}, offset={offsets}) to {section}"
+                )
+                powermeter = TransformedPowermeter(powermeter, offsets, multipliers)
+
             section_throttle_interval = config.getfloat(
                 section, "THROTTLE_INTERVAL", fallback=global_throttle_interval
             )
@@ -129,6 +169,10 @@ def create_powermeter(
         return create_tq_em_powermeter(section, config)
     elif section.startswith(JSON_HTTP_SECTION):
         return create_json_http_powermeter(section, config)
+    elif section.startswith(HOMEWIZARD_SECTION):
+        return create_homewizard_powermeter(section, config)
+    elif section.startswith(SMA_ENERGY_METER_SECTION):
+        return create_sma_energy_meter_powermeter(section, config)
     elif section.startswith("MQTT"):
         return create_mqtt_powermeter(section, config)
     else:
@@ -343,4 +387,26 @@ def create_tq_em_powermeter(
         config.get(section, "IP", fallback=""),
         config.get(section, "PASSWORD", fallback=""),
         timeout=config.getfloat(section, "TIMEOUT", fallback=5.0),
+    )
+
+
+def create_homewizard_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return HomeWizardPowermeter(
+        config.get(section, "IP", fallback=""),
+        config.get(section, "TOKEN", fallback=""),
+        config.get(section, "SERIAL", fallback=""),
+        verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=True),
+    )
+
+
+def create_sma_energy_meter_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return SmaEnergyMeter(
+        config.get(section, "MULTICAST_GROUP", fallback="239.12.255.254"),
+        config.getint(section, "PORT", fallback=9522),
+        config.getint(section, "SERIAL_NUMBER", fallback=0),
+        config.get(section, "INTERFACE", fallback=""),
     )

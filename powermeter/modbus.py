@@ -3,7 +3,6 @@ from pymodbus.client import ModbusTcpClient
 from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.constants import Endian
 
-
 DATA_TYPE_DECODERS = {
     "FLOAT32": "decode_32bit_float",
     "INT16": "decode_16bit_int",
@@ -61,7 +60,7 @@ class ModbusPowermeter(Powermeter):
 
     def get_powermeter_watts(self):
         read = getattr(self.client, self._read_method)
-        result = read(self.address, self.count, unit=self.unit_id)
+        result = read(self.address, self.count, slave=self.unit_id)
         if result.isError():
             raise Exception("Error reading Modbus data")
         decoder = BinaryPayloadDecoder.fromRegisters(

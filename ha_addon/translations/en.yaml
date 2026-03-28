@@ -1,10 +1,10 @@
 configuration:
   power_input_alias:
-    name: Power Input Alias
-    description: "The alias of the sensor(s) that provide the current power input. For multi-phase setups, enter multiple sensors separated by commas (e.g., 'sensor.phase1_in,sensor.phase2_in,sensor.phase3_in')."
+    name: Power Input Entity ID
+    description: "The entity ID of the sensor(s) that provide the current power input. For multi-phase setups, enter multiple entity IDs separated by commas (e.g., 'sensor.phase1_in,sensor.phase2_in,sensor.phase3_in')."
   power_output_alias:
-    name: Power Output Alias
-    description: "The alias of the sensor(s) that provide the current power output. For multi-phase setups, enter multiple sensors separated by commas (e.g., 'sensor.phase1_out,sensor.phase2_out,sensor.phase3_out'). If you only have one sensor for both input and output, leave this empty."
+    name: Power Output Entity ID
+    description: "The entity ID of the sensor(s) that provide the current power output. For multi-phase setups, enter multiple entity IDs separated by commas (e.g., 'sensor.phase1_out,sensor.phase2_out,sensor.phase3_out'). If you only have one sensor for both input and output, leave this empty."
   poll_interval:
     name: Poll Interval
     description: "The interval in seconds at which the ct001 should poll the power input and output sensors. Usually you should leave this at 1 second. Ignore this if you are emulating a different device."
@@ -23,3 +23,12 @@ configuration:
   custom_config:
     name: Custom Config
     description: "Optional. Name of a custom config.ini file to use instead of the UI configuration. The file must be placed in the add-on's configuration directory."
+  marstek_auto_register_ct_device:
+    name: Auto-register Managed CT Device (Marstek)
+    description: "If enabled, the add-on signs in to your Marstek account at startup and ensures one managed fake CT device exists for each emulated CT type (ct002 -> HME-4, ct003 -> HME-3). Existing matching devices are reused to avoid duplicates."
+  marstek_mailbox:
+    name: Marstek Account Email
+    description: "Email address used to sign in to your Marstek account for managed CT device registration."
+  marstek_password:
+    name: Marstek Account Password
+    description: "Password used to sign in to your Marstek account for managed CT device registration."

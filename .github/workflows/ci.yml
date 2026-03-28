@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     tags: [ "*.*.*" ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 permissions:
   packages: write
@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install pipenv
-          pipenv install --dev
+          pipenv sync --dev
 
       - name: Run tests
         run: pipenv run python3 -m pytest --junitxml=test-results.xml
@@ -84,8 +84,6 @@ jobs:
         platform:
           - linux/amd64
           - linux/arm64
-          - linux/arm/v7
-          - linux/arm/v6
     uses: ./.github/workflows/build-image.yml
     with:
       registry: ghcr.io

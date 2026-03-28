@@ -17,6 +17,16 @@ POLL_INTERVAL = 1
 # Can be overridden per powermeter section
 THROTTLE_INTERVAL = 0
 
+#[MARSTEK]
+## Optional: auto-register managed fake CT devices in Marstek cloud on startup.
+#ENABLE = False
+#BASE_URL = https://eu.hamedata.com
+#MAILBOX = your@email.example
+#PASSWORD = your_password
+## Prefix is fixed to acde48 for managed fake devices.
+## Used for add-device request
+#TIMEZONE = Europe/Berlin
+
 #[SHELLY]
 #TYPE = 1PM #PLUS1PM #EM #3EM #3EMPRO
 #IP = 192.168.1.100
@@ -73,7 +83,7 @@ THROTTLE_INTERVAL = 0
 ## Single sensor mode - comma-separated list for multiple phases
 #CURRENT_POWER_ENTITY = sensor.phase1_power, sensor.phase2_power, sensor.phase3_power
 
-## Or for separate input/output sensors
+## Or for separate input/output sensors (use entity IDs)
 #POWER_CALCULATE = True
 #POWER_INPUT_ALIAS = sensor.phase1_input, sensor.phase2_input, sensor.phase3_input
 #POWER_OUTPUT_ALIAS = sensor.phase1_output, sensor.phase2_output, sensor.phase3_output
@@ -141,6 +151,32 @@ THROTTLE_INTERVAL = 0
 #PASSWORD = secret (Optional)
 #TIMEOUT = 5.0 (Optional)
 #THROTTLE_INTERVAL = 1
+
+#[HOMEWIZARD]
+## HomeWizard P1 Meter via WebSocket API (v2)
+## Connects over WSS and subscribes to real-time measurement updates
+## Token must be obtained once via POST /api/user while pressing the device button
+## See: https://api-documentation.homewizard.com/docs/v2/
+#IP = 192.168.1.110
+#TOKEN = YOUR_32_CHAR_HEX_TOKEN
+#SERIAL = your_device_serial
+## Verify server TLS using the bundled HomeWizard CA (default True).
+## Set False only if you get certificate errors on a trusted LAN (insecure).
+#VERIFY_SSL = True
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 0
+
+#[SMA_ENERGY_METER]
+## SMA Energy Meter / Sunny Home Manager via Speedwire multicast
+## Listens for UDP multicast broadcasts and reports per-phase power (L1, L2, L3)
+#MULTICAST_GROUP = 239.12.255.254
+#PORT = 9522
+## Serial number of the meter (0 = auto-detect first meter found)
+#SERIAL_NUMBER = 0
+## Network interface IP to bind to (optional, leave empty for all interfaces)
+#INTERFACE =
+## Per-powermeter throttling override (optional)
+#THROTTLE_INTERVAL = 0
 
 #[SCRIPT]
 #COMMAND = /path/to/your/script.sh

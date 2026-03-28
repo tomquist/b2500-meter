@@ -37,6 +37,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.registry }}/${{ steps.lower-repo.outputs.IMAGE_NAME }}
+          flavor: |
+            latest=${{ github.ref == 'refs/heads/main' }}
       - name: Log in to Container registry
         uses: docker/login-action@v3
         with:

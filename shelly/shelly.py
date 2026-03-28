@@ -1,11 +1,14 @@
 import socket
 import threading
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple
 from config import ClientFilter
 from powermeter import Powermeter
 from config.logger import logger
+
+BATTERY_INACTIVE_TIMEOUT_SECONDS = 120
 
 
 class Shelly:
@@ -23,6 +26,9 @@ class Shelly:
         self._value_mutex = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=5)
         self._send_lock = threading.Lock()
+        self._battery_state_lock = threading.Lock()
+        self._battery_last_seen = {}
+        self._inactive_batteries = set()
 
     def _calculate_derived_values(self, power):
         decimal_point_enforcer = 0.001
@@ -79,8 +85,54 @@ class Shelly:
             },
         }
 
+    def _track_battery_seen(self, addr):
+        battery_ip = addr[0]
+        now = time.time()
+
+        with self._battery_state_lock:
+            first_seen = battery_ip not in self._battery_last_seen
+            was_inactive = battery_ip in self._inactive_batteries
+            self._battery_last_seen[battery_ip] = now
+            if was_inactive:
+                self._inactive_batteries.remove(battery_ip)
+
+        if first_seen:
+            logger.info(
+                "Battery detected on Shelly UDP port %s: %s",
+                self._udp_port,
+                battery_ip,
+            )
+        elif was_inactive:
+            logger.info(
+                "Battery reconnected on Shelly UDP port %s after inactivity: %s",
+                self._udp_port,
+                battery_ip,
+            )
+
+    def _log_inactive_batteries(self):
+        now = time.time()
+        newly_inactive_batteries = []
+
+        with self._battery_state_lock:
+            for battery_ip, last_seen in self._battery_last_seen.items():
+                if (
+                    now - last_seen >= BATTERY_INACTIVE_TIMEOUT_SECONDS
+                    and battery_ip not in self._inactive_batteries
+                ):
+                    self._inactive_batteries.add(battery_ip)
+                    newly_inactive_batteries.append(battery_ip)
+
+        for battery_ip in newly_inactive_batteries:
+            logger.info(
+                "Battery inactive on Shelly UDP port %s for >= %ss: %s",
+                self._udp_port,
+                BATTERY_INACTIVE_TIMEOUT_SECONDS,
+                battery_ip,
+            )
+
     def _handle_request(self, sock, data, addr):
         request_str = data.decode()
+        self._track_battery_seen(addr)
         logger.debug(f"Received UDP message: {request_str}")
         logger.debug(f"From: {addr[0]}:{addr[1]}")
 
@@ -118,13 +170,20 @@ class Shelly:
 
     def udp_server(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
         sock.bind(("", self._udp_port))
         logger.info(f"Shelly emulator listening on UDP port {self._udp_port}...")
 
         try:
             while not self._stop:
-                data, addr = sock.recvfrom(1024)
+                try:
+                    data, addr = sock.recvfrom(1024)
+                except TimeoutError:
+                    self._log_inactive_batteries()
+                    continue
+
                 self._executor.submit(self._handle_request, sock, data, addr)
+                self._log_inactive_batteries()
 
         finally:
             sock.close()
