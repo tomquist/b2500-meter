@@ -1,12 +1,15 @@
+import importlib
 import logging
 from unittest.mock import patch
 
 from b2500_meter.config.logger import setLogLevel
 
+logger_module = importlib.import_module("b2500_meter.config.logger")
 
-@patch("b2500_meter.config.logger.logging.basicConfig")
-def test_set_log_level_uses_timestamped_format(basic_config):
-    setLogLevel("info")
+
+def test_set_log_level_uses_timestamped_format():
+    with patch.object(logger_module.logging, "basicConfig") as basic_config:
+        setLogLevel("info")
 
     basic_config.assert_called_once()
     assert basic_config.call_args.kwargs == {
