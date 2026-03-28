@@ -449,6 +449,20 @@ IP = 192.168.1.100
 #TIMEOUT = 5.0 (Optional)
 ```
 
+### HomeWizard
+
+Reads a [HomeWizard](https://www.homewizard.com/) P1 dongle (or compatible device) over the local **WebSocket** API (`wss://`). Obtain a token once via `POST /api/user` while confirming on the device; see the [HomeWizard API docs](https://api-documentation.homewizard.com/docs/v2/).
+
+```ini
+[HOMEWIZARD]
+IP = 192.168.1.110
+TOKEN = YOUR_32_CHAR_HEX_TOKEN
+SERIAL = your_device_serial
+# Optional: disable TLS certificate verification on a trusted LAN if verification fails (default True)
+# VERIFY_SSL = True
+# THROTTLE_INTERVAL = 0
+```
+
 ### Modbus
 
 ```ini
