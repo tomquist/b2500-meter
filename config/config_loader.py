@@ -21,6 +21,7 @@ from powermeter import (
     MqttPowermeter,
     Script,
     Sml,
+    parse_sml_obis_config,
     ESPHome,
     JsonHttpPowermeter,
     TQEnergyManager,
@@ -214,7 +215,17 @@ def create_script_powermeter(
 def create_sml_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
-    return Sml(config.get(section, "SERIAL", fallback=""))
+    oc, o1, o2, o3 = parse_sml_obis_config(section, config)
+    kwargs = dict(
+        obis_power_current=oc,
+        obis_power_l1=o1,
+        obis_power_l2=o2,
+        obis_power_l3=o3,
+    )
+    raw = config.get(section, "SERIAL", fallback="").strip()
+    if not raw:
+        return Sml(**kwargs)
+    return Sml(raw, **kwargs)
 
 
 def create_mqtt_powermeter(

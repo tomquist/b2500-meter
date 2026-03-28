@@ -4,7 +4,6 @@ import logging
 from typing import List, Optional
 from .base import Powermeter
 
-
 logger = logging.getLogger(__name__)
 
 

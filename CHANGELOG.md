@@ -1,6 +1,7 @@
 # Changelog
 
 ## Next
+- Added SML powermeter support for power readings over a local serial port (Smart Message Language / IR head), configurable with `[SML]` and `SERIAL`; auto-detects per-phase power when L1–L3 OBIS are present and supports optional OBIS hex overrides ([#229](https://github.com/tomquist/b2500-meter/pull/229))
 - Clarified README: emulated device types (CT001/Shelly) are listed separately from powermeter data sources such as SMA Energy Meter / Sunny Home Manager
 - Added HomeWizard P1 powermeter support via the device WebSocket API with token and serial configuration ([#231](https://github.com/tomquist/b2500-meter/pull/231)), including optional `VERIFY_SSL` to disable TLS certificate verification on trusted networks when needed ([#254](https://github.com/tomquist/b2500-meter/pull/254))
 - Added SMA Energy Meter / Sunny Home Manager support via Speedwire multicast protocol with auto-detection and per-phase power readings ([#231](https://github.com/tomquist/b2500-meter/pull/252))
