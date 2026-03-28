@@ -383,4 +383,5 @@ def create_homewizard_powermeter(
         config.get(section, "IP", fallback=""),
         config.get(section, "TOKEN", fallback=""),
         config.get(section, "SERIAL", fallback=""),
+        verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=True),
     )

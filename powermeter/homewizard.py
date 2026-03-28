@@ -15,12 +15,19 @@ CA_CERT_PATH = os.path.join(os.path.dirname(__file__), "homewizard_ca.pem")
 
 
 class HomeWizardPowermeter(Powermeter):
-    def __init__(self, ip, token, serial):
+    def __init__(self, ip, token, serial, verify_ssl=True):
         self.ip = ip
         self.token = token
         self.serial = serial
+        self._verify_ssl = verify_ssl
         self.values = None
         self._lock = threading.Lock()
+
+        if not verify_ssl:
+            logger.warning(
+                "HomeWizard: TLS certificate verification is disabled "
+                "(VERIFY_SSL=False); use only on a trusted LAN"
+            )
 
         url = f"wss://{self.ip}/api/ws"
         self.ws = websocket.WebSocketApp(
@@ -41,9 +48,13 @@ class HomeWizardPowermeter(Powermeter):
 
     def _build_sslopt(self):
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ssl_context.load_verify_locations(CA_CERT_PATH)
-        ssl_context.check_hostname = True
-        ssl_context.verify_mode = ssl.CERT_REQUIRED
+        if self._verify_ssl:
+            ssl_context.load_verify_locations(CA_CERT_PATH)
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+        else:
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         return {
             "context": ssl_context,
             "server_hostname": f"appliance/p1dongle/{self.serial}",
