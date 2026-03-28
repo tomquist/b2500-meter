@@ -18,6 +18,7 @@
 
 ### Breaking
 - The Home Assistant add-on no longer publishes images for 32-bit ARM (`armhf` / `armv7`). Installations must use a 64-bit Home Assistant OS or supervisor environment (`amd64` or `aarch64`), consistent with Home Assistant dropping 32-bit support.
+- **CT001 emulation removed** (Python `ct001` package and the `nodered.json` flow). Use `ct002` or `ct003` for multiple storage devices; use a Shelly `DEVICE_TYPE` otherwise (replacing `ct001`). Drop obsolete `[GENERAL]` options `DISABLE_SUM_PHASES`, `DISABLE_ABSOLUTE_VALUES`, and `POLL_INTERVAL` if present. The Home Assistant add-on no longer offers `poll_interval` or `disable_absolute_values`; remove those keys from saved add-on configuration if validation fails after upgrade ([#258](https://github.com/tomquist/b2500-meter/pull/258)).
 
 ## 1.0.8
 - Added support for Modbus holding registers through new `REGISTER_TYPE` configuration option ([#173](https://github.com/tomquist/b2500-meter/pull/173))

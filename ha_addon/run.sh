@@ -70,8 +70,6 @@ else
     {
         echo "[GENERAL]"
         echo "DEVICE_TYPE=$(bashio::config 'device_types')"
-        echo "POLL_INTERVAL=$(bashio::config 'poll_interval')"
-        echo "DISABLE_ABSOLUTE_VALUES=$(bashio::config 'disable_absolute_values')"
         echo "THROTTLE_INTERVAL=$(bashio::config 'throttle_interval')"
         echo "ENABLE_HEALTH_CHECK=true"
         echo ""

@@ -1,15 +1,14 @@
 # B2500 Meter
 
 This project emulates Smart Meter devices for Marstek storage systems such as the B2500, Marstek Jupiter, and Marstek Venus energy storage systems while allowing integration with almost any smart meter. It does this by emulating one or more of the following devices:
-- CT001
-- CT002 / CT003
+- CT002 / CT003 (Marstek CT protocol; use for **multiple** storage devices)
 - Shelly Pro 3EM
   - Uses port 1010 (B2500 firmware up to version 224) and port 2220 (B2500 firmware version 226+)
   - Can be specifically targeted with shellypro3em_old (port 1010) or shellypro3em_new (port 2220)
 - Shelly EM gen3
 - Shelly Pro EM50
 
-**Note:** If your B2500 or Marstek storage system supports it, always prefer a Shelly device type over CT001 for better compatibility and reliability.
+**Note:** Use **CT002** or **CT003** when you steer **multiple** storage devices; use a **Shelly** device type (`shellypro3em`, `shellyemg3`, `shellyproem50`, …) otherwise. See [Configuration](#configuration) and [docs/ct002-ct003-protocol.md](docs/ct002-ct003-protocol.md) for CT002/CT003.
 
 ## Getting Started
 
@@ -53,7 +52,6 @@ The B2500 Meter project can be installed and run in several ways depending on yo
      - If using calculated power, also set the `Power Output Entity ID` to a comma-separated list of three entity IDs
      - Example: `sensor.phase1,sensor.phase2,sensor.phase3`
    - Set `Device Types` (comma-separated list) to the device types you want to emulate:
-     - `ct001`: CT001 emulator
      - `ct002`: CT002 emulator (Marstek CT002 protocol)
      - `ct003`: CT003 emulator (same protocol as CT002)
      - `shellypro3em`: Shelly Pro 3EM emulator (uses both ports 1010 and 2220 for compatibility with all B2500 firmware versions)
@@ -62,7 +60,7 @@ The B2500 Meter project can be installed and run in several ways depending on yo
      - `shellyemg3`: Shelly EM gen3 emulator
      - `shellyproem50`: Shelly Pro EM50 emulator
      
-     **Important:** Always prefer a Shelly device type over CT001 if supported by your energy storage system.
+     **Tip:** Use `ct002`/`ct003` for multiple devices; use a Shelly type (e.g. `shellypro3em` or `_old`/`_new`) otherwise.
    - Click "Save" to apply the configuration
 
    B) Using a Custom Configuration File for Advanced Configuration:
@@ -138,18 +136,13 @@ Configuration is managed via `config.ini`. Each powermeter type has specific set
 
 ```ini
 [GENERAL]
-# Comma-separated list of device types to emulate (ct001, ct002, ct003, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
-DEVICE_TYPE = ct001
+# Use ct002/ct003 for multiple storage devices; use shelly* types otherwise.
+# Comma-separated list of device types to emulate (ct002, ct003, shellypro3em, shellyemg3, shellyproem50, shellypro3em_old, shellypro3em_new)
+DEVICE_TYPE = shellypro3em
 # Optional: comma-separated device IDs, same order as DEVICE_TYPE (auto-generated if omitted). Use for stable IDs across reinstalls or to match an existing device.
 #DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# Sum power values of all phases and report on phase 1 (ct001/ct002/ct003 only and default is False)
-DISABLE_SUM_PHASES = False
-# Send absolute values (necessary for storage system) (ct001 only and default is False)
-DISABLE_ABSOLUTE_VALUES = False
-# Interval for sending power values in seconds (ct001 only and default is 1)
-POLL_INTERVAL = 1
 # Global throttling interval in seconds to prevent control instability or oscillation
 # Set to 0 to disable throttling (default). Recommended: 1-3 seconds for slow data sources
 # Can be overridden per powermeter section
@@ -246,7 +239,7 @@ IP = 192.168.1.103
 POWER_MULTIPLIER = 1,0,1
 ```
 
-**Note:** Transforms are applied before CT001's sum/absolute value operations.
+**Note:** Transforms are applied when readings are taken from the powermeter, before values are passed to the emulated device (Shelly, CT002/CT003, etc.).
 
 ### Shelly
 
@@ -592,28 +585,6 @@ CURRENT_POWER_ENTITY = sensor.current_power
 # No NETMASK specified - will match all clients (0.0.0.0/0)
 ```
 
-## Node-RED Implementation
-
-This project also provides a Node-RED implementation, allowing integration with various smart meters. The Node-RED flow is available in the `nodered.json` file. Note that the Node-RED implementation only supports emulating a CT001.
-
-### Installation and Setup
-
-1. **Import the Node-RED Flow**
-   - Open your Node-RED dashboard.
-   - Navigate to the menu in the top right corner, select "Import" and then "Clipboard".
-   - Copy the content of `nodered.json` and paste it into the import dialog, then click "Import".
-
-2. **Hooking Powermeter Readings**
-   - Ensure your powermeter readings are available as a Node-RED message with the power values in the payload.
-   - Connect the output of your powermeter reading nodes to the input node of the subflow named "B2500". The subflow can handle:
-     - An array of 3 numbers or strings containing numbers, representing the power values of each phase, e.g. `[100, 200, 300]`.
-     - A single number or string containing a number, which will be interpreted as the value for the first phase, with the other two phases set to 0.
-   - Ensure that a fresh powermeter reading is sent to the flow every second.
-
-3. **Running the Flow**
-   - Deploy the flow by clicking the "Deploy" button on the top right corner of the Node-RED dashboard.
-   - The flow will now listen for powermeter readings and handle the UDP and TCP communications as configured.
-
 # Frequently Asked Questions (FAQ)
 
 ## General Usage and Setup
@@ -715,9 +686,9 @@ A: You can only verify the initial configuration. Full testing requires a Marste
 
 ## Advanced
 
-### How do I handle negative values for CT001?
+### How do signed (positive/negative) power values work with the emulator?
 
-A: The CT001 protocol can't handle negative values on some firmware versions. By default, the emulator sends absolute values or clamps negatives to zero, adjustable via `DISABLE_ABSOLUTE_VALUES`.
+A: Powermeters typically report import as positive and export as negative (see [What's the correct power value convention?](#whats-the-correct-power-value-convention) above). Shelly and CT002/CT003 emulators forward those signed watts into the Marstek protocols; behavior on the battery side depends on your firmware and device type.
 
 ## License
 
