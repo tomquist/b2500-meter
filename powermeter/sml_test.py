@@ -81,20 +81,14 @@ class TestParseSmlObisConfig(unittest.TestCase):
 
     def test_override_normalized(self):
         config = configparser.ConfigParser()
-        config.read_string("""
-            [SML]
-            OBIS_POWER_CURRENT = 0100100700FF
-            """)
+        config.read_string("[SML]\n" "OBIS_POWER_CURRENT = 0100100700FF\n")
         oc, o1, o2, o3 = parse_sml_obis_config("SML", config)
         self.assertEqual(oc, "0100100700ff")
         self.assertEqual(o1, _OBIS_POWER_L1)
 
     def test_invalid_length_raises(self):
         config = configparser.ConfigParser()
-        config.read_string("""
-            [SML]
-            OBIS_POWER_CURRENT = deadbeef
-            """)
+        config.read_string("[SML]\n" "OBIS_POWER_CURRENT = deadbeef\n")
         with self.assertRaises(ValueError):
             parse_sml_obis_config("SML", config)
 
@@ -102,32 +96,27 @@ class TestParseSmlObisConfig(unittest.TestCase):
 class TestCreateSmlPowermeter(unittest.TestCase):
     def test_missing_serial_raises(self):
         config = configparser.ConfigParser()
-        config.read_string("""
-            [SML]
-            """)
+        config.read_string("[SML]\n")
         with self.assertRaises(ValueError) as ctx:
             create_sml_powermeter("SML", config)
         self.assertIn("SERIAL", str(ctx.exception))
 
     def test_serial_trimmed(self):
         config = configparser.ConfigParser()
-        config.read_string("""
-            [SML]
-            SERIAL = /dev/ttyAMA0
-            """)
+        config.read_string("[SML]\n" "SERIAL = /dev/ttyAMA0\n")
         pm = create_sml_powermeter("SML", config)
         self.assertEqual(pm._serial_device, "/dev/ttyAMA0")
 
     def test_custom_obis_passed_to_sml(self):
         config = configparser.ConfigParser()
-        config.read_string("""
-            [SML]
-            SERIAL = /dev/ttyUSB0
-            OBIS_POWER_CURRENT = 0100100700ff
-            OBIS_POWER_L1 = 0100240700ff
-            OBIS_POWER_L2 = 0100380700ff
-            OBIS_POWER_L3 = 01004c0700ff
-            """)
+        config.read_string(
+            "[SML]\n"
+            "SERIAL = /dev/ttyUSB0\n"
+            "OBIS_POWER_CURRENT = 0100100700ff\n"
+            "OBIS_POWER_L1 = 0100240700ff\n"
+            "OBIS_POWER_L2 = 0100380700ff\n"
+            "OBIS_POWER_L3 = 01004c0700ff\n"
+        )
         pm = create_sml_powermeter("SML", config)
         self.assertEqual(pm._obis_current, "0100100700ff")
         self.assertEqual(pm._obis_l1, "0100240700ff")
