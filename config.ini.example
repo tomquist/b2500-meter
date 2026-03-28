@@ -5,7 +5,7 @@ DEVICE_TYPE = ct001
 #DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# Sum power values of all phases and report on phase 1 (ct001/ct002/ct003 only and default is False)
+# Sum power values of all phases and report on phase 1 (ct001 only; default is False)
 DISABLE_SUM_PHASES = False
 # Send absolute values (necessary for storage system) (ct001 only and default is False)
 DISABLE_ABSOLUTE_VALUES = False
