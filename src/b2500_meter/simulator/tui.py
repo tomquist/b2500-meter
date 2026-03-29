@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, ClassVar
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.widgets import Footer, Header, Sparkline, Static
+from textual.widgets import Footer, Header, Static
 
 if TYPE_CHECKING:
     from .runner import SimulationRunner
@@ -43,20 +43,10 @@ class SimulatorApp(App):
         padding: 0 1;
     }
     #grid-table { margin-top: 1; }
-    #grid-graph-label {
+    #grid-graph {
         height: auto;
         padding: 0 1;
         margin-top: 1;
-    }
-    #grid-graph {
-        height: 6;
-        margin: 0 1;
-    }
-    Sparkline > .sparkline--min-color {
-        color: $success;
-    }
-    Sparkline > .sparkline--max-color {
-        color: $error;
     }
     .section-title {
         text-style: bold;
@@ -118,8 +108,7 @@ class SimulatorApp(App):
         with Vertical():
             yield Static("[b]GRID POWER[/b]", classes="section-title")
             yield Static(id="grid-table")
-            yield Static(id="grid-graph-label")
-            yield Sparkline([], id="grid-graph")
+            yield Static(id="grid-graph")
             yield Static("[b]BATTERIES[/b]", classes="section-title")
             yield Static(id="battery-table")
             yield Static("[b]LOADS[/b]", classes="section-title")
@@ -192,17 +181,8 @@ class SimulatorApp(App):
 
         total = grid.get("total", 0.0)
         self._grid_history.append(total)
-        sparkline = self.query_one("#grid-graph", Sparkline)
-        sparkline.data = list(self._grid_history)
-
-        # Graph label with range
-        if self._grid_history:
-            lo = min(self._grid_history)
-            hi = max(self._grid_history)
-            label = f"  Grid total (last {len(self._grid_history)}s):  min [green]{lo:.0f}W[/]  max [red]{hi:.0f}W[/]"
-        else:
-            label = ""
-        self.query_one("#grid-graph-label", Static).update(label)
+        graph_text = self._render_grid_graph()
+        self.query_one("#grid-graph", Static).update(graph_text)
 
         # Batteries
         batteries = status.get("batteries", [])
@@ -291,6 +271,83 @@ class SimulatorApp(App):
             f"  [b] select battery  [←→] SOC ±10%  [0/9] SOC 0%/100%\n"
             f"  [p/P] max power ±100W  [a] auto mode  [q] quit"
         )
+
+    # -- grid graph --------------------------------------------------------
+
+    def _render_grid_graph(self) -> str:
+        """Render a zero-centred bar chart of grid power history.
+
+        Bars above the zero line (red ▄/█) = import from grid.
+        Bars below the zero line (green ▀/█) = export to grid.
+        Uses half-block characters for sub-row resolution.
+        """
+        data = list(self._grid_history)
+        if not data:
+            return ""
+
+        rows_above = 3  # rows for positive (import)
+        rows_below = 3  # rows for negative (export)
+        total_rows = rows_above + rows_below
+
+        lo = min(min(data), 0.0)
+        hi = max(max(data), 0.0)
+        # Scale uses half-blocks (2 steps per row)
+        max_pos = max(hi, 1.0)
+        max_neg = max(-lo, 1.0)
+        steps_above = rows_above * 2
+        steps_below = rows_below * 2
+
+        # Build the grid row by row (top to bottom)
+        # Row 0 = top of positive area, row rows_above-1 = just above zero
+        # Row rows_above = just below zero, row total_rows-1 = bottom of negative
+        lines: list[str] = []
+        for row in range(total_rows):
+            chars: list[str] = []
+            for val in data:
+                if row < rows_above:
+                    # Positive region: row 0 is highest
+                    # This row covers steps (rows_above - row - 1)*2 .. (rows_above - row)*2
+                    step_lo = (rows_above - row - 1) * 2
+
+                    if val <= 0:
+                        chars.append(" ")
+                    else:
+                        filled = val / max_pos * steps_above
+                        if filled > step_lo + 1:
+                            chars.append("[red]█[/]")
+                        elif filled > step_lo:
+                            chars.append("[red]▄[/]")
+                        else:
+                            chars.append(" ")
+                else:
+                    # Negative region: row rows_above is closest to zero
+                    neg_row = row - rows_above  # 0 = just below zero
+                    step_lo = neg_row * 2
+
+                    if val >= 0:
+                        chars.append(" ")
+                    else:
+                        filled = -val / max_neg * steps_below
+                        if filled > step_lo + 1:
+                            chars.append("[green]█[/]")
+                        elif filled > step_lo:
+                            chars.append("[green]▀[/]")
+                        else:
+                            chars.append(" ")
+
+            # Add axis label
+            if row == 0:
+                label = f" {hi:>+.0f}W"
+            elif row == rows_above - 1:
+                label = " ─ 0W"
+            elif row == total_rows - 1:
+                label = f" {lo:>+.0f}W"
+            else:
+                label = ""
+            lines.append("  " + "".join(chars) + label)
+
+        header = f"  Grid total (last {len(data)}s)"
+        return header + "\n" + "\n".join(lines)
 
     # -- actions -----------------------------------------------------------
 
