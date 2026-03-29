@@ -27,9 +27,15 @@ dev = [
     "pytest-cov>=5.0.0",
     "mypy>=1.13.0",
 ]
+sim = [
+    "aiohttp>=3.9.0",
+    "textual>=1.0.0",
+    "textual-plot>=0.10.1",
+]
 
 [project.scripts]
 b2500-meter = "b2500_meter.main:main"
+b2500-sim = "b2500_meter.simulator.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/b2500_meter"]

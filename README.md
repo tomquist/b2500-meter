@@ -713,6 +713,242 @@ A: You can only verify the initial configuration. Full testing requires a Marste
 
 A: Powermeters typically report import as positive and export as negative (see [What's the correct power value convention?](#whats-the-correct-power-value-convention) above). Shelly and CT002/CT003 emulators forward those signed watts into the Marstek protocols; behavior on the battery side depends on your firmware and device type.
 
+## Simulator
+
+The project includes a standalone battery and powermeter simulator (`b2500-sim`) that lets you test the CT002 emulator without real hardware. It simulates N batteries speaking the CT002 UDP protocol and exposes an HTTP endpoint that b2500-meter reads as a powermeter.
+
+### Install
+
+```bash
+pip install 'b2500-meter[sim]'
+# or with uv:
+uv pip install 'b2500-meter[sim]'
+```
+
+### Quick Start
+
+**Terminal 1** — Start the simulator (1 battery, single-phase, with TUI):
+```bash
+b2500-sim run --batteries 1 --phases 1
+```
+
+**Terminal 2** — Start b2500-meter with the matching config:
+```bash
+b2500-sim config > config.ini   # generate a config snippet
+b2500-meter -c config.ini
+```
+
+The generated `config.ini` looks like:
+```ini
+[GENERAL]
+DEVICE_TYPE = ct002
+
+[CT002]
+UDP_PORT = 12345
+ACTIVE_CONTROL = True
+
+[JSON_HTTP]
+URL = http://localhost:8080/power
+JSON_PATHS = $.phase_a,$.phase_b,$.phase_c
+```
+
+### Multi-Battery 3-Phase Setup
+
+```bash
+# 3 batteries distributed across 3 phases
+b2500-sim run --batteries 3 --phases 3
+
+# Custom base load and initial SOC
+b2500-sim run --batteries 2 --phases 3 --base-load 500,300,200 --soc 0.8
+```
+
+### JSON Config File
+
+For full control, use a JSON config file:
+
+```bash
+b2500-sim run -c sim_config.json
+```
+
+Example `sim_config.json`:
+```json
+{
+  "ct": {
+    "mac": "112233445566",
+    "host": "127.0.0.1",
+    "port": 12345
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "powermeter": {
+    "base_load": [100, 100, 100],
+    "loads": [
+      {"name": "LED lights", "power": 30, "phase": "A"},
+      {"name": "TV + entertainment", "power": 80, "phase": "B"},
+      {"name": "Router + NAS", "power": 40, "phase": "A"},
+      {"name": "Microwave", "power": 800, "phase": "A"},
+      {"name": "Washing machine", "power": 400, "phase": "B"}
+    ],
+    "solar_max": 2000,
+    "solar_phases": ["A"]
+  },
+  "batteries": [
+    {"mac": "02B250000001", "phase": "A", "capacity_wh": 2560, "initial_soc": 0.5},
+    {"mac": "02B250000002", "phase": "B", "capacity_wh": 2560, "initial_soc": 0.8}
+  ]
+}
+```
+
+A more complete example simulating a European 3-phase household with rooftop solar,
+multiple appliances, and 4 batteries (two on the heaviest phase):
+
+```json
+{
+  "ct": {
+    "mac": "AABBCCDDEEFF",
+    "host": "127.0.0.1",
+    "port": 12345
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "powermeter": {
+    "base_load": [120, 80, 60],
+    "base_noise": 30,
+    "loads": [
+      {"name": "LED lights",        "power":   30, "phase": "A"},
+      {"name": "Router + NAS",      "power":   40, "phase": "A"},
+      {"name": "Coffee machine",    "power":  200, "phase": "A"},
+      {"name": "TV + entertainment","power":   80, "phase": "B"},
+      {"name": "Washing machine",   "power":  400, "phase": "B"},
+      {"name": "Laptop charger",    "power":   65, "phase": "B"},
+      {"name": "Microwave",         "power":  800, "phase": "A"},
+      {"name": "Fridge/freezer",    "power":  120, "phase": "C"},
+      {"name": "Vacuum cleaner",    "power":  600, "phase": "C"}
+    ],
+    "solar_max": 5000,
+    "solar_phases": ["A", "B", "C"]
+  },
+  "batteries": [
+    {
+      "mac": "02B250000001",
+      "phase": "A",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 2560,
+      "initial_soc": 0.9,
+      "ramp_rate": 150,
+      "poll_interval": 1.0
+    },
+    {
+      "mac": "02B250000002",
+      "phase": "A",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 2560,
+      "initial_soc": 0.7
+    },
+    {
+      "mac": "02B250000003",
+      "phase": "B",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 5120,
+      "initial_soc": 0.4
+    },
+    {
+      "mac": "02B250000004",
+      "phase": "C",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 2560,
+      "initial_soc": 0.2
+    }
+  ],
+  "auto_mode": true,
+  "auto_interval": [15, 45],
+  "log_interval": 10
+}
+```
+
+This configuration demonstrates:
+- **Phase imbalance**: Kitchen loads (coffee machine, microwave) are concentrated on phase A with two batteries to compensate; entertainment/laundry on B; fridge/cleaning on C
+- **Two batteries on one phase**: Batteries `0001` and `0002` both serve phase A — CT002's fair distribution algorithm splits the target between them
+- **Mixed capacities**: Battery `0003` has a larger 5.12 kWh capacity (simulating a newer model)
+- **Varied SOC**: Batteries start at different charge levels (90%, 70%, 40%, 20%) to test saturation timing
+- **3-phase solar**: 5 kWp rooftop system balanced across all three phases — even moderate production exceeds the base load, causing grid export (negative readings) and battery charging
+- **Custom ramp rate**: Battery `0001` ramps at 150 W/s instead of the default 200 W/s
+- **Auto mode**: Randomly toggles loads and solar every 15–45 seconds for hands-free testing
+
+### Interactive Controls
+
+When running with the TUI (`b2500-sim run`, without `--no-tui`), you can interact with the simulation using keyboard shortcuts displayed on screen. The TUI shows live battery state (power, SOC, targets), grid readings per phase, and active loads.
+
+Without the TUI, you can control the simulation via the HTTP API:
+
+```bash
+# Toggle a load on/off (1-based index)
+b2500-sim load toggle 1
+
+# Set solar production (watts)
+b2500-sim solar set 800
+b2500-sim solar set off
+
+# Set a battery's SOC (for testing saturation)
+b2500-sim battery 02B250000001 soc 0.0
+
+# Show full status
+b2500-sim status
+```
+
+### Daemon Mode
+
+Run the simulator in the background and attach/detach the TUI:
+
+```bash
+# Start headless daemon
+b2500-sim start -c sim_config.json
+
+# Attach TUI to running daemon
+b2500-sim attach
+
+# Stop daemon
+b2500-sim stop
+```
+
+### Custom Ports
+
+If you need non-default ports (e.g. to avoid conflicts):
+
+```bash
+# Simulator on custom ports
+b2500-sim run --batteries 2 --phases 3 --ct-port 54321 --http-port 9090
+
+# Generate matching b2500-meter config
+b2500-sim config --ct-port 54321 --http-port 9090 > config.ini
+```
+
+### Headless Mode
+
+For CI or scripted testing, run without the TUI:
+
+```bash
+b2500-sim run --batteries 2 --phases 3 --no-tui
+```
+
+### How It Works
+
+The simulator is fully decoupled from b2500-meter — it communicates purely over the network:
+
+- **Battery simulators** send UDP requests to b2500-meter's CT002 emulator using the same protocol as real Marstek B2500 batteries
+- **Powermeter simulator** serves an HTTP JSON endpoint (`GET /power`) that b2500-meter reads via its `[JSON_HTTP]` powermeter config
+- Grid power is computed as: `grid = base_load + active_loads + noise - solar - battery_output`
+- When solar exceeds consumption, grid goes negative (export) and batteries charge
+- Batteries track SOC and saturate at 0%/100%
+
 ## License
 
 This project is licensed under the General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
