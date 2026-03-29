@@ -840,7 +840,7 @@ multiple appliances, and 4 batteries (two on the heaviest phase):
       "capacity_wh": 2560,
       "initial_soc": 0.9,
       "ramp_rate": 150,
-      "poll_interval": 5.0
+      "poll_interval": 1.0
     },
     {
       "mac": "02B250000002",

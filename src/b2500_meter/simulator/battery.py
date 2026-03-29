@@ -33,7 +33,7 @@ class BatterySimulator:
         capacity_wh: float = 2560.0,
         initial_soc: float = 0.5,
         ramp_rate: float = 200.0,
-        poll_interval: float = 5.0,
+        poll_interval: float = 1.0,
         min_power_threshold: float = 20.0,
         inspection_count: int = 1,
     ) -> None:

@@ -25,7 +25,7 @@ class BatteryConfig:
     capacity_wh: float = 2560.0
     initial_soc: float = 0.5
     ramp_rate: float = 200.0
-    poll_interval: float = 5.0
+    poll_interval: float = 1.0
 
 
 @dataclass
@@ -160,7 +160,7 @@ def parse_config(data: dict) -> SimulationConfig:
             capacity_wh=bd.get("capacity_wh", 2560.0),
             initial_soc=bd.get("initial_soc", 0.5),
             ramp_rate=bd.get("ramp_rate", 200.0),
-            poll_interval=bd.get("poll_interval", 5.0),
+            poll_interval=bd.get("poll_interval", 1.0),
         )
         batteries.append(bc)
 
