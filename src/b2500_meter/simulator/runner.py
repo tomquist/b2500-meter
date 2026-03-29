@@ -117,10 +117,12 @@ class SimulationRunner:
         while True:
             await asyncio.sleep(self.config.log_interval)
             grid = self.powermeter.compute_grid()
-            parts = [f"grid=[{grid['phase_a']:.0f}, {grid['phase_b']:.0f}, {grid['phase_c']:.0f}]"]
+            parts = [
+                f"grid=[{grid['phase_a']:.0f}, {grid['phase_b']:.0f}, {grid['phase_c']:.0f}]"
+            ]
             for b in self.batteries:
                 parts.append(
-                    f"{b.mac[-4:]}:{b.phase}/{b.current_power:.0f}W/{b.soc*100:.0f}%"
+                    f"{b.mac[-4:]}:{b.phase}/{b.current_power:.0f}W/{b.soc * 100:.0f}%"
                 )
             logger.info(" | ".join(parts))
 
@@ -190,8 +192,7 @@ def validate_config(cfg: SimulationConfig) -> None:
             raise ValueError(f"Battery {bc.mac}: invalid phase {bc.phase!r}")
         if not (0.0 <= bc.initial_soc <= 1.0):
             raise ValueError(
-                f"Battery {bc.mac}: initial_soc must be 0.0-1.0, "
-                f"got {bc.initial_soc}"
+                f"Battery {bc.mac}: initial_soc must be 0.0-1.0, got {bc.initial_soc}"
             )
         if bc.max_charge_power < 0 or bc.max_discharge_power < 0:
             raise ValueError(f"Battery {bc.mac}: power values must be >= 0")

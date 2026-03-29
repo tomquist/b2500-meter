@@ -22,6 +22,7 @@ DEFAULT_HTTP_PORT = 8080
 
 # -- HTTP client helpers ---------------------------------------------------
 
+
 def _api_url(port: int, path: str) -> str:
     return f"http://localhost:{port}{path}"
 
@@ -48,6 +49,7 @@ def _http_post(port: int, path: str, body: dict | None = None) -> dict:
 
 # -- subcommands -----------------------------------------------------------
 
+
 def cmd_run(args: argparse.Namespace) -> None:
     from .runner import (
         SimulationRunner,
@@ -68,11 +70,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         if args.ct_host:
             cfg.ct_host = args.ct_host
     else:
-        base = (
-            [float(x) for x in args.base_load.split(",")]
-            if args.base_load
-            else None
-        )
+        base = [float(x) for x in args.base_load.split(",")] if args.base_load else None
         cfg = quick_config(
             num_batteries=args.batteries,
             num_phases=args.phases,
@@ -237,6 +235,7 @@ JSON_PATHS = $.phase_a,$.phase_b,$.phase_c""")
 
 # -- TUI -------------------------------------------------------------------
 
+
 def _run_with_tui(runner: SimulationRunner) -> None:  # noqa: F821
     """Start daemon in-process, then attach TUI in the same event loop."""
     try:
@@ -272,6 +271,7 @@ def _attach_tui(port: int) -> None:
 
 # -- logging ---------------------------------------------------------------
 
+
 def _setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -282,6 +282,7 @@ def _setup_logging(verbose: bool = False) -> None:
 
 
 # -- argument parser -------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

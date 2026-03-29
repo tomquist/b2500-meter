@@ -113,9 +113,7 @@ class SimulatorApp(App):
             self.run_worker(self._run_simulation, exclusive=True, group="sim")
         elif self._daemon_port:
             # Attach mode: connect SSE
-            self.run_worker(
-                self._sse_listener, exclusive=True, group="sse"
-            )
+            self.run_worker(self._sse_listener, exclusive=True, group="sse")
         self.set_interval(1.0, self._refresh_display)
 
     async def _run_simulation(self) -> None:

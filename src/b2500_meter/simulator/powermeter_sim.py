@@ -50,9 +50,7 @@ class PowermeterSimulator:
         self._app.router.add_get("/events", self._handle_sse)
         self._app.router.add_post("/loads/{index}/toggle", self._handle_toggle_load)
         self._app.router.add_post("/solar", self._handle_set_solar)
-        self._app.router.add_post(
-            "/batteries/{mac}/soc", self._handle_set_battery_soc
-        )
+        self._app.router.add_post("/batteries/{mac}/soc", self._handle_set_battery_soc)
         self._app.router.add_post(
             "/batteries/{mac}/max_power", self._handle_set_battery_max_power
         )
@@ -114,9 +112,7 @@ class PowermeterSimulator:
         battery.soc = float(soc)
         return web.json_response(self._build_status())
 
-    async def _handle_set_battery_max_power(
-        self, request: web.Request
-    ) -> web.Response:
+    async def _handle_set_battery_max_power(self, request: web.Request) -> web.Response:
         mac = request.match_info["mac"].upper()
         battery = self._find_battery(mac)
         if battery is None:
