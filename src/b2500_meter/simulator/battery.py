@@ -8,7 +8,6 @@ output accordingly.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import random
 import time
@@ -161,12 +160,16 @@ class BatterySimulator:
             logger.debug("Battery %s: bad response: %s", self.mac, err)
             return None
 
-        # Extract target for our phase
+        # Extract target: sum of all three phase power fields (4, 5, 6).
+        # Real B2500 batteries act on the total, not just their own phase.
         if response_fields and phase_field != "0":
-            idx = protocol.PHASE_FIELD_INDEX.get(self.phase)
-            if idx is not None and idx < len(response_fields):
-                with contextlib.suppress(ValueError, TypeError):
-                    self._target_power = int(response_fields[idx])
+            try:
+                phase_a = int(response_fields[4]) if len(response_fields) > 4 else 0
+                phase_b = int(response_fields[5]) if len(response_fields) > 5 else 0
+                phase_c = int(response_fields[6]) if len(response_fields) > 6 else 0
+                self._target_power = phase_a + phase_b + phase_c
+            except (ValueError, TypeError):
+                pass
 
         return response_fields
 
