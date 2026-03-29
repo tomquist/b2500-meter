@@ -274,45 +274,17 @@ class SimulatorApp(App):
     # -- grid graph --------------------------------------------------------
 
     def _update_grid_graph(self) -> None:
-        """Update the PlotWidget with grid power history.
-
-        Draws a single continuous line that appears red above zero (import)
-        and green below zero (export).  Achieved by plotting the full curve
-        in green first, then overlaying the positive segments in red.
-        Zero-crossing points are interpolated so colors switch cleanly.
-        """
+        """Update the PlotWidget with grid power history."""
         data = list(self._grid_history)
         if not data:
             return
         pw = self.query_one("#grid-graph", PlotWidget)
         pw.clear()
         n = len(data)
-
-        # Build x/y with interpolated zero-crossing points inserted
-        xs: list[float] = []
-        ys: list[float] = []
-        for i, val in enumerate(data):
-            xi = float(-n + 1 + i)
-            if i > 0:
-                prev = data[i - 1]
-                if (prev < 0) != (val < 0) and prev != 0 and val != 0:
-                    frac = -prev / (val - prev)
-                    xs.append(float(-n + i) + frac)
-                    ys.append(0.0)
-            xs.append(xi)
-            ys.append(val)
-
-        # Layer 1: full line in green (covers everything, but red will
-        # paint over the positive parts)
-        pw.plot(xs, ys, line_style="green", hires_mode=HiResMode.BRAILLE)
-
-        # Layer 2: positive segments clamped to zero, drawn in red on top.
-        # Clamping (not NaN) keeps the line continuous at zero so there are
-        # no rendering artefacts.
-        y_pos = [max(0.0, v) for v in ys]
-        if any(v > 0 for v in y_pos):
-            pw.plot(xs, y_pos, line_style="red", hires_mode=HiResMode.BRAILLE)
-
+        xs = [float(-n + 1 + i) for i in range(n)]
+        pw.plot(xs, data, line_style="white", hires_mode=HiResMode.BRAILLE)
+        # Zero reference line
+        pw.plot([xs[0], xs[-1]], [0.0, 0.0], line_style="dim white")
         pw.set_ylabel("W")
         pw.set_xlabel("seconds ago")
 
