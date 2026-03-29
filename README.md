@@ -800,6 +800,88 @@ Example `sim_config.json`:
 }
 ```
 
+A more complete example simulating a European 3-phase household with rooftop solar,
+multiple appliances, and 4 batteries (two on the heaviest phase):
+
+```json
+{
+  "ct": {
+    "mac": "AABBCCDDEEFF",
+    "host": "127.0.0.1",
+    "port": 12345
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "powermeter": {
+    "base_load": [120, 80, 60],
+    "base_noise": 30,
+    "loads": [
+      {"name": "Kettle",           "power": 2200, "phase": "A"},
+      {"name": "Oven",             "power": 2500, "phase": "A"},
+      {"name": "Dishwasher",       "power": 1200, "phase": "A"},
+      {"name": "Washing machine",  "power": 1500, "phase": "B"},
+      {"name": "Tumble dryer",     "power": 2500, "phase": "B"},
+      {"name": "Water heater",     "power": 2000, "phase": "B"},
+      {"name": "EV charger",       "power": 3700, "phase": "C"},
+      {"name": "Heat pump",        "power": 1200, "phase": "C"},
+      {"name": "Air conditioning", "power":  900, "phase": "C"}
+    ],
+    "solar_max": 5000,
+    "solar_phases": ["A", "B", "C"]
+  },
+  "batteries": [
+    {
+      "mac": "02B250000001",
+      "phase": "A",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 2560,
+      "initial_soc": 0.9,
+      "ramp_rate": 150,
+      "poll_interval": 5.0
+    },
+    {
+      "mac": "02B250000002",
+      "phase": "A",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 2560,
+      "initial_soc": 0.7
+    },
+    {
+      "mac": "02B250000003",
+      "phase": "B",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 5120,
+      "initial_soc": 0.4
+    },
+    {
+      "mac": "02B250000004",
+      "phase": "C",
+      "max_charge_power": 800,
+      "max_discharge_power": 800,
+      "capacity_wh": 2560,
+      "initial_soc": 0.2
+    }
+  ],
+  "auto_mode": true,
+  "auto_interval": [15, 45],
+  "log_interval": 10
+}
+```
+
+This configuration demonstrates:
+- **Phase imbalance**: Kitchen loads (kettle, oven, dishwasher) are concentrated on phase A with two batteries to compensate; laundry on B; EV/HVAC on C
+- **Two batteries on one phase**: Batteries `0001` and `0002` both serve phase A — CT002's fair distribution algorithm splits the target between them
+- **Mixed capacities**: Battery `0003` has a larger 5.12 kWh capacity (simulating a newer model)
+- **Varied SOC**: Batteries start at different charge levels (90%, 70%, 40%, 20%) to test saturation timing
+- **3-phase solar**: 5 kWp rooftop system balanced across all three phases — at peak, produces ~1667W per phase which exceeds the ~100W base load, causing grid export (negative readings) and battery charging
+- **Custom ramp rate**: Battery `0001` ramps at 150 W/s instead of the default 200 W/s
+- **Auto mode**: Randomly toggles loads and solar every 15–45 seconds for hands-free testing
+
 ### Interactive Controls
 
 When running with the TUI (`b2500-sim run`, without `--no-tui`), you can interact with the simulation using keyboard shortcuts displayed on screen. The TUI shows live battery state (power, SOC, targets), grid readings per phase, and active loads.
