@@ -785,10 +785,11 @@ Example `sim_config.json`:
   "powermeter": {
     "base_load": [100, 100, 100],
     "loads": [
-      {"name": "Kettle", "power": 2200, "phase": "A"},
-      {"name": "Oven", "power": 2000, "phase": "A"},
-      {"name": "Washing machine", "power": 1500, "phase": "B"},
-      {"name": "EV charger", "power": 3700, "phase": "C"}
+      {"name": "LED lights", "power": 30, "phase": "A"},
+      {"name": "TV + entertainment", "power": 80, "phase": "B"},
+      {"name": "Router + NAS", "power": 40, "phase": "A"},
+      {"name": "Microwave", "power": 800, "phase": "A"},
+      {"name": "Washing machine", "power": 400, "phase": "B"}
     ],
     "solar_max": 2000,
     "solar_phases": ["A"]
@@ -818,15 +819,15 @@ multiple appliances, and 4 batteries (two on the heaviest phase):
     "base_load": [120, 80, 60],
     "base_noise": 30,
     "loads": [
-      {"name": "Kettle",           "power": 2200, "phase": "A"},
-      {"name": "Oven",             "power": 2500, "phase": "A"},
-      {"name": "Dishwasher",       "power": 1200, "phase": "A"},
-      {"name": "Washing machine",  "power": 1500, "phase": "B"},
-      {"name": "Tumble dryer",     "power": 2500, "phase": "B"},
-      {"name": "Water heater",     "power": 2000, "phase": "B"},
-      {"name": "EV charger",       "power": 3700, "phase": "C"},
-      {"name": "Heat pump",        "power": 1200, "phase": "C"},
-      {"name": "Air conditioning", "power":  900, "phase": "C"}
+      {"name": "LED lights",        "power":   30, "phase": "A"},
+      {"name": "Router + NAS",      "power":   40, "phase": "A"},
+      {"name": "Coffee machine",    "power":  200, "phase": "A"},
+      {"name": "TV + entertainment","power":   80, "phase": "B"},
+      {"name": "Washing machine",   "power":  400, "phase": "B"},
+      {"name": "Laptop charger",    "power":   65, "phase": "B"},
+      {"name": "Microwave",         "power":  800, "phase": "A"},
+      {"name": "Fridge/freezer",    "power":  120, "phase": "C"},
+      {"name": "Vacuum cleaner",    "power":  600, "phase": "C"}
     ],
     "solar_max": 5000,
     "solar_phases": ["A", "B", "C"]
@@ -874,11 +875,11 @@ multiple appliances, and 4 batteries (two on the heaviest phase):
 ```
 
 This configuration demonstrates:
-- **Phase imbalance**: Kitchen loads (kettle, oven, dishwasher) are concentrated on phase A with two batteries to compensate; laundry on B; EV/HVAC on C
+- **Phase imbalance**: Kitchen loads (coffee machine, microwave) are concentrated on phase A with two batteries to compensate; entertainment/laundry on B; fridge/cleaning on C
 - **Two batteries on one phase**: Batteries `0001` and `0002` both serve phase A — CT002's fair distribution algorithm splits the target between them
 - **Mixed capacities**: Battery `0003` has a larger 5.12 kWh capacity (simulating a newer model)
 - **Varied SOC**: Batteries start at different charge levels (90%, 70%, 40%, 20%) to test saturation timing
-- **3-phase solar**: 5 kWp rooftop system balanced across all three phases — at peak, produces ~1667W per phase which exceeds the ~100W base load, causing grid export (negative readings) and battery charging
+- **3-phase solar**: 5 kWp rooftop system balanced across all three phases — even moderate production exceeds the base load, causing grid export (negative readings) and battery charging
 - **Custom ramp rate**: Battery `0001` ramps at 150 W/s instead of the default 200 W/s
 - **Auto mode**: Randomly toggles loads and solar every 15–45 seconds for hands-free testing
 

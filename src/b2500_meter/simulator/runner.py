@@ -226,11 +226,11 @@ def quick_config(
         batteries.append(BatteryConfig(mac=mac, phase=phase, initial_soc=initial_soc))
 
     default_loads = [
-        Load("LED lights", 50, "A"),
-        Load("TV + entertainment", 100, "B" if num_phases >= 2 else "A"),
-        Load("Dishwasher", 500, "A"),
-        Load("Water heater", 1000, "B" if num_phases >= 2 else "A"),
-        Load("Oven", 2000, "A"),
+        Load("LED lights", 30, "A"),
+        Load("TV + entertainment", 80, "B" if num_phases >= 2 else "A"),
+        Load("Router + NAS", 40, "A"),
+        Load("Microwave", 800, "A"),
+        Load("Washing machine", 400, "B" if num_phases >= 2 else "A"),
     ]
 
     if base_load is None:
