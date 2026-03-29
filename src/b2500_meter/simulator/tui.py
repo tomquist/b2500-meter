@@ -276,10 +276,10 @@ class SimulatorApp(App):
     def _update_grid_graph(self) -> None:
         """Update the PlotWidget with grid power history.
 
-        Plots positive values (import) in red and negative values (export)
-        in green as two separate series.  Uses NaN to create gaps so each
-        series only draws on its side of zero.  At zero-crossings an
-        interpolated point is inserted in both series for a clean handoff.
+        Draws a single continuous line that appears red above zero (import)
+        and green below zero (export).  Achieved by plotting the full curve
+        in green first, then overlaying the positive segments in red.
+        Zero-crossing points are interpolated so colors switch cleanly.
         """
         data = list(self._grid_history)
         if not data:
@@ -287,37 +287,31 @@ class SimulatorApp(App):
         pw = self.query_one("#grid-graph", PlotWidget)
         pw.clear()
         n = len(data)
-        nan = float("nan")
 
-        # Build parallel arrays: same length, NaN where the other color owns it
-        x_all: list[float] = []
-        y_pos: list[float] = []
-        y_neg: list[float] = []
-
+        # Build x/y with interpolated zero-crossing points inserted
+        xs: list[float] = []
+        ys: list[float] = []
         for i, val in enumerate(data):
             xi = float(-n + 1 + i)
-
-            # Insert interpolated zero-crossing between consecutive points
             if i > 0:
                 prev = data[i - 1]
                 if (prev < 0) != (val < 0) and prev != 0 and val != 0:
                     frac = -prev / (val - prev)
-                    x_cross = float(-n + i) + frac
-                    x_all.append(x_cross)
-                    y_pos.append(0.0)
-                    y_neg.append(0.0)
+                    xs.append(float(-n + i) + frac)
+                    ys.append(0.0)
+            xs.append(xi)
+            ys.append(val)
 
-            x_all.append(xi)
-            if val >= 0:
-                y_pos.append(val)
-                y_neg.append(nan)
-            else:
-                y_pos.append(nan)
-                y_neg.append(val)
+        # Layer 1: full line in green (covers everything, but red will
+        # paint over the positive parts)
+        pw.plot(xs, ys, line_style="green", hires_mode=HiResMode.BRAILLE)
 
-        if x_all:
-            pw.plot(x_all, y_pos, line_style="red", hires_mode=HiResMode.BRAILLE)
-            pw.plot(x_all, y_neg, line_style="green", hires_mode=HiResMode.BRAILLE)
+        # Layer 2: positive segments clamped to zero, drawn in red on top.
+        # Clamping (not NaN) keeps the line continuous at zero so there are
+        # no rendering artefacts.
+        y_pos = [max(0.0, v) for v in ys]
+        if any(v > 0 for v in y_pos):
+            pw.plot(xs, y_pos, line_style="red", hires_mode=HiResMode.BRAILLE)
 
         pw.set_ylabel("W")
         pw.set_xlabel("seconds ago")
