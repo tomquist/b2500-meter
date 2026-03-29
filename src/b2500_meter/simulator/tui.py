@@ -11,12 +11,13 @@ import asyncio
 import contextlib
 import json
 import logging
+from collections import deque
 from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Header, Sparkline, Static
 
 if TYPE_CHECKING:
     from .runner import SimulationRunner
@@ -25,6 +26,9 @@ logger = logging.getLogger("b2500_sim.tui")
 
 # Column widths for the grid table
 _COL = 12
+
+# Number of data points kept for the sparkline graph
+_GRAPH_HISTORY = 120
 
 
 class SimulatorApp(App):
@@ -39,6 +43,21 @@ class SimulatorApp(App):
         padding: 0 1;
     }
     #grid-table { margin-top: 1; }
+    #grid-graph-label {
+        height: auto;
+        padding: 0 1;
+        margin-top: 1;
+    }
+    #grid-graph {
+        height: 6;
+        margin: 0 1;
+    }
+    Sparkline > .sparkline--min-color {
+        color: $success;
+    }
+    Sparkline > .sparkline--max-color {
+        color: $error;
+    }
     .section-title {
         text-style: bold;
         color: $accent;
@@ -85,6 +104,7 @@ class SimulatorApp(App):
         self._selected_battery: int = 0
         self._status: dict = {}
         self._auto_task: asyncio.Task | None = None
+        self._grid_history: deque[float] = deque(maxlen=_GRAPH_HISTORY)
         self.title = "b2500-sim"
 
     @classmethod
@@ -98,6 +118,8 @@ class SimulatorApp(App):
         with Vertical():
             yield Static("[b]GRID POWER[/b]", classes="section-title")
             yield Static(id="grid-table")
+            yield Static(id="grid-graph-label")
+            yield Sparkline([], id="grid-graph")
             yield Static("[b]BATTERIES[/b]", classes="section-title")
             yield Static(id="battery-table")
             yield Static("[b]LOADS[/b]", classes="section-title")
@@ -163,10 +185,24 @@ class SimulatorApp(App):
         if not status:
             return
 
-        # Grid table
+        # Grid table + graph
         grid = status.get("grid", {})
         grid_text = self._format_grid(grid)
         self.query_one("#grid-table", Static).update(grid_text)
+
+        total = grid.get("total", 0.0)
+        self._grid_history.append(total)
+        sparkline = self.query_one("#grid-graph", Sparkline)
+        sparkline.data = list(self._grid_history)
+
+        # Graph label with range
+        if self._grid_history:
+            lo = min(self._grid_history)
+            hi = max(self._grid_history)
+            label = f"  Grid total (last {len(self._grid_history)}s):  min [green]{lo:.0f}W[/]  max [red]{hi:.0f}W[/]"
+        else:
+            label = ""
+        self.query_one("#grid-graph-label", Static).update(label)
 
         # Batteries
         batteries = status.get("batteries", [])
