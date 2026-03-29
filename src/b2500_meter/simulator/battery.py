@@ -160,14 +160,18 @@ class BatterySimulator:
             logger.debug("Battery %s: bad response: %s", self.mac, err)
             return None
 
-        # Extract target: sum of all three phase power fields (4, 5, 6).
-        # Real B2500 batteries act on the total, not just their own phase.
+        # Extract grid reading: sum of all three phase power fields (4, 5, 6).
+        # Real B2500 batteries treat this as the current grid consumption and
+        # adjust their output to compensate: if the grid is importing 70W, the
+        # battery increases its output by 70W.  This integral behavior drives
+        # the grid reading toward zero over successive cycles.
         if response_fields and phase_field != "0":
             try:
                 phase_a = int(response_fields[4]) if len(response_fields) > 4 else 0
                 phase_b = int(response_fields[5]) if len(response_fields) > 5 else 0
                 phase_c = int(response_fields[6]) if len(response_fields) > 6 else 0
-                self._target_power = phase_a + phase_b + phase_c
+                grid_reading = phase_a + phase_b + phase_c
+                self._target_power = self._current_power + grid_reading
             except (ValueError, TypeError):
                 pass
 
