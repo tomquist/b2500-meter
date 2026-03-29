@@ -283,8 +283,6 @@ class SimulatorApp(App):
         n = len(data)
         xs = [float(-n + 1 + i) for i in range(n)]
         pw.plot(xs, data, line_style="white", hires_mode=HiResMode.BRAILLE)
-        # Zero reference line
-        pw.plot([xs[0], xs[-1]], [0.0, 0.0], line_style="dim white")
         pw.set_ylabel("W")
         pw.set_xlabel("seconds ago")
 
