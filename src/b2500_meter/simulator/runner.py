@@ -234,9 +234,7 @@ def quick_config(
     ]
 
     if base_load is None:
-        base_load = (
-            [300.0, 0.0, 0.0] if num_phases == 1 else [100.0, 100.0, 100.0]
-        )
+        base_load = [300.0, 0.0, 0.0] if num_phases == 1 else [100.0, 100.0, 100.0]
 
     return SimulationConfig(
         batteries=batteries,
