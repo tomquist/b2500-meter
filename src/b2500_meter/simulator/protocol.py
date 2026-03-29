@@ -101,8 +101,8 @@ def parse_message(
         else:
             return (
                 None,
-                f"Checksum mismatch (expected {expected_checksum}, "
-                f"got {actual_checksum})",
+                f"Checksum mismatch (expected {expected_checksum!r}, "
+                f"got {actual_checksum!r})",
             )
     try:
         message = data[sep_index:-3].decode("ascii")

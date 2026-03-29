@@ -14,6 +14,10 @@ import os
 import signal
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .runner import SimulationRunner
 
 PID_FILE = Path.home() / ".b2500-sim.pid"
 LOG_FILE = Path.home() / ".b2500-sim.log"
@@ -236,7 +240,7 @@ JSON_PATHS = $.phase_a,$.phase_b,$.phase_c""")
 # -- TUI -------------------------------------------------------------------
 
 
-def _run_with_tui(runner: SimulationRunner) -> None:  # noqa: F821
+def _run_with_tui(runner: SimulationRunner) -> None:
     """Start daemon in-process, then attach TUI in the same event loop."""
     try:
         from .tui import SimulatorApp

@@ -50,7 +50,7 @@ class SimulatorApp(App):
     .phase-label { width: 12; }
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
         Binding("1", "toggle_load(1)", "Load 1", show=False),
         Binding("2", "toggle_load(2)", "Load 2", show=False),
         Binding("3", "toggle_load(3)", "Load 3", show=False),
@@ -110,10 +110,10 @@ class SimulatorApp(App):
     async def on_mount(self) -> None:
         if self._runner:
             # In-process mode: start powermeter + batteries as workers
-            self.run_worker(self._run_simulation, exclusive=True, group="sim")
+            self.run_worker(self._run_simulation, exclusive=True, group="sim")  # type: ignore[arg-type]
         elif self._daemon_port:
             # Attach mode: connect SSE
-            self.run_worker(self._sse_listener, exclusive=True, group="sse")
+            self.run_worker(self._sse_listener, exclusive=True, group="sse")  # type: ignore[arg-type]
         self.set_interval(1.0, self._refresh_display)
 
     async def _run_simulation(self) -> None:
@@ -335,7 +335,7 @@ class SimulatorApp(App):
             current = self._status.get("auto_mode", False)
             self._post("/auto", {"enabled": not current})
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         if self._runner:
             self._runner.powermeter.shutdown_event.set()
         self.exit()
