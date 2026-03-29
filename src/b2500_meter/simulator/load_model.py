@@ -43,11 +43,15 @@ class LoadModel:
 
         for i, phase in enumerate(PHASES):
             base = self.base_load[i] if i < len(self.base_load) else 0.0
-            noise = random.uniform(-self.base_noise, self.base_noise)
             load_sum = sum(
                 ld.power for ld in self.loads if ld.active and ld.phase == phase
             )
             solar = self._solar_on_phase(phase)
+            # Only apply noise to phases that have base load or active loads
+            if base > 0 or load_sum > 0:
+                noise = random.uniform(-self.base_noise, self.base_noise)
+            else:
+                noise = 0.0
             result[i] = base + noise + load_sum - solar
 
         return result

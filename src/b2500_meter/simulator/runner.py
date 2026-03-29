@@ -233,12 +233,17 @@ def quick_config(
         Load("Oven", 2000, "A"),
     ]
 
+    if base_load is None:
+        base_load = (
+            [300.0, 0.0, 0.0] if num_phases == 1 else [100.0, 100.0, 100.0]
+        )
+
     return SimulationConfig(
         batteries=batteries,
         ct_host=ct_host,
         ct_port=ct_port,
         http_port=http_port,
-        base_load=base_load or [100.0] * 3,
+        base_load=base_load,
         loads=default_loads,
         solar_phases=phases,
     )
