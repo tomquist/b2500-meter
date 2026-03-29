@@ -274,17 +274,60 @@ class SimulatorApp(App):
     # -- grid graph --------------------------------------------------------
 
     def _update_grid_graph(self) -> None:
-        """Update the PlotWidget with grid power history."""
+        """Update the PlotWidget with grid power history.
+
+        Plots positive values (import) in red and negative values (export)
+        in green as two separate line series, both clamped to zero at the
+        crossing point so each color stays on its side.
+        """
         data = list(self._grid_history)
         if not data:
             return
         pw = self.query_one("#grid-graph", PlotWidget)
         pw.clear()
         x = list(range(-len(data) + 1, 1))
-        pw.plot(x, data, line_style="white", hires_mode=HiResMode.BRAILLE)
-        # Draw a zero reference line
-        pw.plot([x[0], x[-1]], [0.0, 0.0], line_style="dim")
-        pw.set_ylabel("Watts")
+
+        # Split into positive (import) and negative (export) series,
+        # inserting interpolated zero-crossings for clean transitions.
+        x_pos: list[float] = []
+        y_pos: list[float] = []
+        x_neg: list[float] = []
+        y_neg: list[float] = []
+
+        for i, val in enumerate(data):
+            xi = x[i]
+            # Detect zero crossing from previous point
+            if i > 0:
+                prev = data[i - 1]
+                if (prev < 0) != (val < 0) and prev != 0 and val != 0:
+                    # Linear interpolation for the crossing x coordinate
+                    frac = -prev / (val - prev)
+                    x_cross = x[i - 1] + frac * (xi - x[i - 1])
+                    x_pos.append(x_cross)
+                    y_pos.append(0.0)
+                    x_neg.append(x_cross)
+                    y_neg.append(0.0)
+
+            if val >= 0:
+                x_pos.append(xi)
+                y_pos.append(val)
+                # Bridge negative series to zero so the line doesn't jump
+                if not x_neg or y_neg[-1] != 0.0:
+                    x_neg.append(xi)
+                    y_neg.append(0.0)
+            else:
+                x_neg.append(xi)
+                y_neg.append(val)
+                if not x_pos or y_pos[-1] != 0.0:
+                    x_pos.append(xi)
+                    y_pos.append(0.0)
+
+        if x_pos:
+            pw.plot(x_pos, y_pos, line_style="red", hires_mode=HiResMode.BRAILLE)
+        if x_neg:
+            pw.plot(x_neg, y_neg, line_style="green", hires_mode=HiResMode.BRAILLE)
+
+        pw.set_ylabel("W")
         pw.set_xlabel("seconds ago")
 
     # -- actions -----------------------------------------------------------
