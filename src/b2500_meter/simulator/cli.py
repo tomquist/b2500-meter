@@ -323,16 +323,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # -- load --------------------------------------------------------------
     p_load = sub.add_parser("load", help="Control loads")
-    p_load_sub = p_load.add_subparsers(dest="load_action")
-    p_toggle = p_load_sub.add_parser("toggle", help="Toggle a load")
-    p_toggle.add_argument("index", type=int, help="Load index (1-based)")
+    p_load.add_argument("load_action", choices=["toggle"])
+    p_load.add_argument("index", type=int, help="Load index (1-based)")
     p_load.add_argument("--http-port", type=int)
 
     # -- solar -------------------------------------------------------------
     p_solar = sub.add_parser("solar", help="Control solar")
-    p_solar_sub = p_solar.add_subparsers(dest="solar_action")
-    p_set = p_solar_sub.add_parser("set", help="Set solar watts")
-    p_set.add_argument("value", help="Watts, 'off', or 'max'")
+    p_solar.add_argument("solar_action", choices=["set"])
+    p_solar.add_argument("value", help="Watts, 'off', or 'max'")
     p_solar.add_argument("--http-port", type=int)
 
     # -- battery -----------------------------------------------------------
@@ -365,16 +363,8 @@ def main() -> None:
         "stop": cmd_stop,
         "attach": cmd_attach,
         "status": cmd_status,
-        "load": lambda a: cmd_load(
-            argparse.Namespace(
-                http_port=a.http_port, index=getattr(a, "index", 1)
-            )
-        ),
-        "solar": lambda a: cmd_solar(
-            argparse.Namespace(
-                http_port=a.http_port, value=getattr(a, "value", "off")
-            )
-        ),
+        "load": cmd_load,
+        "solar": cmd_solar,
         "battery": cmd_battery,
         "auto": cmd_auto,
         "config": cmd_config,
