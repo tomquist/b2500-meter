@@ -2,7 +2,7 @@
 
 ## Next
 
-- **Fixed** an unavailable ESPHome native power sensor continuing to report its old reading as healthy while connected, leaving batteries steering against stale grid power until the sensor recovered.
+- **Fixed** an unavailable ESPHome native power sensor continuing to report its old reading as healthy while connected, leaving batteries steering against stale grid power until the sensor recovered ([#645](https://github.com/tomquist/astrameter/pull/645)).
 
 - **Fixed** a Home Assistant power source refusing to start, or reading as permanently unavailable, when its entity list had a stray or trailing comma (`POWER_INPUT_ALIAS = sensor.import,`). Blank entries are now ignored ([#640](https://github.com/tomquist/astrameter/pull/640)).
 
