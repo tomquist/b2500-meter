@@ -231,6 +231,43 @@ TEST(LoadBalancer, ZeroWeightTakesNoShare) {
   EXPECT_FLOAT_EQ(b_out[0], 400.0f);
 }
 
+TEST(LoadBalancer, AllZeroWeightsParkAndResume) {
+  // The all-zero pool must not fall back to an equal split, even while
+  // winding down existing charge/discharge. Mirrors the Python regression.
+  for (bool fair : {false, true}) {
+    for (float grid : {-1000.0f, 1000.0f}) {
+      for (float power : {0.0f, 200.0f, -200.0f}) {
+        BalancerConfig cfg;
+        cfg.fair_distribution = fair;
+        cfg.min_efficient_power = 0.0f;
+        cfg.pace_base_step = 0.0f;
+        cfg.grid_predict_trust = 0.0f;  // assert allocation against the raw grid
+        auto b = make_balancer(cfg);
+        ReportMap reports;
+        reports["a"] = ConsumerReport{"HMA-2", "A", power, 0.0f};
+        reports["b"] = ConsumerReport{"HMA-2", "A", power, 0.0f};
+        for (const auto &cid : {"a", "b"}) {
+          const auto out = b.compute_target(cid, ConsumerMode{}, reports, grid, {}, {}, {});
+          EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], -power);
+        }
+        reports["a"] = ConsumerReport{"HMA-2", "A", 0.0f, 1.0f};
+        reports["b"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+        const auto out = b.compute_target("a", ConsumerMode{}, reports, grid, {}, {}, {});
+        EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], grid);
+      }
+    }
+  }
+}
+
+TEST(LoadBalancer, ZeroWeightPreservesManualOverride) {
+  auto b = make_balancer(BalancerConfig{});
+  ReportMap reports;
+  reports["a"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+  const auto out = b.compute_target("a", ConsumerMode{ConsumerModeKind::MANUAL, 300.0f},
+                                   reports, 1000.0f, {}, {"a"}, {});
+  EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], 300.0f);
+}
+
 TEST(LoadBalancer, AutoSplitAcrossPhases) {
   BalancerConfig cfg;
   cfg.fair_distribution = false;

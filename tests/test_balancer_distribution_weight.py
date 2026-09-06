@@ -6,6 +6,8 @@ proportional split by it while leaving the neutral (all-1.0) case identical to
 the unweighted behaviour.
 """
 
+import pytest
+
 from astrameter.ct002.balancer import (
     BalancerConfig,
     ConsumerMode,
@@ -24,6 +26,7 @@ def _make_balancer(*, fair_distribution: bool = True) -> LoadBalancer:
             min_efficient_power=0,
             # Pin the raw weighted-share math; ramp pacing has its own tests.
             pace_base_step=0,
+            grid_predict_trust=0,  # assert allocation against the raw grid
         ),
         saturation_alpha=0.15,
         saturation_min_target=20,
@@ -101,3 +104,37 @@ def test_balance_correction_targets_weighted_share() -> None:
     # Weighted target for "a" (300) > its 250 reported → pushed up; "b" pushed down.
     assert a_out[0] > 250.0
     assert b_out[0] < 250.0
+
+
+@pytest.mark.parametrize("fair_distribution", [False, True])
+@pytest.mark.parametrize("grid", [-1000.0, 1000.0])
+@pytest.mark.parametrize("power", [0.0, 200.0, -200.0])
+def test_all_zero_weights_park_and_resume(
+    fair_distribution: bool, grid: float, power: float
+) -> None:
+    """Parking the last eligible battery must not reactivate the whole pool."""
+    lb = _make_balancer(fair_distribution=fair_distribution)
+    reports = {"a": _report(power, weight=0), "b": _report(power, weight=0)}
+    for cid in reports:
+        out = lb.compute_target(
+            cid, ConsumerMode("auto"), reports, grid, frozenset(), frozenset()
+        )
+        assert sum(out) == -power
+        assert lb.get_last_intent(cid) == 0
+    # Restoring a weight lets that battery cover the demand again.
+    reports["a"] = _report(0, weight=1)
+    reports["b"] = _report(0, weight=0)
+    out = lb.compute_target(
+        "a", ConsumerMode("auto"), reports, grid, frozenset(), frozenset()
+    )
+    assert sum(out) == grid
+
+
+def test_zero_weight_preserves_manual_override() -> None:
+    """Weight controls automatic allocation, not an explicit manual target."""
+    lb = _make_balancer()
+    reports = {"a": _report(0, weight=0)}
+    out = lb.compute_target(
+        "a", ConsumerMode("manual", 300), reports, 1000, frozenset(), frozenset({"a"})
+    )
+    assert sum(out) == 300
