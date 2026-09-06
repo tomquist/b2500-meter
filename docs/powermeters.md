@@ -285,6 +285,13 @@ API_KEY = 5BqtR16i91/+rwUl+QrJewKFOnyS/whHc3v9ySSKpb8=
 OBJECT_ID = grid_power
 ```
 
+**Units:** the sensor's `unit_of_measurement` is respected automatically — one
+reporting `kW` (or `MW`/`mW`) is converted to watts, so no manual
+`POWER_MULTIPLIER = 1000` workaround is needed (remove it if you added one, or
+the value gets scaled twice). A sensor with a non-power unit (`°C`, `%`, `kWh`,
+…) is rejected with an explicit error instead of silently feeding wrong values.
+Sensors that declare no unit are assumed to report watts.
+
 ## AMIS Reader
 
 ```ini
