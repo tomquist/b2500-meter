@@ -158,6 +158,11 @@ async def test_connect_error_resets_state() -> None:
 async def test_declared_power_unit_is_converted_to_watts(
     unit: str | None, expected: float
 ) -> None:
+    """Every unit the converter knows, including the undeclared default.
+
+    The undeclared case is the compatibility one: installs predating unit
+    handling declare nothing and must keep reading as watts.
+    """
     pm = _subscribed_pm(unit=unit)
     pm.change_callback(_state(1234.0))
     assert await pm.get_powermeter_watts() == pytest.approx([expected])
@@ -176,6 +181,12 @@ async def test_non_power_unit_is_rejected_rather_than_read_as_watts() -> None:
 
 
 async def test_unit_is_re_read_on_reconnect() -> None:
+    """A device reconfigured while we were away must not keep the old scale.
+
+    The unit is connection state, not construction state: the entity list is
+    read again on every connect, so a sensor that was kW and comes back as W
+    is read as W rather than multiplied by 1000 for the life of the process.
+    """
     pm = _subscribed_pm(unit="kW")
     pm.change_callback(_state(1.0))
     assert await pm.get_powermeter_watts() == pytest.approx([1000.0])
