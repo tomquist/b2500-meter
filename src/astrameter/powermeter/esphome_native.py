@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 
 import aioesphomeapi
 from aioesphomeapi import EntityInfo, EntityState, SensorState
@@ -47,7 +48,8 @@ class ESPHomeNative(PushPowermeter):
         #: watts — what installs relied on before units were read.
         self._unit: str | None = None
         self.is_connected: bool = False
-        # Stays set across messages; only a (re)connect clears it.
+        # Set while the latest sensor state is valid; cleared on unavailability
+        # and disconnect so a connected API cannot make stale data look healthy.
         self._any_message_event = asyncio.Event()
         logger.debug(
             "ESPHome native: %s:%s as %s, object id %s",
@@ -167,12 +169,13 @@ class ESPHomeNative(PushPowermeter):
             logger.error("ESPHome native: subscribed entity %s is not a sensor", state)
             return
 
-        # When the upstream sensor goes unavailable, aioesphomeapi delivers a
-        # SensorState with missing_state=True and often NaN. Feeding that into
-        # active control would corrupt the grid reading, so drop the update and
-        # keep the last known-good value.
-        if state.missing_state or state.state != state.state:
-            logger.debug("Ignoring unavailable/NaN sensor state")
+        # An explicit unavailable state invalidates the old measurement even
+        # while the API connection stays alive. Wake pending readers too: they
+        # must see the outage instead of waiting and reusing the old value.
+        if state.missing_state or not math.isfinite(state.state):
+            self._any_message_event.clear()
+            self._message_event.set()
+            logger.debug("ESPHome native sensor is unavailable")
             return
 
         self.last_value = state.state
@@ -204,7 +207,11 @@ class ESPHomeNative(PushPowermeter):
         return scale
 
     def stream_online(self) -> bool | None:
-        return self.is_connected
+        return (
+            self.is_connected
+            and self._any_message_event.is_set()
+            and (self._unit is None or self._unit in POWER_UNIT_SCALE)
+        )
 
     async def wait_for_message(self, timeout: float = 5) -> None:
         await self._wait(self._any_message_event, timeout)

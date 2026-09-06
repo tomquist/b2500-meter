@@ -1,3 +1,4 @@
+import asyncio
 import math
 
 import pytest
@@ -72,19 +73,62 @@ async def test_change_callback_ignores_before_subscribe() -> None:
     assert await pm.get_powermeter_watts() == []
 
 
-async def test_change_callback_drops_missing_state() -> None:
+@pytest.mark.parametrize(
+    ("value", "missing"),
+    [
+        (100.0, True),
+        (math.nan, True),
+        (math.nan, False),
+        (math.inf, False),
+        (-math.inf, False),
+    ],
+)
+async def test_unavailable_state_invalidates_cached_reading_and_recovers(
+    value: float, missing: bool
+) -> None:
+    """An alive API must not hide an unavailable power sensor behind old watts."""
+    pm = _subscribed_pm(unit="kW")
+    pm.change_callback(_state(1.2))
+    assert await pm.get_powermeter_watts() == [1200.0]
+    assert pm.stream_online() is True
+    pm.change_callback(_state(value, missing_state=missing))
+    assert await pm.get_powermeter_watts() == []
+    assert pm.stream_online() is False
+    pm.change_callback(_state(0.4))
+    assert await pm.get_powermeter_watts() == [400.0]
+    assert pm.stream_online() is True
+
+
+async def test_unavailable_update_wakes_pending_reader() -> None:
+    """The normal wait-for-next-message path must observe the outage promptly."""
     pm = _subscribed_pm()
-    pm.change_callback(_state(100.0))
+    pm.change_callback(_state(1200.0))
+    waiter = asyncio.create_task(pm.wait_for_next_message(timeout=1))
+    await asyncio.sleep(0)
     pm.change_callback(_state(math.nan, missing_state=True))
-    # The unavailable update is dropped; the last good value is kept.
-    assert await pm.get_powermeter_watts() == [100.0]
+    await asyncio.wait_for(waiter, timeout=0.2)
+    assert await pm.get_powermeter_watts() == []
 
 
-async def test_change_callback_drops_nan_without_missing_flag() -> None:
+async def test_timeout_cannot_resurrect_unavailable_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even a reader arriving after the outage must not serve the old cache."""
+    from astrameter import meter_pool
+    from astrameter.config.config_loader import ClientFilter
+    from astrameter.config.settings import ConfiguredPowermeter
+    from astrameter.powermeter.wrappers.health import HealthTrackingPowermeter
+
     pm = _subscribed_pm()
-    pm.change_callback(_state(100.0))
-    pm.change_callback(_state(math.nan))
-    assert await pm.get_powermeter_watts() == [100.0]
+    health = HealthTrackingPowermeter(pm)
+    pm.change_callback(_state(1200.0))
+    await health.get_powermeter_watts()
+    pm.change_callback(_state(math.nan, missing_state=True))
+    monkeypatch.setattr(meter_pool, "FRESH_MESSAGE_TIMEOUT_S", 0.01)
+    configured = ConfiguredPowermeter(health, ClientFilter([]), True)
+    assert await meter_pool.read_fresh(configured) == []
+    assert health.status_snapshot().online is False
+    assert health.status_snapshot().last_read_ok is False
 
 
 async def test_wait_for_message_returns_after_message() -> None:
@@ -121,11 +165,11 @@ async def test_disconnect_clears_value() -> None:
     assert pm.entity_info is None
 
 
-async def test_stream_online_reflects_connection() -> None:
+async def test_stream_online_requires_valid_sensor_state() -> None:
     pm = _make_pm()
     assert pm.stream_online() is False
     pm.is_connected = True
-    assert pm.stream_online() is True
+    assert pm.stream_online() is False
 
 
 async def test_connect_error_resets_state() -> None:
