@@ -5,6 +5,8 @@ import aioesphomeapi
 from aioesphomeapi import EntityInfo, EntityState, SensorState
 from aioesphomeapi.reconnect_logic import ReconnectLogic
 
+from astrameter.power_units import POWER_UNIT_SCALE, POWER_UNITS
+
 from .base import PushPowermeter
 
 # Stdlib logger: avoid importing astrameter.config (config_loader imports powermeter).
@@ -40,6 +42,10 @@ class ESPHomeNative(PushPowermeter):
         )
         self.last_value: float = 0
         self.entity_info: EntityInfo | None = None
+        #: Declared unit of the subscribed sensor, read once per connection.
+        #: ``None`` means the device declares none, which is assumed to be
+        #: watts — what installs relied on before units were read.
+        self._unit: str | None = None
         self.is_connected: bool = False
         # Stays set across messages; only a (re)connect clears it.
         self._any_message_event = asyncio.Event()
@@ -56,6 +62,9 @@ class ESPHomeNative(PushPowermeter):
         self._any_message_event.clear()
         self._message_event.clear()
         self.entity_info = None
+        # Re-read from the entity list on the next connect: the device may have
+        # been reconfigured while we were away.
+        self._unit = None
 
     async def start(self) -> None:
         await self.reconnect_logic.start()
@@ -104,7 +113,36 @@ class ESPHomeNative(PushPowermeter):
             self.entity_info.name,
             self.entity_info.key,
         )
+        self._read_unit(self.entity_info)
         self.api.subscribe_states(self.change_callback)
+
+    def _read_unit(self, entity_info: EntityInfo) -> None:
+        """Record the sensor's declared unit and say what it means for us.
+
+        The native API carries ``unit_of_measurement`` on the entity, so a kW
+        sensor is convertible rather than a silent factor of 1000 (issues #39 /
+        #572) and a sensor that is not power at all can be named as the problem
+        instead of steering the batteries with °C. Mirrors what the Home
+        Assistant source does with the same attribute.
+        """
+        unit = getattr(entity_info, "unit_of_measurement", None)
+        self._unit = unit if isinstance(unit, str) and unit else None
+        if self._unit is None or self._unit == "W":
+            return
+        if self._unit in POWER_UNIT_SCALE:
+            logger.info(
+                "ESPHome native: sensor %s reports %s; converting to W automatically",
+                entity_info.object_id,
+                self._unit,
+            )
+        else:
+            logger.error(
+                "ESPHome native: sensor %s reports unit %r, which is not a "
+                "power unit — expected one of %s. Its values will be rejected.",
+                entity_info.object_id,
+                self._unit,
+                ", ".join(POWER_UNITS),
+            )
 
     async def connect_error_callback(self, err: Exception) -> None:
         self.reset_connection_state()
@@ -143,9 +181,27 @@ class ESPHomeNative(PushPowermeter):
         logger.debug("ESPHome native: new sensor state %s", state.state)
 
     async def get_powermeter_watts(self) -> list[float]:
-        if self._any_message_event.is_set():
-            return [self.last_value]
-        return []
+        if not self._any_message_event.is_set():
+            return []
+        return [self.last_value * self._unit_scale()]
+
+    def _unit_scale(self) -> float:
+        """Multiplier from the sensor's declared unit to watts.
+
+        Raises when the sensor declares a unit that is not power: an empty
+        reading would read as "meter unavailable" and hide the misconfiguration
+        behind a transient-looking outage.
+        """
+        if self._unit is None:
+            return 1.0
+        scale = POWER_UNIT_SCALE.get(self._unit)
+        if scale is None:
+            raise ValueError(
+                f"ESPHome native sensor {self.object_id} reports unit "
+                f"{self._unit!r}, which is not a power unit — expected one of "
+                f"{', '.join(POWER_UNITS)}"
+            )
+        return scale
 
     def stream_online(self) -> bool | None:
         return self.is_connected
