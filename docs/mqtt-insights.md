@@ -335,9 +335,7 @@ controls are available to any MQTT client:
   `100 %`: with the default 15-minute interval that is 7.5 minutes against 15.
   This applies while demand runs one battery at a time; once several run at once
   every turn is a full interval again (only `0 %` still parks a battery), and
-  **Distribution Weight** is what splits the load among them. Very small weights
-  fall a little short of their ratio, because each handover costs the balancer a
-  moment to settle.
+  **Distribution Weight** is what splits the load among them.
 - **Min DC Output** — minimum discharge in watts to keep this battery's inverter
   from switching off at 0 W and falling asleep (see
   [MIN_DC_OUTPUT](ct002.md#dc-battery-keep-alive)). Only shown for DC batteries

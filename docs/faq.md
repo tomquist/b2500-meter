@@ -220,9 +220,7 @@ share as a 15 kWh one and saturates first. Three settings work together to fix t
   each battery holds the single rotating slot. Once demand runs several at once
   every turn is a full interval again, so only `0` % still has an effect (it
   parks a battery whenever the others can cover) — use **Distribution Weight**
-  to divide load between batteries that run together. Very small weights also
-  fall a little short of their ratio, since each handover costs the balancer a
-  moment to settle.
+  to divide load between batteries that run together.
 
 See [CT002 / CT003 steering](ct002.md) for details on all three settings.
 
