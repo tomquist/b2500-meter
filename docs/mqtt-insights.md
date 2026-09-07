@@ -332,8 +332,8 @@ controls are available to any MQTT client:
   proportionally less, since a battery holds each turn for that fraction of
   [EFFICIENCY_ROTATION_INTERVAL](ct002.md#battery-efficiency-optimization). Two
   batteries you want to take turns in a 1:2 ratio can be set to `50 %` and
-  `100 %`: with the default 15-minute interval that is roughly 7 minutes against
-  15. Separate from **Distribution Weight** (which biases the split among active
+  `100 %`: with the default 15-minute interval that is 7.5 minutes against 15.
+  Separate from **Distribution Weight** (which biases the split among active
   batteries).
 - **Min DC Output** — minimum discharge in watts to keep this battery's inverter
   from switching off at 0 W and falling asleep (see

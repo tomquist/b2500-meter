@@ -216,10 +216,15 @@ share as a 15 kWh one and saturates first. Three settings work together to fix t
   time, a larger battery should hold a proportionally bigger slice of the rotation
   window — e.g. `75` % and `25` % for the same 3:1 capacity ratio — so it handles
   more of the cumulative energy over time. It is a clean control only while
-  demand is low enough to run one battery at a time: it sets how long each one
-  holds the single rotating slot. Once demand runs several at once the active
-  shares stop tracking the weights, and **Distribution Weight** is what governs
-  how the load divides between them.
+  demand is low enough to run **one** battery at a time: it sets how long each
+  one holds the single rotating slot. Once demand runs several batteries at once
+  but not all of them, a battery is active for its own turn *and* its
+  predecessor's, so the shares stop tracking the weights — and unequal weights
+  then spread *equally* weighted batteries unevenly too. Three batteries at
+  `100`/`100`/`25` % with two running at a time measure 28 / 44 / 28 %, so the
+  two you weighted the same wear about 60 % apart. Leave the weights equal
+  unless low demand really does run one battery at a time, and use
+  **Distribution Weight** to divide load between batteries that run together.
 
 See [CT002 / CT003 steering](ct002.md) for details on all three settings.
 

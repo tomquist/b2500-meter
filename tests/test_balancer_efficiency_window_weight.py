@@ -151,9 +151,9 @@ def test_half_weight_head_rotates_after_half_interval() -> None:
 # with is only a clean ratio when the poll step is small against the rotation
 # interval: each handover costs a poll or two of probe settling, so at a coarse
 # step that overhead is a visible slice of every turn and the measured ratio
-# swings with where the run happens to stop (at a 60 s step the same 0.5 / 1.0
-# pool reads anywhere from 1.62 to 2.00 depending only on the horizon).  10 s is
-# fine-grained enough to be stable and still cheap to run.
+# swings with where the run happens to stop: sweeping 60-480 polls at a 60 s
+# step, the same 0.5 / 1.0 pool reads anywhere from 1.62 to 2.25 on horizon
+# alone.  10 s is fine-grained enough to be stable and still cheap to run.
 _POLL_STEP_S = 10.0
 
 
@@ -303,7 +303,8 @@ def test_three_batteries_split_active_time_by_weight() -> None:
     total = sum(active.values())
     share = {cid: secs / total for cid, secs in active.items()}
 
-    # Ideal 0.571 / 0.286 / 0.143; the handover overhead costs each a little.
+    # Ideal 0.571 / 0.286 / 0.143.  Each handover costs a little settling time,
+    # which comes off the longest turn and slightly flatters the shortest.
     assert 0.53 <= share["big"] <= 0.61
     assert 0.25 <= share["mid"] <= 0.32
     assert 0.12 <= share["small"] <= 0.18
