@@ -374,6 +374,28 @@ def _scenario_efficiency_window_weight() -> list[str]:
         lines.append("advance 1")
         lines.append("last x")
         lines.append("last y")
+    # Unequal non-zero weights (issue #647): the lighter unit holds the head for
+    # its own shorter window rather than being re-ranked behind the heavier one
+    # on every poll, so the two stacks have to agree on a rotation order that no
+    # longer follows from the weights alone.
+    uneven = [
+        _report("x", "A", 0, eff_weight=0.5),
+        _report("y", "A", 0, eff_weight=1.0),
+    ]
+    for _ in range(3):
+        lines.append(_target("x", uneven, grid=120))
+        lines.append(_target("y", uneven, grid=120))
+        lines.append("advance 1")
+    # Past "y"'s full window, then past "x"'s half window, then past a second
+    # full one: three handovers, each read back on both stacks.
+    for step in (910, 460, 910):
+        lines.append(f"advance {step}")
+        for _ in range(3):
+            lines.append(_target("x", uneven, grid=120))
+            lines.append(_target("y", uneven, grid=120))
+            lines.append("advance 1")
+            lines.append("last x")
+            lines.append("last y")
     return lines
 
 

@@ -141,3 +141,89 @@ def test_half_weight_head_rotates_after_half_interval() -> None:
     clock.advance(20.0)
     lb._compute_efficiency_deprioritized(reports, (2,), 200.0)
     assert lb._last_rotation > rot0
+
+
+def _run_rotation(
+    lb: LoadBalancer,
+    clock: _FakeClock,
+    weights: dict[str, float],
+    *,
+    minutes: int,
+    load: float = 200.0,
+) -> dict[str, int]:
+    """Minutes each battery spends active over *minutes* one-minute polls.
+
+    Feeds the balancer back what its own decision implies: whoever holds an
+    active slot reports its share of *load* on the next poll, and a
+    deprioritized battery reports 0.  A battery reporting 0 W while active
+    reads as one that cannot follow its target, which sends the efficiency
+    probe hunting instead of leaving the rotation to run.
+    """
+    power = dict.fromkeys(weights, load / len(weights))
+    active_minutes = dict.fromkeys(weights, 0)
+    for i in range(minutes):
+        clock.advance(60.0)
+        reports = {cid: _report(power[cid], weights[cid]) for cid in weights}
+        deprioritized = lb._compute_efficiency_deprioritized(reports, (i,), 0.0)
+        active = [cid for cid in weights if cid not in deprioritized]
+        for cid in weights:
+            power[cid] = load / len(active) if cid in active else 0.0
+        for cid in active:
+            active_minutes[cid] += 1
+    return active_minutes
+
+
+def test_unequal_weights_split_active_time_in_proportion() -> None:
+    """Issue #647: a half-weight battery gets half the active time, not one poll.
+
+    Two batteries in a 1:2 capacity ratio at a demand only one of them should
+    serve.  Weights 0.5 / 1.0 are meant to hand the small one half the active
+    window the large one gets; before the fix the every-poll weight sort put the
+    large one straight back at the head, leaving the small one a single poll per
+    cycle (a ~14:1 split rather than 2:1).
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+
+    active = _run_rotation(lb, clock, {"small": 0.5, "large": 1.0}, minutes=120)
+
+    assert active["small"] > 0
+    assert 1.8 <= active["large"] / active["small"] <= 2.2
+
+
+def test_equal_weights_split_active_time_evenly() -> None:
+    """The neutral case stays even — the fix must not skew a 1:1 pool."""
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+
+    active = _run_rotation(lb, clock, {"a": 1.0, "b": 1.0}, minutes=120)
+
+    assert 0.8 <= active["a"] / active["b"] <= 1.2
+
+
+def test_weight_sort_does_not_re_pin_the_head_every_tick() -> None:
+    """The weight order is a fill order, not a permanent rank.
+
+    Once the head rotates out it must stay out for the next battery's whole
+    window; re-sorting by weight on every poll would hand the slot straight
+    back to the heaviest battery.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    reports = {"a": _report(0.0, 0.4), "b": _report(0.0, 1.0)}
+
+    # First tick fills the order by weight: the heavier battery leads.
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
+    assert lb._priority[0] == "b"
+
+    # "b" holds a full interval, then hands over to "a" ...
+    clock.advance(901.0)
+    lb._compute_efficiency_deprioritized(reports, (1,), 200.0)
+    assert lb._priority[0] == "a"
+
+    # ... and keeps it for its own (shorter) window instead of being displaced
+    # on the very next poll.
+    clock.advance(60.0)
+    lb._compute_efficiency_deprioritized(reports, (2,), 200.0)
+    assert lb._priority[0] == "a"

@@ -1774,11 +1774,17 @@ std::unordered_map<std::string, float> LoadBalancer::compute_efficiency_depriori
 }
 
 void LoadBalancer::sync_pool_(const ReportMap &reports, double grace) {
-  // Drop departed consumers, append new arrivals (in id order, each with a
-  // settling grace), then sink low/zero efficiency-window-weight batteries to
-  // the back so they fall into the deprioritized tail first while limiting. A
-  // *stable* descending sort preserves the fair-wear rotation cycle within each
-  // weight tier.
+  // Drop departed consumers, then append new arrivals - heaviest efficiency
+  // window first, ties by id - each with a settling grace, so a fresh pool
+  // starts limiting from the battery with the most active time to give.
+  //
+  // Only a *zero*-weight battery is sunk to the back, and on every sync, so
+  // parking one takes effect as soon as its weight is set. Ordering the rest by
+  // weight here would make it a permanent rank: the heaviest battery would
+  // retake the head on the poll after every rotation, saturation swap and
+  // forced rotation, and a lighter one would never hold its slot for the window
+  // rotate_priority_head_ scales for it (issue #647). Past the fill, the order
+  // is the rotation's to own.
   std::unordered_set<std::string> current;
   for (const auto &r : reports) current.insert(r.first);
   this->priority_.erase(std::remove_if(this->priority_.begin(), this->priority_.end(),
@@ -1789,20 +1795,28 @@ void LoadBalancer::sync_pool_(const ReportMap &reports, double grace) {
     if (current.count(d)) new_dep.insert(d);
   this->deprioritized_ = std::move(new_dep);
 
-  std::vector<std::string> sorted_current(current.begin(), current.end());
-  std::sort(sorted_current.begin(), sorted_current.end());
-  for (const auto &cid : sorted_current) {
+  std::vector<std::string> arrivals;
+  for (const auto &cid : current) {
     if (std::find(this->priority_.begin(), this->priority_.end(), cid) ==
-        this->priority_.end()) {
-      this->priority_.push_back(cid);
-      this->set_consumer_grace_(cid, grace);
-    }
+        this->priority_.end())
+      arrivals.push_back(cid);
+  }
+  std::sort(arrivals.begin(), arrivals.end(),
+            [&](const std::string &a, const std::string &b) {
+              const float wa = efficiency_window_weight_of(reports, a);
+              const float wb = efficiency_window_weight_of(reports, b);
+              if (wa != wb) return wa > wb;
+              return a < b;
+            });
+  for (const auto &cid : arrivals) {
+    this->priority_.push_back(cid);
+    this->set_consumer_grace_(cid, grace);
   }
 
   std::stable_sort(this->priority_.begin(), this->priority_.end(),
                    [&](const std::string &a, const std::string &b) {
-                     return efficiency_window_weight_of(reports, a) >
-                            efficiency_window_weight_of(reports, b);
+                     return (efficiency_window_weight_of(reports, a) <= 0.0f) <
+                            (efficiency_window_weight_of(reports, b) <= 0.0f);
                    });
 }
 

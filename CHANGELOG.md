@@ -2,6 +2,8 @@
 
 ## Next
 
+- **Fixed** a battery's **Efficiency Window Weight** not sharing the low-demand rotation as set: anything below 100 % was skipped after a single poll instead of running proportionally less than its peers ([#647](https://github.com/tomquist/astrameter/issues/647)).
+
 - **Fixed** an unavailable ESPHome native power sensor continuing to report its old reading as healthy while connected, leaving batteries steering against stale grid power until the sensor recovered ([#645](https://github.com/tomquist/astrameter/pull/645)).
 
 - **Fixed** a Home Assistant power source refusing to start, or reading as permanently unavailable, when its entity list had a stray or trailing comma (`POWER_INPUT_ALIAS = sensor.import,`). Blank entries are now ignored ([#640](https://github.com/tomquist/astrameter/pull/640)).

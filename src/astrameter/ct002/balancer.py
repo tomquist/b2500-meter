@@ -2402,21 +2402,31 @@ class LoadBalancer:
     def _sync_pool(self, reports: Reports, grace: float) -> None:
         """Reconcile the rotation order with the reporting pool.
 
-        Drops departed consumers, appends new arrivals (in id order, each with a
-        settling grace), then sinks low-weight batteries to the back so they fall
-        into the deprioritized tail first while limiting; the *stable* sort
-        preserves the fair-wear rotation cycle within each weight tier.
+        Drops departed consumers, then appends new arrivals — heaviest
+        efficiency window first, ties by id — each with a settling grace, so a
+        fresh pool starts limiting from the battery with the most active time
+        to give.
+
+        Only a *zero*-weight battery is sunk to the back, and on every sync, so
+        parking one takes effect as soon as its weight is set.  Ordering the
+        rest by weight here would make it a permanent rank: the heaviest
+        battery would retake the head on the poll after every rotation,
+        saturation swap and forced rotation, and a lighter one would never hold
+        its slot for the window :meth:`_rotate_priority_head` scales for it
+        (issue #647).  Past the fill, the order is the rotation's to own.
         """
         current = set(reports)
         self._priority = [c for c in self._priority if c in current]
         self._deprioritized.intersection_update(current)
-        for cid in sorted(current):
-            if cid not in self._priority:
-                self._priority.append(cid)
-                self._set_consumer_grace(cid, grace)
+        arrivals = sorted(
+            (c for c in current if c not in self._priority),
+            key=lambda cid: (-_report_of(reports, cid).efficiency_window_weight, cid),
+        )
+        for cid in arrivals:
+            self._priority.append(cid)
+            self._set_consumer_grace(cid, grace)
         self._priority.sort(
-            key=lambda cid: _report_of(reports, cid).efficiency_window_weight,
-            reverse=True,
+            key=lambda cid: _report_of(reports, cid).efficiency_window_weight <= 0.0
         )
 
     def _demand_estimate(self, reports: Reports, grid_total: float) -> float:
