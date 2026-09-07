@@ -1677,10 +1677,14 @@ std::unordered_map<std::string, float> LoadBalancer::compute_efficiency_depriori
   // one slot every turn is a full interval. Parking is unaffected either way: a
   // 0 weight is sunk to the tail by sync_pool_, not by this window.
   if (!probe_active && !probe_resolved && !this->priority_.empty()) {
+    // A zero weight at the head falls back to a full window too: parking is
+    // sync_pool_'s job, so the head is only ever 0 when every battery is
+    // parked, and a 0 threshold would then hand the slot on at every poll the
+    // probe machinery leaves free.
+    const float configured =
+        efficiency_window_weight_of(reports, this->priority_.front());
     const float head_weight =
-        prev_slots <= 1
-            ? efficiency_window_weight_of(reports, this->priority_.front())
-            : 1.0f;
+        (prev_slots <= 1 && configured > 0.0f) ? configured : 1.0f;
     if ((now - this->last_rotation_) >=
         cfg.efficiency_rotation_interval * head_weight) {
       this->last_rotation_ = now;

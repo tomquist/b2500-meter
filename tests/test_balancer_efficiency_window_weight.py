@@ -465,13 +465,14 @@ def test_departing_battery_leaves_the_rotation_order_alone() -> None:
     assert "heavy" not in lb._deprioritized
 
 
-def test_all_zero_weight_pool_still_rotates() -> None:
-    """Every battery parked is not a state the pool can rest in.
+def test_all_zero_weight_pool_rotates_on_the_normal_interval() -> None:
+    """Every battery parked still rotates at the interval, not at every poll.
 
-    With nothing to promote, the zero-weight sink is a no-op and each head's
-    threshold is 0, so the pool keeps rotating.  Recorded as the behaviour
-    inherited from before the fix rather than endorsed: with every weight at 0
-    there is no battery the balancer is allowed to prefer.
+    The sink cannot promote anyone when nothing outranks anyone, so a 0 weight
+    reaches the head — the one case where it can.  Taken literally that is a 0
+    threshold and the slot changes hands on every poll the probe machinery
+    leaves free; before the fallback this pool moved roughly every 46 s against
+    a 900 s interval.
     """
     clock = _FakeClock()
     lb = _make_balancer(clock, rotation_interval=900.0)
@@ -481,6 +482,13 @@ def test_all_zero_weight_pool_still_rotates() -> None:
     lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
     first = lb._priority[0]
 
-    clock.advance(1.0)
-    lb._compute_efficiency_deprioritized(reports, (1,), 200.0)
+    # Ten minutes of polling, well inside one window: the head holds.
+    for i in range(1, 600):
+        clock.advance(1.0)
+        lb._compute_efficiency_deprioritized(reports, (i,), 200.0)
+        assert lb._priority[0] == first
+
+    # Past the full interval it hands over like any other pool.
+    clock.advance(400.0)
+    lb._compute_efficiency_deprioritized(reports, (600,), 200.0)
     assert lb._priority[0] != first

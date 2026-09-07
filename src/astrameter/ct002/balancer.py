@@ -2596,17 +2596,21 @@ class LoadBalancer:
         Parking a battery is unaffected either way: a 0 weight is sunk to the
         tail by :meth:`_sync_pool`, not by this window.
 
+        A zero weight at the head falls back to a full window too.  Parking is
+        :meth:`_sync_pool`'s job, so the head is only ever a 0 when *every*
+        battery is parked — and then there is no preference left to express,
+        while a 0 threshold would hand the slot on at every poll the probe
+        machinery leaves free (measured at roughly every 46 s against the
+        900 s interval).
+
         *active_slots* is the count the previous poll settled on, so the first
         poll after a pool narrows to one slot still gets a full window; the
         threshold is re-checked every poll, so it corrects on the next one.
         """
         if not self._priority:
             return
-        head_weight = (
-            _report_of(reports, self._priority[0]).efficiency_window_weight
-            if active_slots <= 1
-            else 1.0
-        )
+        configured = _report_of(reports, self._priority[0]).efficiency_window_weight
+        head_weight = configured if active_slots <= 1 and configured > 0.0 else 1.0
         if now - self._last_rotation < self._cfg.efficiency_rotation_interval * (
             head_weight
         ):

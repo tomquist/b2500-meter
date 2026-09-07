@@ -442,6 +442,30 @@ def _scenario_efficiency_window_weight() -> list[str]:
             lines.append("advance 1")
             for cid in ("p", "q", "r"):
                 lines.append(f"last {cid}")
+    # Every battery parked: the sink has no one to promote, so a 0 weight
+    # reaches the head and both stacks have to agree on what an all-zero pool
+    # does. This pins that agreement, not the full-window fallback itself —
+    # with these reports the probe and saturation machinery owns the ordering
+    # here, so removing the fallback from one stack alone does not part them.
+    # The fallback is pinned on the Python side by
+    # test_all_zero_weight_pool_rotates_on_the_normal_interval.
+    parked_all = [
+        _report("m", "A", 0, eff_weight=0.0),
+        _report("n", "A", 0, eff_weight=0.0),
+    ]
+    for _ in range(6):
+        lines.append(_target("m", parked_all, grid=120))
+        lines.append(_target("n", parked_all, grid=120))
+        lines.append("advance 30")
+        lines.append("last m")
+        lines.append("last n")
+    lines.append("advance 910")
+    for _ in range(3):
+        lines.append(_target("m", parked_all, grid=120))
+        lines.append(_target("n", parked_all, grid=120))
+        lines.append("advance 1")
+        lines.append("last m")
+        lines.append("last n")
     return lines
 
 
