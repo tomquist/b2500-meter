@@ -44,6 +44,13 @@ using esphome::ct002::to_grid_reading;
 class TestableBalancer : public LoadBalancer {
  public:
   using LoadBalancer::LoadBalancer;
+  void stage_probe(double now) {
+    this->priority_ = {"a", "b"};
+    this->last_rotation_ = now;
+    this->begin_probe_("a", {"a"}, {"b"}, {"b"}, now);
+  }
+  bool has_probe() const { return this->probe_state_.has_value(); }
+
   void set_saturation(const std::string &consumer_id, double score) {
     this->get_consumer_(consumer_id).saturation_score = score;
   }
@@ -792,3 +799,31 @@ TEST(SteerLog, WithNoSinkTheBalancerFormatsNothing) {
 }
 
 }  // namespace
+
+
+TEST(LoadBalancer, ParkingProbeParticipantCancelsBeforeResume) {
+  // Candidate and backup both invalidate the handoff when explicitly parked.
+  for (const auto &first : {"a", "b"}) {
+    double now = 1000.0;
+    BalancerConfig cfg;
+    cfg.min_efficient_power = 500.0f;
+    cfg.pace_base_step = 0.0f;
+    cfg.grid_predict_trust = 0.0f;
+    auto b = make_testable(&now, cfg);
+    b.stage_probe(now);
+    ReportMap reports;
+    reports["a"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+    reports["b"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+    b.compute_target(first, ConsumerMode{}, reports, 400.0f, {}, {}, {});
+    EXPECT_FALSE(b.has_probe());
+    for (const auto &cid : {"a", "b"}) {
+      const auto out = b.compute_target(cid, ConsumerMode{}, reports, 400.0f, {}, {}, {});
+      EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], 0.0f);
+    }
+    now += 1.0;  // Before the old deadline: resume allocation, not the old probe.
+    reports["a"].weight = 1.0f;
+    const auto out = b.compute_target("a", ConsumerMode{}, reports, 400.0f, {}, {}, {});
+    EXPECT_FALSE(b.has_probe());
+    EXPECT_GT(out[0] + out[1] + out[2], 100.0f);
+  }
+}

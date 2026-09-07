@@ -1062,6 +1062,9 @@ std::array<float, 3> LoadBalancer::compute_auto_target_(
   // Weight zero explicitly parks the battery, even if the entire pool is
   // parked. Bypass allocation/probing and wind existing output down.
   if (consumer_id && reports.count(*consumer_id) && reports.at(*consumer_id).weight == 0.0f) {
+    if (this->probe_participants_().count(*consumer_id)) {
+      this->clear_probe_state_("participant parked");
+    }
     return this->steer_to_zero_(consumer_id, reports, true);
   }
 

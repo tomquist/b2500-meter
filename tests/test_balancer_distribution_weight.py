@@ -138,3 +138,41 @@ def test_zero_weight_preserves_manual_override() -> None:
         "a", ConsumerMode("manual", 300), reports, 1000, frozenset(), frozenset({"a"})
     )
     assert sum(out) == 300
+
+
+@pytest.mark.parametrize("park_first", ["a", "b"])
+def test_parking_probe_participant_cancels_probe_before_resume(park_first: str) -> None:
+    """A parked probe must not resume its old low target when a weight returns."""
+    from dataclasses import replace
+
+    now = 1000.0
+    lb = _make_balancer()
+    lb._cfg = replace(lb._cfg, min_efficient_power=500)
+    lb._clock = lambda: now
+    lb._priority = ["a", "b"]
+    lb._last_rotation = now
+    lb._begin_probe("a", ("a",), ("b",), ("b",), now)
+    reports = {cid: _report(0, weight=0) for cid in ("a", "b")}
+    # Either the candidate or its backup can be the first parked participant.
+    lb.compute_target(
+        park_first, ConsumerMode("auto"), reports, 400, frozenset(), frozenset()
+    )
+    assert lb._probe_state is None
+    for cid in reports:
+        assert (
+            sum(
+                lb.compute_target(
+                    cid, ConsumerMode("auto"), reports, 400, frozenset(), frozenset()
+                )
+            )
+            == 0
+        )
+    now += 1  # Restore before the former probe's deadline.
+    reports["a"] = _report(0, weight=1)
+    out = lb.compute_target(
+        "a", ConsumerMode("auto"), reports, 400, frozenset(), frozenset()
+    )
+    assert lb._probe_state is None
+    # Normal allocation can still fade the efficiency pool, but must not
+    # restart the old probe at its initial 5 W request.
+    assert sum(out) > 100
