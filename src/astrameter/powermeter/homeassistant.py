@@ -29,6 +29,16 @@ _HA_DIFF_ADD = "+"
 
 _ATTR_UNIT_OF_MEASUREMENT = "unit_of_measurement"
 
+#: Why an entity currently has no usable value.  "Has no state" on its own
+#: sends people to look at a sensor Home Assistant is happily showing a value
+#: for, when the reason is usually on this side (not connected yet) or is
+#: something only Home Assistant knows (the entity is unavailable, or does not
+#: exist under that id).
+_NO_STATE_YET = "no state received from Home Assistant yet"
+_DISCONNECTED = "not connected to Home Assistant right now"
+_UNKNOWN_ENTITY = "Home Assistant does not know this entity id"
+_REMOVED = "Home Assistant removed this entity"
+
 
 class HomeAssistant(WebSocketPowermeter):
     _TIMEOUT_MESSAGE = "Timeout waiting for Home Assistant state"
@@ -71,6 +81,9 @@ class HomeAssistant(WebSocketPowermeter):
         # a dead TCP connection on our side. A constant numeric value is
         # therefore legitimate and must not be treated as stale.
         self._entity_values: dict[str, float | None] = {}
+        # Why the matching ``_entity_values`` entry is ``None``, so a failed
+        # read can say which end the problem is at.
+        self._entity_reasons: dict[str, str] = {}
         # Last-seen ``unit_of_measurement`` per entity (``None`` = no unit
         # attribute → assume watts). Values are converted at read time so
         # unit and state updates may arrive in any order.
@@ -125,6 +138,7 @@ class HomeAssistant(WebSocketPowermeter):
             self._fetch_states_task.cancel()
         for eid in list(self._entity_values):
             self._entity_values[eid] = None
+            self._entity_reasons[eid] = _DISCONNECTED
         self._entities_ready.clear()
 
     def _handle_compressed_entity_event(self, ev: dict[str, Any]) -> None:
@@ -164,7 +178,7 @@ class HomeAssistant(WebSocketPowermeter):
         if isinstance(removals, list):
             for eid in removals:
                 if eid in self._tracked_entities:
-                    self._update_entity_value(eid, None)
+                    self._update_entity_value(eid, None, reason=_REMOVED)
 
     async def _on_text(self, ws: WebSocket, raw: str) -> None:
         try:
@@ -229,6 +243,19 @@ class HomeAssistant(WebSocketPowermeter):
             url = self._build_state_url(eid)
             try:
                 async with self._session.get(url, headers=headers) as resp:
+                    if resp.status == 404:
+                        # Almost always a typo or a renamed entity, and the
+                        # only moment we can tell it apart from a sensor that
+                        # is merely slow to appear.  At debug level this cost
+                        # people the whole diagnosis.
+                        logger.error(
+                            "Home Assistant does not know the entity %s. Check "
+                            "the entity id in your configuration against "
+                            "Developer tools > States.",
+                            eid,
+                        )
+                        self._entity_reasons[eid] = _UNKNOWN_ENTITY
+                        continue
                     if resp.status != 200:
                         logger.debug(
                             "Home Assistant: REST state fetch for %s returned %s",
@@ -246,14 +273,18 @@ class HomeAssistant(WebSocketPowermeter):
                 self._update_entity_unit(eid, data.get("attributes"))
                 self._update_entity_value(eid, data.get("state"))
 
-    def _update_entity_value(self, entity_id: str, state_val: object) -> None:
+    def _update_entity_value(
+        self, entity_id: str, state_val: object, *, reason: str = _NO_STATE_YET
+    ) -> None:
         logger.debug("Home Assistant: %s = %s", entity_id, state_val)
         if state_val is None:
             self._entity_values[entity_id] = None
+            self._entity_reasons[entity_id] = reason
             self._check_entities_ready()
             return
         try:
             self._entity_values[entity_id] = float(state_val)  # type: ignore[arg-type]
+            self._entity_reasons.pop(entity_id, None)
         except (ValueError, TypeError):
             # ``unavailable`` / ``unknown`` (or any non-numeric state) —
             # the integration is telling us the value isn't usable.
@@ -263,6 +294,9 @@ class HomeAssistant(WebSocketPowermeter):
                 state_val,
             )
             self._entity_values[entity_id] = None
+            self._entity_reasons[entity_id] = (
+                f"Home Assistant reports it as {state_val!r}"
+            )
         self._check_entities_ready()
         self._message_event.set()
 
@@ -322,7 +356,12 @@ class HomeAssistant(WebSocketPowermeter):
     def _get_entity_value(self, entity_id: str) -> float:
         val = self._entity_values.get(entity_id)
         if val is None:
-            raise ValueError(f"Home Assistant sensor {entity_id} has no state")
+            reason = self._entity_reasons.get(
+                entity_id, _DISCONNECTED if not self._connected else _NO_STATE_YET
+            )
+            raise ValueError(
+                f"Home Assistant sensor {entity_id} has no usable value: {reason}"
+            )
         unit = self._entity_units.get(entity_id)
         if unit is None:
             return val

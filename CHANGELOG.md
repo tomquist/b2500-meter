@@ -2,6 +2,8 @@
 
 ## Next
 
+- **Fixed** batteries steering on a grid reading from before the outage, and a traceback in the log on every poll, while a power source with `THROTTLE_INTERVAL` set kept failing; they now hold their output instead. A Home Assistant sensor with no usable value also says why — unavailable, unknown entity id, or the connection dropped.
+
 - **Fixed** a battery set to a lower **Efficiency Window Weight** than its peers barely taking a turn in the low-demand rotation, instead of running proportionally less than them ([#647](https://github.com/tomquist/astrameter/issues/647), [#648](https://github.com/tomquist/astrameter/pull/648)). Set it to `0 %` for a battery you want held back whenever the others can cover.
 
 - **Fixed** an unavailable ESPHome native power sensor continuing to report its old reading as healthy while connected, leaving batteries steering against stale grid power until the sensor recovered ([#645](https://github.com/tomquist/astrameter/pull/645)).

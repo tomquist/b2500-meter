@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -479,8 +480,9 @@ async def test_sensor_has_no_state() -> None:
     with pytest.raises(ValueError) as exc_info:
         await pm.get_powermeter_watts()
 
-    assert (
-        str(exc_info.value) == "Home Assistant sensor sensor.current_power has no state"
+    assert str(exc_info.value) == (
+        "Home Assistant sensor sensor.current_power has no usable value: "
+        "not connected to Home Assistant right now"
     )
 
 
@@ -493,8 +495,9 @@ async def test_sensor_state_none() -> None:
     with pytest.raises(ValueError) as exc_info:
         await pm.get_powermeter_watts()
 
-    assert (
-        str(exc_info.value) == "Home Assistant sensor sensor.current_power has no state"
+    assert str(exc_info.value) == (
+        "Home Assistant sensor sensor.current_power has no usable value: "
+        "no state received from Home Assistant yet"
     )
 
 
@@ -508,8 +511,9 @@ async def test_sensor_state_not_numeric() -> None:
     with pytest.raises(ValueError) as exc_info:
         await pm.get_powermeter_watts()
 
-    assert (
-        str(exc_info.value) == "Home Assistant sensor sensor.current_power has no state"
+    assert str(exc_info.value) == (
+        "Home Assistant sensor sensor.current_power has no usable value: "
+        "Home Assistant reports it as 'unavailable'"
     )
 
 
@@ -1195,3 +1199,37 @@ async def test_stream_online_false_after_reconnect_reset() -> None:
     assert pm.stream_online() is True
     pm._on_disconnect()
     assert pm.stream_online() is False
+
+
+async def test_unknown_entity_id_is_named_in_the_log_and_the_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A 404 from the states API is the one moment we can tell a typo apart
+    from a sensor that is merely slow to appear, so it must not stay at debug.
+    """
+    pm = _create_powermeter()
+    pm._session = _make_rest_session(
+        {"http://192.168.1.8:8123/api/states/sensor.current_power": None}
+    )
+    with caplog.at_level(logging.ERROR, logger="astrameter"):
+        await pm._fetch_initial_states()
+
+    assert "does not know the entity sensor.current_power" in caplog.text
+    with pytest.raises(ValueError) as exc_info:
+        await pm.get_powermeter_watts()
+
+    assert "Home Assistant does not know this entity id" in str(exc_info.value)
+
+
+async def test_a_dropped_connection_says_so_rather_than_blaming_the_sensor() -> None:
+    pm = _create_powermeter()
+    await _simulate_auth_and_states(
+        pm, [{"entity_id": "sensor.current_power", "state": "500"}]
+    )
+    assert await pm.get_powermeter_watts() == [500.0]
+
+    pm._on_disconnect()
+    with pytest.raises(ValueError) as exc_info:
+        await pm.get_powermeter_watts()
+
+    assert "not connected to Home Assistant right now" in str(exc_info.value)
