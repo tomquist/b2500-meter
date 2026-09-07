@@ -332,3 +332,67 @@ def test_weight_dropped_to_zero_parks_the_battery_on_the_next_poll() -> None:
     assert lb._priority[0] == "b"
     assert lb._priority[-1] == "a"
     assert lb._deprioritized == {"a"}
+
+
+def test_weights_do_not_skew_the_rotation_once_several_batteries_run() -> None:
+    """Above one active slot the rotation is even, whatever the weights.
+
+    A battery is active for its own turn *and* its predecessors', so scaling
+    each turn by the head's weight would hand two batteries weighted the same
+    very different shares as soon as a lighter third joins them.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+
+    # 400 W over three batteries leaves two active slots (400/150 -> 2).
+    active = _run_rotation(
+        lb, clock, {"a": 1.0, "b": 1.0, "c": 0.25}, hours=12, load=400.0
+    )
+    total = sum(active.values())
+    share = {cid: secs / total for cid, secs in active.items()}
+
+    # The two equally weighted batteries wear equally, and the light one is
+    # neither starved (the #647 bug) nor privileged.
+    assert abs(share["a"] - share["b"]) < 0.03
+    for cid in ("a", "b", "c"):
+        assert 0.30 <= share[cid] <= 0.37
+
+
+def test_heavier_battery_joining_a_running_pool_waits_its_turn() -> None:
+    """Arrivals go to the back, even a heavy one meeting a lighter head.
+
+    The weight fills a *fresh* order; it must not let a late arrival preempt a
+    battery that is part-way through its turn.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    running = {"light": _report(0.0, 0.5), "mid": _report(0.0, 0.5)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(running, (0,), 200.0)
+    assert lb._priority[0] == "light"
+
+    joined = dict(running) | {"heavy": _report(0.0, 1.0)}
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(joined, (1,), 200.0)
+    assert lb._priority[0] == "light"
+    assert lb._priority[-1] == "heavy"
+
+
+def test_unparking_a_battery_puts_it_back_in_the_rotation() -> None:
+    """Raising a weight off 0 returns the battery to the rotation."""
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    parked = {"a": _report(0.0, 1.0), "b": _report(0.0, 0.0)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(parked, (0,), 200.0)
+    assert lb._deprioritized == {"b"}
+
+    # Un-parked, "b" is no longer pinned to the tail and takes the head at the
+    # end of "a"'s window.
+    running = {"a": _report(0.0, 1.0), "b": _report(0.0, 1.0)}
+    clock.advance(901.0)
+    lb._compute_efficiency_deprioritized(running, (1,), 200.0)
+    assert lb._priority[0] == "b"
+    assert lb._deprioritized == {"a"}

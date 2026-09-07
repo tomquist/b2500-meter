@@ -1667,9 +1667,19 @@ std::unordered_map<std::string, float> LoadBalancer::compute_efficiency_depriori
   // The active head holds its slot for efficiency_rotation_interval scaled by
   // its efficiency window weight, so a lower-weight battery rotates out sooner
   // (weight 0 -> threshold 0 -> rotates out on the next tick).
+  //
+  // The weight only scales the window while a *single* battery holds the
+  // rotating slot, which is the case it describes. With several slots active a
+  // battery is active for its own turn and its predecessors', so weighting the
+  // head's turn spreads equally weighted batteries unevenly instead (three at
+  // 1.0/1.0/0.25 with two slots measured 28/44/28 % of the active time). Above
+  // one slot every turn is a full interval. Parking is unaffected either way: a
+  // 0 weight is sunk to the tail by sync_pool_, not by this window.
   if (!probe_active && !probe_resolved && !this->priority_.empty()) {
     const float head_weight =
-        efficiency_window_weight_of(reports, this->priority_.front());
+        prev_slots <= 1
+            ? efficiency_window_weight_of(reports, this->priority_.front())
+            : 1.0f;
     if ((now - this->last_rotation_) >=
         cfg.efficiency_rotation_interval * head_weight) {
       this->last_rotation_ = now;
@@ -1785,6 +1795,8 @@ void LoadBalancer::sync_pool_(const ReportMap &reports, double grace) {
   // forced rotation, and a lighter one would never hold its slot for the window
   // the head-rotation block in compute_efficiency_deprioritized_ scales for it
   // (issue #647). Past the fill, the order is the rotation's to own.
+  // (force_rotation is handed ids without reports, so the arrivals it appends
+  // stay in id order.)
   std::unordered_set<std::string> current;
   for (const auto &r : reports) current.insert(r.first);
   this->priority_.erase(std::remove_if(this->priority_.begin(), this->priority_.end(),

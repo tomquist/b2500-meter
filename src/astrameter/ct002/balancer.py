@@ -2412,7 +2412,8 @@ class LoadBalancer:
         parking one takes effect as soon as its weight is set.  Ordering the
         rest by weight here would make it a permanent rank: the heaviest
         battery would retake the head on the poll after every rotation,
-        saturation swap and forced rotation, and a lighter one would never hold
+        saturation swap, forced rotation and probe rejection (each of which
+        rewrites the order deliberately), and a lighter one would never hold
         its slot for the window :meth:`_rotate_priority_head` scales for it
         (issue #647).  Past the fill, the order is the rotation's to own.
         """
@@ -2506,7 +2507,7 @@ class LoadBalancer:
         # Both checks run BEFORE the cache lookup, because either can make the
         # cached active set stale.
         if not probing:
-            self._rotate_priority_head(reports, now)
+            self._rotate_priority_head(reports, now, prev_slots)
             if self._active_slot_saturated(prev_slots):
                 self._invalidate_efficiency_cache()
 
@@ -2568,16 +2569,33 @@ class LoadBalancer:
         self._cache_result = result
         return result
 
-    def _rotate_priority_head(self, reports: Reports, now: float) -> None:
+    def _rotate_priority_head(
+        self, reports: Reports, now: float, active_slots: int
+    ) -> None:
         """Send the longest-serving active battery to the back of the queue.
 
         The head holds its slot for ``efficiency_rotation_interval`` scaled by
         its efficiency window weight, so a lower-weight battery rotates out
         sooner — weight 0 means a threshold of 0, i.e. out on the next tick.
+
+        The weight only scales the window while a *single* battery holds the
+        rotating slot, which is the case it describes: "this battery takes that
+        fraction of the active time".  With several slots active a battery is
+        active for its own turn *and* its predecessors', so weighting the head's
+        turn spreads *equally* weighted batteries unevenly instead — three at
+        1.0 / 1.0 / 0.25 with two slots measured 28 / 44 / 28 % of the active
+        time.  Above one slot every turn is therefore a full interval, which
+        rotates the pool evenly and leaves fair wear to mean what it says.
+        Parking a battery is unaffected either way: a 0 weight is sunk to the
+        tail by :meth:`_sync_pool`, not by this window.
         """
         if not self._priority:
             return
-        head_weight = _report_of(reports, self._priority[0]).efficiency_window_weight
+        head_weight = (
+            _report_of(reports, self._priority[0]).efficiency_window_weight
+            if active_slots <= 1
+            else 1.0
+        )
         if now - self._last_rotation < self._cfg.efficiency_rotation_interval * (
             head_weight
         ):

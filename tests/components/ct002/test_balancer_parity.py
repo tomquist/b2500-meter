@@ -412,6 +412,36 @@ def _scenario_efficiency_window_weight() -> list[str]:
         lines.append("advance 1")
         lines.append("last a")
         lines.append("last b")
+    # Three units reporting 80 W against a 10 W grid: demand 250 over a
+    # min_efficient_power of 100 keeps *two* slots active, and a real reported
+    # power keeps the stall detector out of the rotation. Cycling far enough for
+    # the 0.25-weight unit to take the head twice is what discriminates: above
+    # one slot its turn must be a full interval on both stacks, not a quarter of
+    # one, or the two rotations drift apart at that handover.
+    trio = [
+        _report("p", "A", 80, eff_weight=1.0),
+        _report("q", "A", 80, eff_weight=1.0),
+        _report("r", "A", 80, eff_weight=0.25),
+    ]
+    # The demand estimate is an EMA that only advances when the sample changes,
+    # so the grid alternates to keep it climbing to the ~250 that limits three
+    # units to two slots. Warm it up first, then two full windows bring the
+    # 0.25-weight unit to the head; the 400 s step is the discriminator, sitting
+    # between the quarter-window (225 s) an ungated head would rotate on and the
+    # full one it has to hold once more than one battery is active.
+    grids = (10, 12)
+    for warm in range(24):
+        for cid in ("p", "q", "r"):
+            lines.append(_target(cid, trio, grid=grids[warm % 2]))
+        lines.append("advance 1")
+    for idx, step in enumerate((910, 910, 400, 910, 910, 400)):
+        lines.append(f"advance {step}")
+        for k in range(3):
+            for cid in ("p", "q", "r"):
+                lines.append(_target(cid, trio, grid=grids[(idx + k) % 2]))
+            lines.append("advance 1")
+            for cid in ("p", "q", "r"):
+                lines.append(f"last {cid}")
     return lines
 
 
