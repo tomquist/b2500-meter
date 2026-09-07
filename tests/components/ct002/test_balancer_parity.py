@@ -345,8 +345,10 @@ def _scenario_efficiency_lifecycle() -> list[str]:
 
 def _scenario_efficiency_window_weight() -> list[str]:
     """Per-battery efficiency-window weight: a parked unit (0) stays
-    deprioritized while limiting, and a half-weight head rotates out at half the
-    interval. Both stacks must agree poll-by-poll on the resulting targets."""
+    deprioritized while limiting, a half-weight head rotates out at half the
+    interval, unequal non-zero weights hand each unit a proportional turn, and a
+    fresh pool fills heaviest-first even when that contradicts id order. Both
+    stacks must agree poll-by-poll on the resulting targets."""
     lines = [_CFG_EFFICIENCY, "clock 5000"]
     # "y" is parked for efficiency (weight 0); under low demand it must stay
     # deprioritized while "x" carries the load.
@@ -396,6 +398,20 @@ def _scenario_efficiency_window_weight() -> list[str]:
             lines.append("advance 1")
             lines.append("last x")
             lines.append("last y")
+    # A brand-new pool whose id order contradicts its weight order: "a" sorts
+    # first by id but must arrive behind the heavier "b". Dropping x/y from the
+    # reports retires them, so both stacks fill the order from scratch and have
+    # to break the tie the same way round.
+    fresh = [
+        _report("a", "A", 0, eff_weight=0.5),
+        _report("b", "A", 0, eff_weight=1.0),
+    ]
+    for _ in range(4):
+        lines.append(_target("a", fresh, grid=120))
+        lines.append(_target("b", fresh, grid=120))
+        lines.append("advance 1")
+        lines.append("last a")
+        lines.append("last b")
     return lines
 
 

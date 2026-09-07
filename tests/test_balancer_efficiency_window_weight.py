@@ -89,12 +89,16 @@ def test_zero_weight_battery_runs_when_all_needed() -> None:
     assert lb._deprioritized == set()
 
 
-def test_low_weight_battery_sinks_below_alphabetical_order() -> None:
-    """The weight sort overrides the alphabetical fill order."""
+def test_low_weight_battery_arrives_behind_a_heavier_peer() -> None:
+    """Weight decides the fill order of a fresh pool, over the id order.
+
+    Only the *fill* — once both are in the order, the rotation owns it (see
+    ``test_weight_sort_does_not_re_pin_the_head_every_tick``).
+    """
     clock = _FakeClock()
     lb = _make_balancer(clock)
-    # "a" sorts first alphabetically but has the lower weight, so it must end up
-    # behind "b" once the descending-by-weight stable sort runs.
+    # "a" sorts first by id but has the lower weight, so it must arrive behind
+    # "b" and be the one deprioritized on the first limiting poll.
     reports = {"a": _report(0.0, 0.2), "b": _report(0.0, 1.0)}
     clock.advance(1.0)
     lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
@@ -143,15 +147,25 @@ def test_half_weight_head_rotates_after_half_interval() -> None:
     assert lb._last_rotation > rot0
 
 
+# A battery polls every second or so in the field.  The share each one ends up
+# with is only a clean ratio when the poll step is small against the rotation
+# interval: each handover costs a poll or two of probe settling, so at a coarse
+# step that overhead is a visible slice of every turn and the measured ratio
+# swings with where the run happens to stop (at a 60 s step the same 0.5 / 1.0
+# pool reads anywhere from 1.62 to 2.00 depending only on the horizon).  10 s is
+# fine-grained enough to be stable and still cheap to run.
+_POLL_STEP_S = 10.0
+
+
 def _run_rotation(
     lb: LoadBalancer,
     clock: _FakeClock,
     weights: dict[str, float],
     *,
-    minutes: int,
+    hours: float,
     load: float = 200.0,
-) -> dict[str, int]:
-    """Minutes each battery spends active over *minutes* one-minute polls.
+) -> dict[str, float]:
+    """Seconds each battery spends active over *hours* of polling.
 
     Feeds the balancer back what its own decision implies: whoever holds an
     active slot reports its share of *load* on the next poll, and a
@@ -160,17 +174,17 @@ def _run_rotation(
     probe hunting instead of leaving the rotation to run.
     """
     power = dict.fromkeys(weights, load / len(weights))
-    active_minutes = dict.fromkeys(weights, 0)
-    for i in range(minutes):
-        clock.advance(60.0)
+    active_seconds = dict.fromkeys(weights, 0.0)
+    for i in range(int(hours * 3600 / _POLL_STEP_S)):
+        clock.advance(_POLL_STEP_S)
         reports = {cid: _report(power[cid], weights[cid]) for cid in weights}
         deprioritized = lb._compute_efficiency_deprioritized(reports, (i,), 0.0)
         active = [cid for cid in weights if cid not in deprioritized]
         for cid in weights:
             power[cid] = load / len(active) if cid in active else 0.0
         for cid in active:
-            active_minutes[cid] += 1
-    return active_minutes
+            active_seconds[cid] += _POLL_STEP_S
+    return active_seconds
 
 
 def test_unequal_weights_split_active_time_in_proportion() -> None:
@@ -185,7 +199,7 @@ def test_unequal_weights_split_active_time_in_proportion() -> None:
     clock = _FakeClock()
     lb = _make_balancer(clock, rotation_interval=900.0)
 
-    active = _run_rotation(lb, clock, {"small": 0.5, "large": 1.0}, minutes=120)
+    active = _run_rotation(lb, clock, {"small": 0.5, "large": 1.0}, hours=6)
 
     assert active["small"] > 0
     assert 1.8 <= active["large"] / active["small"] <= 2.2
@@ -196,9 +210,9 @@ def test_equal_weights_split_active_time_evenly() -> None:
     clock = _FakeClock()
     lb = _make_balancer(clock, rotation_interval=900.0)
 
-    active = _run_rotation(lb, clock, {"a": 1.0, "b": 1.0}, minutes=120)
+    active = _run_rotation(lb, clock, {"a": 1.0, "b": 1.0}, hours=6)
 
-    assert 0.8 <= active["a"] / active["b"] <= 1.2
+    assert 0.9 <= active["a"] / active["b"] <= 1.1
 
 
 def test_weight_sort_does_not_re_pin_the_head_every_tick() -> None:
@@ -227,3 +241,54 @@ def test_weight_sort_does_not_re_pin_the_head_every_tick() -> None:
     clock.advance(60.0)
     lb._compute_efficiency_deprioritized(reports, (2,), 200.0)
     assert lb._priority[0] == "a"
+
+
+def test_saturation_swap_is_not_undone_by_the_weight_order() -> None:
+    """A saturated battery handed over must stay handed over.
+
+    The swap puts a healthy battery in the active slot; re-ranking the pool by
+    weight on the next poll would drag the saturated one — heavier here — back
+    to the head, and it would be reinstated on every poll for good.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    reports = {"heavy": _report(0.0, 1.0), "light": _report(0.0, 0.5)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
+    assert lb._priority[0] == "heavy"
+
+    # "heavy" stops following its target; the swap hands the slot to "light".
+    lb._get_consumer("heavy").saturation_score = 1.0
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (1,), 200.0)
+    assert lb._priority[0] == "light"
+
+    # It has to still be "light" on the polls that follow.
+    for i in range(2, 5):
+        clock.advance(1.0)
+        lb._compute_efficiency_deprioritized(reports, (i,), 200.0)
+        assert lb._priority[0] == "light"
+
+
+def test_force_rotation_is_not_undone_by_the_weight_order() -> None:
+    """A hand-forced rotation survives the next poll.
+
+    ``force_rotation`` is the dashboard's "rotate now" button, so a pool whose
+    weights differ must not snap straight back to the battery it rotated away
+    from.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    reports = {"heavy": _report(0.0, 1.0), "light": _report(0.0, 0.5)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
+    assert lb._priority[0] == "heavy"
+
+    lb.force_rotation(set(reports))
+    assert lb._priority[0] == "light"
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (1,), 200.0)
+    assert lb._priority[0] == "light"

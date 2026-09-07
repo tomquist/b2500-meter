@@ -215,7 +215,9 @@ share as a 15 kWh one and saturates first. Three settings work together to fix t
   active time each battery holds. When demand is low and only one battery runs at a
   time, a larger battery should hold a proportionally bigger slice of the rotation
   window — e.g. `75` % and `25` % for the same 3:1 capacity ratio — so it handles
-  more of the cumulative energy over time.
+  more of the cumulative energy over time. It biases the battery holding the
+  rotating slot, so once demand is high enough for several to run at once their
+  shares even out again and **Distribution Weight** is the setting that matters.
 
 See [CT002 / CT003 steering](ct002.md) for details on all three settings.
 
