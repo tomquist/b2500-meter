@@ -194,7 +194,7 @@ def test_unequal_weights_split_active_time_in_proportion() -> None:
     serve.  Weights 0.5 / 1.0 are meant to hand the small one half the active
     window the large one gets; before the fix the every-poll weight sort put the
     large one straight back at the head, leaving the small one a single poll per
-    cycle (a ~14:1 split rather than 2:1).
+    cycle — 240 s against 21360 s over this run, nearer 89:1 than 2:1.
     """
     clock = _FakeClock()
     lb = _make_balancer(clock, rotation_interval=900.0)
@@ -292,3 +292,42 @@ def test_force_rotation_is_not_undone_by_the_weight_order() -> None:
     clock.advance(1.0)
     lb._compute_efficiency_deprioritized(reports, (1,), 200.0)
     assert lb._priority[0] == "light"
+
+
+def test_three_batteries_split_active_time_by_weight() -> None:
+    """Weights 1 / 0.5 / 0.25 give a 4:2:1 split of the rotation."""
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+
+    active = _run_rotation(lb, clock, {"big": 1.0, "mid": 0.5, "small": 0.25}, hours=12)
+    total = sum(active.values())
+    share = {cid: secs / total for cid, secs in active.items()}
+
+    # Ideal 0.571 / 0.286 / 0.143; the handover overhead costs each a little.
+    assert 0.53 <= share["big"] <= 0.61
+    assert 0.25 <= share["mid"] <= 0.32
+    assert 0.12 <= share["small"] <= 0.18
+    assert share["big"] > share["mid"] > share["small"]
+
+
+def test_weight_dropped_to_zero_parks_the_battery_on_the_next_poll() -> None:
+    """Parking is the one thing the per-poll order still enforces.
+
+    A battery already holding the head has to be sunk as soon as its weight
+    reaches 0, rather than keeping the slot until its window happens to end.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    running = {"a": _report(0.0, 1.0), "b": _report(0.0, 1.0)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(running, (0,), 200.0)
+    assert lb._priority[0] == "a"
+
+    # "a" is parked mid-window; "b" must take over on the very next poll.
+    parked = {"a": _report(0.0, 0.0), "b": _report(0.0, 1.0)}
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(parked, (1,), 200.0)
+    assert lb._priority[0] == "b"
+    assert lb._priority[-1] == "a"
+    assert lb._deprioritized == {"a"}

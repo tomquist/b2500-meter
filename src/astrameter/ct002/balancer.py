@@ -2405,7 +2405,8 @@ class LoadBalancer:
         Drops departed consumers, then appends new arrivals — heaviest
         efficiency window first, ties by id — each with a settling grace, so a
         fresh pool starts limiting from the battery with the most active time
-        to give.
+        to give.  (:meth:`force_rotation` is handed ids without reports, so the
+        arrivals it appends stay in id order.)
 
         Only a *zero*-weight battery is sunk to the back, and on every sync, so
         parking one takes effect as soon as its weight is set.  Ordering the

@@ -1783,8 +1783,8 @@ void LoadBalancer::sync_pool_(const ReportMap &reports, double grace) {
   // weight here would make it a permanent rank: the heaviest battery would
   // retake the head on the poll after every rotation, saturation swap and
   // forced rotation, and a lighter one would never hold its slot for the window
-  // rotate_priority_head_ scales for it (issue #647). Past the fill, the order
-  // is the rotation's to own.
+  // the head-rotation block in compute_efficiency_deprioritized_ scales for it
+  // (issue #647). Past the fill, the order is the rotation's to own.
   std::unordered_set<std::string> current;
   for (const auto &r : reports) current.insert(r.first);
   this->priority_.erase(std::remove_if(this->priority_.begin(), this->priority_.end(),
