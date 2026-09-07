@@ -1791,8 +1791,9 @@ void LoadBalancer::sync_pool_(const ReportMap &reports, double grace) {
   // Only a *zero*-weight battery is sunk to the back, and on every sync, so
   // parking one takes effect as soon as its weight is set. Ordering the rest by
   // weight here would make it a permanent rank: the heaviest battery would
-  // retake the head on the poll after every rotation, saturation swap and
-  // forced rotation, and a lighter one would never hold its slot for the window
+  // retake the head on the poll after every rotation, saturation swap, forced
+  // rotation and probe rejection (each of which rewrites the order
+  // deliberately), and a lighter one would never hold its slot for the window
   // the head-rotation block in compute_efficiency_deprioritized_ scales for it
   // (issue #647). Past the fill, the order is the rotation's to own.
   // (force_rotation is handed ids without reports, so the arrivals it appends

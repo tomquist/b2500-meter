@@ -2,7 +2,7 @@
 
 ## Next
 
-- **Fixed** a battery set to a lower **Efficiency Window Weight** than its peers barely taking a turn in the low-demand rotation, instead of running proportionally less than them ([#647](https://github.com/tomquist/astrameter/issues/647)).
+- **Fixed** a battery set to a lower **Efficiency Window Weight** than its peers barely taking a turn in the low-demand rotation, instead of running proportionally less than them ([#647](https://github.com/tomquist/astrameter/issues/647)). The weight applies while low demand runs one battery at a time; set it to `0 %` to hold a battery back whenever the others can cover.
 
 - **Fixed** an unavailable ESPHome native power sensor continuing to report its old reading as healthy while connected, leaving batteries steering against stale grid power until the sensor recovered ([#645](https://github.com/tomquist/astrameter/pull/645)).
 

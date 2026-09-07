@@ -67,8 +67,10 @@ class ConsumerReport:
     """Fair-share weight. ``0.0`` parks the battery; the setter bounds it to [0, 10]."""
 
     efficiency_window_weight: float = 1.0
-    """Fraction of ``efficiency_rotation_interval`` an active slot is held for,
-    clamped to [0, 1]. ``0.0`` rotates out on the next tick."""
+    """Fraction of ``efficiency_rotation_interval`` the rotating slot is held
+    for, clamped to [0, 1]; applied only while a single battery is active (see
+    :meth:`LoadBalancer._rotate_priority_head`). ``0.0`` parks the battery, by
+    way of :meth:`LoadBalancer._sync_pool` sinking it to the tail."""
 
     min_dc_output: float | None = None
     """Per-device MIN_DC_OUTPUT override in watts; ``None`` uses the global rule."""

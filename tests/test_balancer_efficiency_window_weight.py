@@ -5,7 +5,9 @@ active ones stay above ``min_efficient_power``) and rotates which one is active
 for fair wear. ``efficiency_window_weight`` (a report-dict field, ``[0, 1]``,
 neutral ``1.0``) biases that rotation: ``0.0`` parks a battery while limiting,
 ``1.0`` is full participation, and the active head holds its slot for
-``efficiency_rotation_interval`` scaled by its weight.
+``efficiency_rotation_interval`` scaled by its weight — the last of those only
+while a single battery is active, since above one slot a battery is active for
+its own turn and its predecessors' too.
 
 These poke the balancer internals (``_priority`` / ``_deprioritized`` /
 ``_last_rotation``) directly, matching the existing balancer unit tests. The
@@ -18,6 +20,7 @@ from astrameter.ct002.balancer import (
     BalancerConfig,
     ConsumerReport,
     LoadBalancer,
+    ProbeState,
 )
 
 
@@ -151,9 +154,10 @@ def test_half_weight_head_rotates_after_half_interval() -> None:
 # with is only a clean ratio when the poll step is small against the rotation
 # interval: each handover costs a poll or two of probe settling, so at a coarse
 # step that overhead is a visible slice of every turn and the measured ratio
-# swings with where the run happens to stop: sweeping 60-480 polls at a 60 s
-# step, the same 0.5 / 1.0 pool reads anywhere from 1.62 to 2.25 on horizon
-# alone.  10 s is fine-grained enough to be stable and still cheap to run.
+# swings with where the run happens to stop: sweeping every horizon from 60 to
+# 480 polls at a 60 s step, the same 0.5 / 1.0 pool reads anywhere from 1.60 to
+# 2.40 on horizon alone.  10 s is fine-grained enough to be stable and still
+# cheap to run.
 _POLL_STEP_S = 10.0
 
 
@@ -396,3 +400,38 @@ def test_unparking_a_battery_puts_it_back_in_the_rotation() -> None:
     lb._compute_efficiency_deprioritized(running, (1,), 200.0)
     assert lb._priority[0] == "b"
     assert lb._deprioritized == {"a"}
+
+
+def test_rejected_probe_leaves_its_candidate_at_the_back() -> None:
+    """A probe rejection sinks the battery that failed it; that has to stick.
+
+    ``_reject_probe`` rewrites the order deliberately, putting the candidate
+    last.  Re-ranking by weight on the next poll would pull it back to the head
+    when it happens to be the heaviest — re-promoting a battery that had just
+    failed to deliver.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    reports = {"heavy": _report(0.0, 1.0), "light": _report(0.0, 0.5)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
+    assert lb._priority[0] == "heavy"
+
+    now = clock()
+    lb._probe_state = ProbeState(
+        candidate_id="heavy",
+        active_ids=("heavy",),
+        backup_ids=("light",),
+        restore_active_ids=("light",),
+        deadline=now + 30.0,
+        started_at=now,
+    )
+    lb._reject_probe(now, "test")
+    assert lb._priority == ["light", "heavy"]
+
+    # The next polls must leave the failed candidate where the rejection put it.
+    for i in range(1, 4):
+        clock.advance(1.0)
+        lb._compute_efficiency_deprioritized(reports, (i,), 200.0)
+        assert lb._priority[0] == "light"
