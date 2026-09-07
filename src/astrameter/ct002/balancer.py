@@ -1501,7 +1501,13 @@ class LoadBalancer:
     # ------------------------------------------------------------------
 
     def force_rotation(self, current_pool: set[str]) -> None:
-        """Manually rotate priority order."""
+        """Manually rotate priority order.
+
+        Unlike :meth:`_sync_pool`, this is handed ids without reports, so it
+        cannot read weights: the members it appends stay in id order rather than
+        heaviest-first.  Only the fill differs — the rotation it forces is what
+        the caller asked for either way.
+        """
         self._priority = [cid for cid in self._priority if cid in current_pool]
         for cid in sorted(current_pool):
             if cid not in self._priority:
@@ -2407,8 +2413,7 @@ class LoadBalancer:
         Drops departed consumers, then appends new arrivals — heaviest
         efficiency window first, ties by id — each with a settling grace, so a
         fresh pool starts limiting from the battery with the most active time
-        to give.  (:meth:`force_rotation` is handed ids without reports, so the
-        arrivals it appends stay in id order.)
+        to give.
 
         Only a *zero*-weight battery is sunk to the back, and on every sync, so
         parking one takes effect as soon as its weight is set.  Ordering the
@@ -2578,7 +2583,7 @@ class LoadBalancer:
 
         The head holds its slot for ``efficiency_rotation_interval`` scaled by
         its efficiency window weight, so a lower-weight battery rotates out
-        sooner — weight 0 means a threshold of 0, i.e. out on the next tick.
+        sooner.
 
         The weight only scales the window while a *single* battery holds the
         rotating slot, which is the case it describes: "this battery takes that
@@ -2590,6 +2595,10 @@ class LoadBalancer:
         rotates the pool evenly and leaves fair wear to mean what it says.
         Parking a battery is unaffected either way: a 0 weight is sunk to the
         tail by :meth:`_sync_pool`, not by this window.
+
+        *active_slots* is the count the previous poll settled on, so the first
+        poll after a pool narrows to one slot still gets a full window; the
+        threshold is re-checked every poll, so it corrects on the next one.
         """
         if not self._priority:
             return

@@ -928,6 +928,8 @@ void LoadBalancer::reset_consumer(const std::string &consumer_id) {
 }
 
 void LoadBalancer::force_rotation(const std::unordered_set<std::string> &current_pool) {
+  // Unlike sync_pool_, this is handed ids without reports, so it cannot read
+  // weights: the members it appends stay in id order rather than heaviest-first.
   std::vector<std::string> new_priority;
   for (const auto &cid : this->priority_) {
     if (current_pool.find(cid) != current_pool.end()) new_priority.push_back(cid);
@@ -1665,8 +1667,7 @@ std::unordered_map<std::string, float> LoadBalancer::compute_efficiency_depriori
   const bool probe_active = this->probe_state_.has_value();
 
   // The active head holds its slot for efficiency_rotation_interval scaled by
-  // its efficiency window weight, so a lower-weight battery rotates out sooner
-  // (weight 0 -> threshold 0 -> rotates out on the next tick).
+  // its efficiency window weight, so a lower-weight battery rotates out sooner.
   //
   // The weight only scales the window while a *single* battery holds the
   // rotating slot, which is the case it describes. With several slots active a
@@ -1796,8 +1797,6 @@ void LoadBalancer::sync_pool_(const ReportMap &reports, double grace) {
   // deliberately), and a lighter one would never hold its slot for the window
   // the head-rotation block in compute_efficiency_deprioritized_ scales for it
   // (issue #647). Past the fill, the order is the rotation's to own.
-  // (force_rotation is handed ids without reports, so the arrivals it appends
-  // stay in id order.)
   std::unordered_set<std::string> current;
   for (const auto &r : reports) current.insert(r.first);
   this->priority_.erase(std::remove_if(this->priority_.begin(), this->priority_.end(),

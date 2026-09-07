@@ -435,3 +435,52 @@ def test_rejected_probe_leaves_its_candidate_at_the_back() -> None:
         clock.advance(1.0)
         lb._compute_efficiency_deprioritized(reports, (i,), 200.0)
         assert lb._priority[0] == "light"
+
+
+def test_departing_battery_leaves_the_rotation_order_alone() -> None:
+    """A battery dropping out takes its slot with it and nothing else.
+
+    The other half of ``_sync_pool``'s reconciliation: the survivors keep their
+    order and the departed id is dropped from ``_deprioritized`` too, rather
+    than the pool being refilled by weight from scratch.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    three = {
+        "heavy": _report(0.0, 1.0),
+        "mid": _report(0.0, 0.5),
+        "light": _report(0.0, 0.25),
+    }
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(three, (0,), 200.0)
+    assert lb._priority == ["heavy", "mid", "light"]
+
+    # "heavy" goes silent mid-window: "mid" inherits the head in place, and the
+    # order behind it is untouched.
+    two = {"mid": _report(0.0, 0.5), "light": _report(0.0, 0.25)}
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(two, (1,), 200.0)
+    assert lb._priority == ["mid", "light"]
+    assert "heavy" not in lb._deprioritized
+
+
+def test_all_zero_weight_pool_still_rotates() -> None:
+    """Every battery parked is not a state the pool can rest in.
+
+    With nothing to promote, the zero-weight sink is a no-op and each head's
+    threshold is 0, so the pool keeps rotating.  Recorded as the behaviour
+    inherited from before the fix rather than endorsed: with every weight at 0
+    there is no battery the balancer is allowed to prefer.
+    """
+    clock = _FakeClock()
+    lb = _make_balancer(clock, rotation_interval=900.0)
+    reports = {"a": _report(0.0, 0.0), "b": _report(0.0, 0.0)}
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (0,), 200.0)
+    first = lb._priority[0]
+
+    clock.advance(1.0)
+    lb._compute_efficiency_deprioritized(reports, (1,), 200.0)
+    assert lb._priority[0] != first

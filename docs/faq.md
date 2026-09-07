@@ -218,11 +218,11 @@ share as a 15 kWh one and saturates first. Three settings work together to fix t
   more of the cumulative energy over time. It applies only while demand is low
   enough to run **one** battery at a time, which is what it describes: how long
   each battery holds the single rotating slot. Once demand runs several at once
-  the rotation goes back to even turns for everyone and the weights stop
-  mattering — use **Distribution Weight** to divide load between batteries that
-  run together. Very small weights also flatten out, because a battery cannot
-  hand its slot on faster than the balancer settles after each swap: `10` %
-  against `100` % measures about 8:1 rather than 10:1.
+  every turn is a full interval again, so only `0` % still has an effect (it
+  parks a battery whenever the others can cover) — use **Distribution Weight**
+  to divide load between batteries that run together. Very small weights also
+  fall a little short of their ratio, since each handover costs the balancer a
+  moment to settle.
 
 See [CT002 / CT003 steering](ct002.md) for details on all three settings.
 
