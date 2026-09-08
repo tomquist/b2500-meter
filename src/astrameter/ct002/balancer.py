@@ -67,8 +67,10 @@ class ConsumerReport:
     """Fair-share weight. ``0.0`` parks the battery; the setter bounds it to [0, 10]."""
 
     efficiency_window_weight: float = 1.0
-    """Fraction of ``efficiency_rotation_interval`` an active slot is held for,
-    clamped to [0, 1]. ``0.0`` rotates out on the next tick."""
+    """Fraction of ``efficiency_rotation_interval`` the rotating slot is held
+    for, clamped to [0, 1]; applied only while a single battery is active (see
+    :meth:`LoadBalancer._rotate_priority_head`). ``0.0`` parks the battery, by
+    way of :meth:`LoadBalancer._sync_pool` sinking it to the tail."""
 
     min_dc_output: float | None = None
     """Per-device MIN_DC_OUTPUT override in watts; ``None`` uses the global rule."""
@@ -1524,7 +1526,13 @@ class LoadBalancer:
     # ------------------------------------------------------------------
 
     def force_rotation(self, current_pool: set[str]) -> None:
-        """Manually rotate priority order."""
+        """Manually rotate priority order.
+
+        Unlike :meth:`_sync_pool`, this is handed ids without reports, so it
+        cannot read weights: the members it appends stay in id order rather than
+        heaviest-first.  Only the fill differs — the rotation it forces is what
+        the caller asked for either way.
+        """
         self._priority = [cid for cid in self._priority if cid in current_pool]
         for cid in sorted(current_pool):
             if cid not in self._priority:
@@ -2449,21 +2457,32 @@ class LoadBalancer:
     def _sync_pool(self, reports: Reports, grace: float) -> None:
         """Reconcile the rotation order with the reporting pool.
 
-        Drops departed consumers, appends new arrivals (in id order, each with a
-        settling grace), then sinks low-weight batteries to the back so they fall
-        into the deprioritized tail first while limiting; the *stable* sort
-        preserves the fair-wear rotation cycle within each weight tier.
+        Drops departed consumers, then appends new arrivals — heaviest
+        efficiency window first, ties by id — each with a settling grace, so a
+        fresh pool starts limiting from the battery with the most active time
+        to give.
+
+        Only a *zero*-weight battery is sunk to the back, and on every sync, so
+        parking one takes effect as soon as its weight is set.  Ordering the
+        rest by weight here would make it a permanent rank: the heaviest
+        battery would retake the head on the poll after every rotation,
+        saturation swap, forced rotation and probe rejection (each of which
+        rewrites the order deliberately), and a lighter one would never hold
+        its slot for the window :meth:`_rotate_priority_head` scales for it
+        (issue #647).  Past the fill, the order is the rotation's to own.
         """
         current = set(reports)
         self._priority = [c for c in self._priority if c in current]
         self._deprioritized.intersection_update(current)
-        for cid in sorted(current):
-            if cid not in self._priority:
-                self._priority.append(cid)
-                self._set_consumer_grace(cid, grace)
+        arrivals = sorted(
+            (c for c in current if c not in self._priority),
+            key=lambda cid: (-_report_of(reports, cid).efficiency_window_weight, cid),
+        )
+        for cid in arrivals:
+            self._priority.append(cid)
+            self._set_consumer_grace(cid, grace)
         self._priority.sort(
-            key=lambda cid: _report_of(reports, cid).efficiency_window_weight,
-            reverse=True,
+            key=lambda cid: _report_of(reports, cid).efficiency_window_weight <= 0.0
         )
 
     def _demand_estimate(self, reports: Reports, grid_total: float) -> float:
@@ -2542,7 +2561,7 @@ class LoadBalancer:
         # Both checks run BEFORE the cache lookup, because either can make the
         # cached active set stale.
         if not probing:
-            self._rotate_priority_head(reports, now)
+            self._rotate_priority_head(reports, now, prev_slots)
             if self._active_slot_saturated(prev_slots):
                 self._invalidate_efficiency_cache()
 
@@ -2625,16 +2644,41 @@ class LoadBalancer:
                 slots,
             )
 
-    def _rotate_priority_head(self, reports: Reports, now: float) -> None:
+    def _rotate_priority_head(
+        self, reports: Reports, now: float, active_slots: int
+    ) -> None:
         """Send the longest-serving active battery to the back of the queue.
 
         The head holds its slot for ``efficiency_rotation_interval`` scaled by
         its efficiency window weight, so a lower-weight battery rotates out
-        sooner — weight 0 means a threshold of 0, i.e. out on the next tick.
+        sooner.
+
+        The weight only scales the window while a *single* battery holds the
+        rotating slot, which is the case it describes: "this battery takes that
+        fraction of the active time".  With several slots active a battery is
+        active for its own turn *and* its predecessors', so weighting the head's
+        turn spreads *equally* weighted batteries unevenly instead — three at
+        1.0 / 1.0 / 0.25 with two slots measured 28 / 44 / 28 % of the active
+        time.  Above one slot every turn is therefore a full interval, which
+        rotates the pool evenly and leaves fair wear to mean what it says.
+        Parking a battery is unaffected either way: a 0 weight is sunk to the
+        tail by :meth:`_sync_pool`, not by this window.
+
+        A zero weight at the head falls back to a full window too.  Parking is
+        :meth:`_sync_pool`'s job, so the head is only ever a 0 when *every*
+        battery is parked — and then there is no preference left to express,
+        while a 0 threshold would hand the slot on at every poll the probe
+        machinery leaves free (measured at roughly every 46 s against the
+        900 s interval).
+
+        *active_slots* is the count the previous poll settled on, so the first
+        poll after a pool narrows to one slot still gets a full window; the
+        threshold is re-checked every poll, so it corrects on the next one.
         """
         if not self._priority:
             return
-        head_weight = _report_of(reports, self._priority[0]).efficiency_window_weight
+        configured = _report_of(reports, self._priority[0]).efficiency_window_weight
+        head_weight = configured if active_slots <= 1 and configured > 0.0 else 1.0
         if now - self._last_rotation < self._cfg.efficiency_rotation_interval * (
             head_weight
         ):

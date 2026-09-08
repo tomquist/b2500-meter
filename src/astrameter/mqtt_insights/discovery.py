@@ -377,7 +377,8 @@ def build_ct002_consumer_discovery(
     # Efficiency window weight — how much of the efficiency rotation window this
     # battery participates in, as a percentage.  100 % is neutral (full
     # participation); 0 % skips the battery for efficiency (parked while
-    # limiting); intermediate values give it proportionally less active time.
+    # limiting); intermediate values give it proportionally less active time
+    # while low demand runs one battery at a time.
     # Surfaced as a percentage; the internal value is a 0-1 fraction.  Only
     # meaningful when efficiency rotation is enabled (``min_efficient_power >
     # 0``); without it every battery stays active, so don't surface the entity.

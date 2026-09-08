@@ -328,9 +328,14 @@ controls are available to any MQTT client:
 - **Efficiency Window Weight** — how much of the **efficiency rotation** each
   battery takes when demand is low and the balancer runs only some batteries to
   keep them efficient. `100 %` is neutral; `0 %` skips a battery (parked while
-  limiting, but still used when all batteries are needed); in between gives it less
-  active time. Separate from **Distribution Weight** (which biases the split among
-  active batteries).
+  limiting, but still used when all batteries are needed); in between gives it
+  proportionally less, since a battery holds each turn for that fraction of
+  [EFFICIENCY_ROTATION_INTERVAL](ct002.md#battery-efficiency-optimization). Two
+  batteries you want to take turns in a 1:2 ratio can be set to `50 %` and
+  `100 %`: with the default 15-minute interval that is 7.5 minutes against 15.
+  This applies while demand runs one battery at a time; once several run at once
+  every turn is a full interval again (only `0 %` still parks a battery), and
+  **Distribution Weight** is what splits the load among them.
 - **Min DC Output** — minimum discharge in watts to keep this battery's inverter
   from switching off at 0 W and falling asleep (see
   [MIN_DC_OUTPUT](ct002.md#dc-battery-keep-alive)). Only shown for DC batteries

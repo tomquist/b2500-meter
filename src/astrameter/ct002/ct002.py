@@ -267,8 +267,9 @@ class Consumer:
     # Per-battery weight ([0, 1], neutral 1.0) scaling how much of the efficiency
     # rotation window this battery participates in: 1.0 = full participation,
     # 0.0 = skipped for efficiency (parked while limiting), intermediate =
-    # proportionally less active time / wear.  Tuned live via the MQTT
-    # "Efficiency Window Weight" entity.
+    # proportionally less active time / wear while low demand runs one battery
+    # at a time (above one active slot every turn is a full window).  Tuned live
+    # via the MQTT "Efficiency Window Weight" entity.
     efficiency_window_weight: float = 1.0
     # Per-device override (W) for the MIN_DC_OUTPUT wake floor; ``None`` inherits
     # the global setting.  Tuned live via the MQTT "Min DC Output" entity.
@@ -612,7 +613,8 @@ class CT002:
         participation in efficiency rotation); 0.0 skips the battery for
         efficiency (parked while limiting, as long as enough non-zero-weight
         batteries can fill the active slots); intermediate values give it
-        proportionally less active time.
+        proportionally less active time while low demand runs one battery at a
+        time; above one active slot every turn is a full window.
         """
         value = float(weight)
         if not math.isfinite(value) or not (0.0 <= value <= 1.0):

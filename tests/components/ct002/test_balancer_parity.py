@@ -345,8 +345,10 @@ def _scenario_efficiency_lifecycle() -> list[str]:
 
 def _scenario_efficiency_window_weight() -> list[str]:
     """Per-battery efficiency-window weight: a parked unit (0) stays
-    deprioritized while limiting, and a half-weight head rotates out at half the
-    interval. Both stacks must agree poll-by-poll on the resulting targets."""
+    deprioritized while limiting, a half-weight head rotates out at half the
+    interval, unequal non-zero weights hand each unit a proportional turn, and a
+    fresh pool fills heaviest-first even when that contradicts id order. Both
+    stacks must agree poll-by-poll on the resulting targets."""
     lines = [_CFG_EFFICIENCY, "clock 5000"]
     # "y" is parked for efficiency (weight 0); under low demand it must stay
     # deprioritized while "x" carries the load.
@@ -374,6 +376,96 @@ def _scenario_efficiency_window_weight() -> list[str]:
         lines.append("advance 1")
         lines.append("last x")
         lines.append("last y")
+    # Unequal non-zero weights (issue #647): the lighter unit holds the head for
+    # its own shorter window rather than being re-ranked behind the heavier one
+    # on every poll, so the two stacks have to agree on a rotation order that no
+    # longer follows from the weights alone.
+    uneven = [
+        _report("x", "A", 0, eff_weight=0.5),
+        _report("y", "A", 0, eff_weight=1.0),
+    ]
+    for _ in range(3):
+        lines.append(_target("x", uneven, grid=120))
+        lines.append(_target("y", uneven, grid=120))
+        lines.append("advance 1")
+    # Past "y"'s full window, then past "x"'s half window, then past a second
+    # full one: three handovers, each read back on both stacks.
+    for step in (910, 460, 910):
+        lines.append(f"advance {step}")
+        for _ in range(3):
+            lines.append(_target("x", uneven, grid=120))
+            lines.append(_target("y", uneven, grid=120))
+            lines.append("advance 1")
+            lines.append("last x")
+            lines.append("last y")
+    # A brand-new pool whose id order contradicts its weight order: "a" sorts
+    # first by id but must arrive behind the heavier "b". Dropping x/y from the
+    # reports retires them, so both stacks fill the order from scratch and have
+    # to break the tie the same way round.
+    fresh = [
+        _report("a", "A", 0, eff_weight=0.5),
+        _report("b", "A", 0, eff_weight=1.0),
+    ]
+    for _ in range(4):
+        lines.append(_target("a", fresh, grid=120))
+        lines.append(_target("b", fresh, grid=120))
+        lines.append("advance 1")
+        lines.append("last a")
+        lines.append("last b")
+    # Three units reporting 80 W against a 10 W grid: demand 250 over a
+    # min_efficient_power of 100 keeps *two* slots active, and a real reported
+    # power keeps the stall detector out of the rotation. Cycling far enough for
+    # the 0.25-weight unit to take the head twice is what discriminates: above
+    # one slot its turn must be a full interval on both stacks, not a quarter of
+    # one, or the two rotations drift apart at that handover.
+    trio = [
+        _report("p", "A", 80, eff_weight=1.0),
+        _report("q", "A", 80, eff_weight=1.0),
+        _report("r", "A", 80, eff_weight=0.25),
+    ]
+    # The demand estimate is an EMA that only advances when the sample changes,
+    # so the grid alternates to keep it climbing to the ~250 that limits three
+    # units to two slots. Warm it up first, then two full windows bring the
+    # 0.25-weight unit to the head; the 400 s step is the discriminator, sitting
+    # between the quarter-window (225 s) an ungated head would rotate on and the
+    # full one it has to hold once more than one battery is active.
+    grids = (10, 12)
+    for warm in range(24):
+        for cid in ("p", "q", "r"):
+            lines.append(_target(cid, trio, grid=grids[warm % 2]))
+        lines.append("advance 1")
+    for idx, step in enumerate((910, 910, 400, 910, 910, 400)):
+        lines.append(f"advance {step}")
+        for k in range(3):
+            for cid in ("p", "q", "r"):
+                lines.append(_target(cid, trio, grid=grids[(idx + k) % 2]))
+            lines.append("advance 1")
+            for cid in ("p", "q", "r"):
+                lines.append(f"last {cid}")
+    # Every battery parked: the sink has no one to promote, so a 0 weight
+    # reaches the head and both stacks have to agree on what an all-zero pool
+    # does. This pins that agreement, not the full-window fallback itself —
+    # with these reports the probe and saturation machinery owns the ordering
+    # here, so removing the fallback from one stack alone does not part them.
+    # The fallback is pinned on the Python side by
+    # test_all_zero_weight_pool_rotates_on_the_normal_interval.
+    parked_all = [
+        _report("m", "A", 0, eff_weight=0.0),
+        _report("n", "A", 0, eff_weight=0.0),
+    ]
+    for _ in range(6):
+        lines.append(_target("m", parked_all, grid=120))
+        lines.append(_target("n", parked_all, grid=120))
+        lines.append("advance 30")
+        lines.append("last m")
+        lines.append("last n")
+    lines.append("advance 910")
+    for _ in range(3):
+        lines.append(_target("m", parked_all, grid=120))
+        lines.append(_target("n", parked_all, grid=120))
+        lines.append("advance 1")
+        lines.append("last m")
+        lines.append("last n")
     return lines
 
 
