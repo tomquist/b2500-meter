@@ -2,7 +2,7 @@
 
 ## Next
 
-- **Fixed** the brief self-test a Marstek battery runs every ~35 minutes turning into a minute of full-power charging against the house when the optional Hampel outlier filter was on ([#652](https://github.com/tomquist/astrameter/issues/652)).
+- **Fixed** the brief self-test a Marstek battery runs every ~35 minutes turning into a minute of full-power charging against the house when the optional Hampel outlier filter was on ([#652](https://github.com/tomquist/astrameter/issues/652), [#653](https://github.com/tomquist/astrameter/pull/653)).
 
 
 ## 2.3.0
