@@ -8,6 +8,8 @@
 
 - **Fixed** an unavailable ESPHome native power sensor continuing to report its old reading as healthy while connected, leaving batteries steering against stale grid power until the sensor recovered ([#645](https://github.com/tomquist/astrameter/pull/645)).
 
+- **Fixed** HomeWizard meters reading 0 W, leaving batteries idle, on grid connections whose meter reports a correct total but publishes no per-phase power (three-phase without neutral, common in Belgium). The total is now used when every phase reads zero ([#650](https://github.com/tomquist/astrameter/issues/650)).
+
 - **Fixed** a Home Assistant power source refusing to start, or reading as permanently unavailable, when its entity list had a stray or trailing comma (`POWER_INPUT_ALIAS = sensor.import,`). Blank entries are now ignored ([#640](https://github.com/tomquist/astrameter/pull/640)).
 
 - **Fixed** a B2500 written off as unable to deliver after being handed a share too small to switch it on, which made every later share smaller still — leaving it at 0 W indefinitely while the house imported ([#624](https://github.com/tomquist/astrameter/issues/624), [#629](https://github.com/tomquist/astrameter/pull/629)).

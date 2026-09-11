@@ -412,6 +412,11 @@ SERIAL = your_device_serial
 # THROTTLE_INTERVAL = 0
 ```
 
+Per-phase readings are used when the meter publishes them. Some meters — notably
+three-phase connections without neutral (3x230 V, common in Belgium) — report a
+correct total beside a constant 0 W on every phase; AstraMeter then steers on the
+total instead and logs that it is doing so.
+
 ## Enphase Envoy (IQ Gateway)
 
 Reads grid power from an [Enphase IQ Gateway / Envoy](https://enphase.com/installers/microinverters/iq-gateway) over the local HTTPS API (`/production.json?details=1`). The reading comes from the `net-consumption` measurement (positive = grid import, negative = export). Per-phase readings are reported automatically when the gateway exposes them; otherwise the aggregate single-phase value is used. Requires consumption CTs installed on the Envoy.

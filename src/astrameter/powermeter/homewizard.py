@@ -36,6 +36,36 @@ DEFAULT_MAX_MEASUREMENT_AGE_SECONDS = 30.0
 # frames but has stopped sending measurement events).
 WATCHDOG_TIMEOUT_SECONDS = 45.0
 
+# How far from zero the total has to be before three zero phases are read as
+# "this meter publishes no per-phase power" rather than as a house sitting at
+# zero.  Both registers are whole watts, and they are measured separately, so a
+# healthy three-phase meter can round its phases to 0 W beside a total of ±1 W.
+MIN_TOTAL_FALLBACK_W = 5.0
+
+
+def _number(value: object) -> float | None:
+    """The reading as a float, or ``None`` when the field is absent or not numeric."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _phase_values(data: dict) -> list[float] | None:
+    """The per-phase readings, or ``None`` when the meter publishes none.
+
+    L2/L3 are absent on a single-phase meter and read as 0 W; a phase that is
+    present but not numeric makes the whole set unusable, because there is no
+    way to tell which leg the missing watts belong to.
+    """
+    if "power_l1_w" not in data:
+        return None
+    values = [
+        _number(data.get(key, 0)) for key in ("power_l1_w", "power_l2_w", "power_l3_w")
+    ]
+    if any(value is None for value in values):
+        return None
+    return [value for value in values if value is not None]
+
 
 class HomeWizardPowermeter(WebSocketPowermeter):
     _TIMEOUT_MESSAGE = "Timeout waiting for HomeWizard measurement"
@@ -70,6 +100,9 @@ class HomeWizardPowermeter(WebSocketPowermeter):
         # Set whenever we receive a new measurement; the read watchdog clears it
         # after checking staleness to re-arm the timer.
         self._fresh_measurement_event = asyncio.Event()
+        # Logged once per connection attempt when the meter turns out to publish
+        # a total but no per-phase power.  See _log_total_fallback().
+        self._total_fallback_logged = False
 
         if not verify_ssl:
             logger.warning(
@@ -96,6 +129,7 @@ class HomeWizardPowermeter(WebSocketPowermeter):
         self._stream_healthy = False
         self._message_event.clear()
         self._fresh_measurement_event.clear()
+        self._total_fallback_logged = False
         await super().start()
 
     def _connect(self, session: aiohttp.ClientSession) -> WebSocketConnect:
@@ -174,14 +208,16 @@ class HomeWizardPowermeter(WebSocketPowermeter):
             logger.debug("HomeWizard: unknown message type: %s", msg_type)
 
     def _handle_measurement(self, data: dict) -> None:
-        if "power_l1_w" in data:
-            values = [
-                data["power_l1_w"],
-                data.get("power_l2_w", 0),
-                data.get("power_l3_w", 0),
-            ]
-        elif "power_w" in data:
-            values = [data["power_w"]]
+        total = _number(data.get("power_w"))
+        phases = _phase_values(data)
+        if phases is not None and (
+            any(phases) or total is None or abs(total) < MIN_TOTAL_FALLBACK_W
+        ):
+            values = phases
+        elif total is not None:
+            if phases is not None:
+                self._log_total_fallback(total)
+            values = [total]
         else:
             return
 
@@ -201,6 +237,24 @@ class HomeWizardPowermeter(WebSocketPowermeter):
         self._last_measurement_time = now
         self._message_event.set()
         self._fresh_measurement_event.set()
+
+    def _log_total_fallback(self, total: float) -> None:
+        """Announce, once, that the per-phase fields are being ignored.
+
+        Some meters publish the per-phase registers as a constant 0 W while the
+        total is right — three-phase connections without neutral (3x230 V, common
+        in Belgium) are the case we know of.  Steering on those zeroes leaves the
+        battery idle, so the total is used instead; it lands on phase A the same
+        way a single-phase meter's reading does.
+        """
+        if self._total_fallback_logged:
+            return
+        self._total_fallback_logged = True
+        logger.warning(
+            "HomeWizard: meter reports 0 W on every phase while the total is "
+            "%.0f W; using the total as a single-phase reading",
+            total,
+        )
 
     def stream_online(self) -> bool | None:
         return (

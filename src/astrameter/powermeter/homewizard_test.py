@@ -49,6 +49,67 @@ def test_measurement_missing_phases() -> None:
     assert pm.values == [-543, 0, 0]
 
 
+def test_measurement_falls_back_to_total_when_phases_are_all_zero() -> None:
+    """Issue #650: a 3x230 V connection without neutral publishes a correct
+    total beside three constant zeroes."""
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [-73]
+
+
+def test_measurement_keeps_zero_phases_when_total_is_zero() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": 0, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [0, 0, 0]
+
+
+def test_measurement_keeps_zero_phases_when_total_is_rounding_noise() -> None:
+    """A healthy meter rounds its phases to 0 W beside a total of ±1 W."""
+    pm = _create_powermeter()
+    with patch("astrameter.powermeter.homewizard.logger") as log:
+        pm._handle_measurement(
+            {"power_w": -1, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+        )
+    assert pm.values == [0, 0, 0]
+    assert log.warning.call_count == 0
+
+
+def test_measurement_keeps_phases_when_one_is_non_zero() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": -73, "power_l3_w": 0}
+    )
+    assert pm.values == [0, -73, 0]
+
+
+def test_measurement_falls_back_to_total_when_a_phase_is_not_numeric() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": None, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [-73]
+
+
+def test_measurement_ignores_non_numeric_total() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement({"power_w": "nope"})
+    assert pm.values is None
+
+
+def test_total_fallback_is_logged_once() -> None:
+    pm = _create_powermeter()
+    with patch("astrameter.powermeter.homewizard.logger") as log:
+        for _ in range(3):
+            pm._handle_measurement(
+                {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+            )
+        assert log.warning.call_count == 1
+
+
 def test_measurement_no_power_fields() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"energy_import_kwh": 1234.5})
