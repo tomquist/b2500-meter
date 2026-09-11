@@ -94,7 +94,7 @@ family, RPC `apower`):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -131,7 +131,7 @@ poll, all three phases on `ct002:`:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -197,7 +197,7 @@ Tasmota answers `GET /cm?cmnd=status%2010` with sensor JSON nested under
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -240,7 +240,7 @@ returning OBIS keys; grid power is `1.7.0` (import) minus `2.7.0` (export):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -282,7 +282,7 @@ ct002:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -323,7 +323,7 @@ returns a JSON array (`GET /getPlainValue/<id>` returns a bare number):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -369,7 +369,7 @@ required for this source):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 api:        # native API link to Home Assistant is required for this source
@@ -398,7 +398,7 @@ vzlogger's HTTP interface serves `GET /<uuid>` with the latest tuple at
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -447,7 +447,7 @@ The latter, complete:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 api:        # required to import the other node's entity from Home Assistant
@@ -475,7 +475,7 @@ The latter, complete:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 api:        # required to import the other node's entity from Home Assistant
@@ -499,7 +499,7 @@ You can also subscribe over [MQTT](#mqtt) if both nodes share a broker.
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -539,7 +539,7 @@ sensor over an RS485 transceiver wired to the ESP:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 uart:
@@ -587,7 +587,7 @@ ct002:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 mqtt:
@@ -611,7 +611,7 @@ sensor:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 mqtt:
@@ -646,7 +646,7 @@ set the lambda to your JSON field. Headers and basic auth are supported on the
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -689,7 +689,7 @@ UART RX pin, then select the OBIS register:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 uart:
@@ -734,7 +734,7 @@ register map — `address` / `value_type` below are placeholders):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 uart:
@@ -781,7 +781,7 @@ API (TLS + token), which has no ESPHome component. Easiest ESP path: enable
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -877,7 +877,7 @@ platform (the same bridge the [HomeAssistant](#homeassistant) source uses):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 api:        # native API link to Home Assistant is required for this source
@@ -917,7 +917,7 @@ the signed `PowerReal_P_Sum` (positive = grid import, negative = feed-in):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -983,7 +983,7 @@ API is **cleartext HTTP** — use only on a trusted local network.
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 http_request:
@@ -1039,7 +1039,7 @@ skipping the bridge entirely (the same approach as the [SML](#sml) source):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.3.0
+  - source: github://tomquist/astrameter@develop
     components: [ct002]
 
 uart:
