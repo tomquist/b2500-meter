@@ -163,8 +163,144 @@ jobs:
       - name: Run ct002 codegen unit tests (esphome schema validators)
         run: uv run --no-sync pytest tests/components/ct002/test_codegen.py -v
 
-  validate:
+  # The add-on image, exercised the way the Supervisor starts it: the app
+  # reads its configuration from the add-on options and the Supervisor API,
+  # with no config file involved, so nothing but a real container run covers
+  # run.sh, the venv path and SUPERVISOR_TOKEN reaching the app.
+  addon-container:
     needs: [ lint ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Loaded into the local daemon (single platform) so the tests can run it.
+      - name: Build the add-on image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./ha_addon/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: astrameter-addon:test
+          build-args: |
+            BUILD_FROM=ghcr.io/hassio-addons/base:17.0.1
+          cache-from: type=gha,scope=addon-container
+          cache-to: type=gha,mode=max,scope=addon-container
+
+      - name: Run the add-on container tests
+        run: uv run pytest tests/test_addon_container.py -v
+
+  # The dashboard bundle is a COMMITTED generated artifact (neither the Docker
+  # build nor `esphome compile` has Node), so CI has to prove it still matches
+  # its source. Deliberately unfiltered and not fork-gated: `npm run check`
+  # otherwise runs only in the pages/preview workflows, both filtered to
+  # `web/**`, so a Python-only PR could land a stale bundle with green CI.
+  web:
+    needs: [ lint ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      # Typecheck, unit tests, and the dashboard drift + size-budget gate.
+      - name: Check
+        working-directory: web
+        run: npm run check
+
+      - name: Show dashboard bundle size
+        working-directory: web
+        run: |
+          gz=$(gzip -9 -c ../src/astrameter/static/dashboard.html | wc -c)
+          echo "dashboard.html: $(wc -c < ../src/astrameter/static/dashboard.html) B raw, ${gz} B gzipped" >> "$GITHUB_STEP_SUMMARY"
+
+  # Browser-level tests against the real stack: the battery simulator speaking
+  # CT002 UDP, a real AstraMeter, and the committed dashboard bundle. These
+  # catch what the string-rendered unit tests structurally cannot — a control
+  # destroyed by a re-render, a disclosure that snaps shut, a write that never
+  # reaches the device.
+  dashboard-e2e:
+    needs: [ lint, web ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Python dependencies
+        run: uv sync --frozen --extra dev --extra sim
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run dashboard end-to-end tests
+        working-directory: web
+        run: npm run e2e
+
+      - name: Upload the report on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dashboard-e2e-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7
+
+  validate:
+    needs: [ lint, web ]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -214,11 +350,69 @@ jobs:
   # PR comment. Purely informational — thresholds that must hold live in
   # pytest regressions, not here.
   #
-  # The suite is split across three jobs so every scenario runs in its own
+  # The suite is split across four jobs so every scenario runs in its own
   # matrix worker in parallel, cutting wall time from ~(N_scenarios * seeds)
   # sequential minutes down to roughly one scenario's worth.
+  #
+  # That parallelism costs one runner per scenario, twice over (base + head),
+  # and the whole point of the run is the PR comment — so the gate below keeps
+  # it off every push and off any PR whose diff cannot move the numbers.
+  steering-eval-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          # The base commit has to be present to diff against it.
+          fetch-depth: 0
+
+      - name: Decide whether the evaluation is needed
+        id: decide
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # Escape hatch for a change that moves steering from somewhere the
+          # paths below don't cover (a new dependency, a refactor elsewhere in
+          # the loop): label the PR `steering-eval` to force a run.
+          FORCED: ${{ contains(github.event.pull_request.labels.*.name, 'steering-eval') }}
+          # What the simulation actually reads: the controller under test, the
+          # simulated plant and the harness itself — plus this workflow, so a
+          # change to the eval jobs is exercised by the PR that makes it.
+          RELEVANT: '^(src/astrameter/(ct002|simulator)/|\.github/workflows/ci\.yml$)'
+        run: |
+          decide() {
+            echo "run=$1" >> "$GITHUB_OUTPUT"
+            echo "$2"
+            if [ "$1" = "false" ]; then
+              echo "Steering evaluation skipped — $2" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+          if [ "$FORCED" = "true" ]; then
+            decide true "forced by the 'steering-eval' label."
+            exit 0
+          fi
+          # Fail open: if the base commit is somehow unreachable, run the suite
+          # rather than silently dropping the comparison.
+          if ! changed=$(git diff --name-only "$BASE_SHA...HEAD"); then
+            decide true "could not diff against $BASE_SHA; running anyway."
+            exit 0
+          fi
+          echo "Changed files:"
+          echo "$changed"
+          # Tests next to the code can't move the metrics — the harness never
+          # imports them — so a test-only edit under those paths still skips.
+          changed=$(printf '%s\n' "$changed" | grep -vE '_test\.py$' || true)
+          if printf '%s\n' "$changed" | grep -qE "$RELEVANT"; then
+            decide true "the diff touches the active-control loop."
+          else
+            decide false "the diff touches nothing the simulation reads."
+          fi
+
   steering-eval-discover:
-    needs: [ lint ]
+    needs: [ lint, steering-eval-gate ]
+    if: needs.steering-eval-gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
@@ -446,7 +640,7 @@ jobs:
             }
 
   build:
-    needs: [ validate ]
+    needs: [ validate, web ]
     permissions:
       contents: read
       packages: write

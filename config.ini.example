@@ -6,9 +6,39 @@ DEVICE_TYPE = shellypro3em
 # DEVICE_IDS = shellypro3em-c59b15461a21
 # Skip initial powermeter test on startup
 SKIP_POWERMETER_TEST = False
-# Enable the web-based configuration editor at http://<host>:<port>/config (opt-in, default False)
+# The web-based configuration editor at http://<host>:<port>/config.  Left
+# unset it follows DASHBOARD_ENABLED below, whose Configuration tab is that
+# editor.  Set it to True to serve the editor with no dashboard, or to False
+# to refuse it even with one — False also takes the dashboard's Configuration
+# tab away, and is the way to keep an unauthenticated port from editing this
+# file at all.
 # WEB_CONFIG_ENABLED = False
-# Port for the embedded web server (health check + config editor). Default: 52500
+# The live status dashboard at http://<host>:<port>/ (default True).
+# Shows grid power, every battery's target and reported power, power-source
+# health and the balancer's internal state.  Set this to False to serve only
+# the health check (and /config, if WEB_CONFIG_ENABLED above is on).  Ignored
+# by the Home Assistant add-on, where the dashboard always runs and opens from
+# the sidebar.
+# DASHBOARD_ENABLED = True
+# Let the dashboard change this file and control batteries (default True).
+# There is NO authentication on this port, so anyone who can reach it can use
+# those controls; set this to False for a read-only page.
+# DASHBOARD_ALLOW_WRITE = True
+# Only relevant when this file is used BY the Home Assistant add-on: there the
+# dashboard opens from the sidebar and port 52500 is refused unless you opt in
+# here.  Running AstraMeter yourself (Docker or Python), the port is the only
+# way in and the dashboard is already served there.
+# DASHBOARD_DIRECT_ACCESS = False
+# Extra host names the web port answers under, comma-separated.  IP addresses,
+# localhost, .local and .home.arpa names always work, so most setups need
+# nothing here.  Add a name if you reach the dashboard through one that
+# resolves via a nameserver — a reverse proxy, a private DNS entry, or a
+# router-assigned name such as astrameter.fritz.box.  Names are refused by
+# default because a name is the one part of the address another website can
+# aim at this port from your browser (DNS rebinding), and this port has no
+# login to fall back on.
+# DASHBOARD_ALLOWED_HOSTS = astrameter.example.lan, proxy.example.lan
+# Port for the embedded web server (health check + dashboard + config editor). Default: 52500
 # WEB_SERVER_PORT = 52500
 # Global throttling configuration (in seconds) - applies to all powermeters unless overridden
 # Enforces minimum time between power meter readings by waiting when called too frequently
@@ -29,6 +59,9 @@ THROTTLE_INTERVAL = 0
 # Ignore repeated requests from the same emulator client within this window
 # (seconds). Applies to CT002/CT003 (keyed by consumer id) and Shelly (keyed
 # by battery IP). Can be overridden in the [CT002]/[CT003] section. 0 disables.
+# A suppressed request is left UNANSWERED, so a battery's answered rate can only
+# fall to a whole fraction of its own poll rate (half, a third, ...) — the value
+# is honoured exactly, but its effect changes in steps, not smoothly.
 # DEDUPE_TIME_WINDOW = 0
 
 # [CT002]
@@ -283,6 +316,14 @@ THROTTLE_INTERVAL = 0
 ## Per-powermeter throttling override (optional)
 # THROTTLE_INTERVAL = 1
 
+# [ESPHOMENATIVE]
+# ADDRESS = powermeter.local
+# PORT = 6053
+# API_KEY = 5BqtR16i91/+rwUl+QrJewKFOnyS/whHc3v9ySSKpb8=
+# OBJECT_ID = grid_power
+## Connection Info string (optional)
+# CLIENT_INFO = AstraMeter
+
 # [AMIS_READER]
 # IP = 192.168.1.108
 ## Per-powermeter throttling override (optional)
@@ -428,6 +469,17 @@ THROTTLE_INTERVAL = 0
 ## If readings are reversed, flip the sign:
 # POWER_MULTIPLIER = -1
 
+# [REFOSS]
+## Refoss / Meross energy monitor (EM01P, EM06P, EM16P) via local Open API.
+## Polls Em.Status.Get and reads signed channel power (W): positive = import,
+## negative = feed-in. [MEROSS] is an alias for the same driver.
+## The device API is cleartext HTTP — use only on a trusted local network.
+# IP = 192.168.1.150
+## CT channel id(s). One id for single-phase; three for L1/L2/L3 (e.g. 1,2,3).
+# CHANNELS = 1
+## Prefer a numeric IP in Docker — *.local mDNS often does not resolve in bridge mode.
+# POWER_MULTIPLIER = -1
+
 # [TIBBER_PULSE]
 ## Tibber Pulse read locally via the Pulse Bridge HTTP API (no Tibber cloud).
 ## Decodes the meter's SML telegram from /data.json. Enable the bridge's local
@@ -440,6 +492,9 @@ THROTTLE_INTERVAL = 0
 # NODE_ID = 1
 ## Optional: override the Basic-auth user (defaults to "admin").
 # USER = admin
+## Optional: request timeout in seconds (default 5). The bridge's webserver can
+## be slow to respond — raise this if readings drop with connection timeouts.
+# TIMEOUT = 5.0
 ## Optional OBIS overrides (12 hex digits; omit to use eHZ-style defaults)
 # OBIS_POWER_CURRENT = 0100100700ff
 # OBIS_POWER_L1 = 0100240700ff
@@ -500,6 +555,11 @@ THROTTLE_INTERVAL = 0
 ## When HAMPEL_WINDOW > 0, the wrapper is inserted after throttling and before
 ## EMA smoothing.  This is orthogonal to the EMA: Hampel rejects impulse noise,
 ## the EMA smooths the cleaned signal.
+##
+## A *sustained* change (solar arriving, an oven switching on) is held back
+## for about half a window before it is adopted — it is indistinguishable
+## from a spike until enough samples agree.  A bigger window rejects noise
+## better and adopts real changes more slowly; that is the whole trade.
 ##
 ## Recommended starting point for flaky HTTP/MQTT sources:
 ##   HAMPEL_WINDOW        = 5    # odd sizes recommended; 5–7 works well

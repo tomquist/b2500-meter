@@ -63,6 +63,79 @@ class MqttInsightsComponent : public Component {
   void set_ha_discovery_prefix(const std::string &v) { this->ha_discovery_prefix_ = v; }
   void set_marstek_mqtt_enabled(bool v) { this->marstek_mqtt_enabled_ = v; }
   void set_marstek_mqtt_interval_ms(uint32_t v) { this->marstek_mqtt_interval_ms_ = v; }
+  // The broker locator, passed down from the `mqtt:` block at codegen time
+  // (the client keeps its credentials struct private, and this must never
+  // reach for the username/password beside them). Reported by the dashboard.
+  void set_broker(const std::string &v) { this->broker_ = v; }
+  void set_broker_port(uint16_t v) { this->broker_port_ = v; }
+  // The build's git SHA, resolved at codegen time from the component's own
+  // checkout. Published as the discovery `origin` block's sw_version, so a
+  // user reading HA's "added by" metadata sees the same build identifier the
+  // Python stack reports there (discovery.py _origin).
+  void set_git_commit(const std::string &v) { this->git_commit_ = v; }
+
+  /// Mirror a dashboard write onto the retained command topic it belongs to.
+  ///
+  /// Home Assistant publishes every command topic retained, and this
+  /// component re-subscribes on each reconnect — so without this, the broker
+  /// would replay the *old* value and silently undo what the user just set on
+  /// the page. Mirrors publish_consumer_command / publish_device_command in
+  /// src/astrameter/mqtt_insights/service.py, including their retain and QoS.
+  ///
+  /// *payload* must be the value as it crossed the wire, NOT the scaled
+  /// argument the setter took: the reader scales again, so mirroring a
+  /// percentage as a fraction would divide it by 100 on the next reconnect.
+  ///
+  /// Main loop only — the MQTT client belongs to it. Defined inline so a
+  /// dashboard build without `mqtt:` still links.
+  void mirror_consumer_command(const std::string &consumer_id, const std::string &field,
+                               const std::string &payload) {
+#ifdef USE_MQTT
+    if (this->mqtt_ == nullptr || !this->mqtt_->is_connected()) return;
+    this->mqtt_->publish(this->base_topic_ + "/ct002/" + this->device_id_ + "/consumer/" +
+                             consumer_id + "/" + field + "/set",
+                         payload, 1, true);
+#else
+    (void) consumer_id;
+    (void) field;
+    (void) payload;
+#endif
+  }
+
+  /// The device-level counterpart, whose topic carries a JSON object.
+  ///
+  /// Only settings are mirrored. `force_rotation` is a button — an event with
+  /// no retained state to revert — and republishing it retained would re-fire
+  /// a rotation on every reconnect, so the caller does not pass it here.
+  void mirror_device_command(const std::string &field, const std::string &payload) {
+#ifdef USE_MQTT
+    if (this->mqtt_ == nullptr || !this->mqtt_->is_connected()) return;
+    this->mqtt_->publish(this->base_topic_ + "/ct002/" + this->device_id_ + "/set",
+                         "{\"" + field + "\":" + payload + "}", 1, true);
+#else
+    (void) field;
+    (void) payload;
+#endif
+  }
+
+  /// This integration as the dashboard's Diagnostics card reads it.
+  ///
+  /// Mirrors MqttInsightsService.status_snapshot in the Python stack, minus
+  /// the fields this port has no counterpart for (see status_json.h). Defined
+  /// inline so a dashboard build without `mqtt:` still links — the rest of
+  /// this component compiles only under USE_MQTT.
+  status::MqttInsightsStatus status_snapshot() {
+    status::MqttInsightsStatus out;
+#ifdef USE_MQTT
+    out.connected = this->mqtt_ != nullptr && this->mqtt_->is_connected();
+#endif
+    out.broker = this->broker_;
+    out.port = this->broker_port_;
+    out.base_topic = this->base_topic_;
+    out.ha_discovery = this->ha_discovery_;
+    out.ha_discovery_prefix = this->ha_discovery_prefix_;
+    return out;
+  }
 
  protected:
   // Reaction to a fresh consumer event from ct002. Mirrors
@@ -101,6 +174,10 @@ class MqttInsightsComponent : public Component {
   std::string base_topic_{"astrameter"};
   bool ha_discovery_{true};
   std::string ha_discovery_prefix_{"homeassistant"};
+  // Reporting only — the client owns the connection.
+  std::string broker_;
+  uint16_t broker_port_{0};
+  std::string git_commit_;
   bool marstek_mqtt_enabled_{true};
   uint32_t marstek_mqtt_interval_ms_{300000};
 

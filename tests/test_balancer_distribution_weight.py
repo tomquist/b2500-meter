@@ -6,9 +6,12 @@ proportional split by it while leaving the neutral (all-1.0) case identical to
 the unweighted behaviour.
 """
 
+import pytest
+
 from astrameter.ct002.balancer import (
     BalancerConfig,
     ConsumerMode,
+    ConsumerReport,
     LoadBalancer,
 )
 
@@ -23,6 +26,7 @@ def _make_balancer(*, fair_distribution: bool = True) -> LoadBalancer:
             min_efficient_power=0,
             # Pin the raw weighted-share math; ramp pacing has its own tests.
             pace_base_step=0,
+            grid_predict_trust=0,  # assert allocation against the raw grid
         ),
         saturation_alpha=0.15,
         saturation_min_target=20,
@@ -33,11 +37,11 @@ def _make_balancer(*, fair_distribution: bool = True) -> LoadBalancer:
     )
 
 
-def _report(power: float, weight: float = 1.0, phase: str = "A") -> dict:
-    return {"phase": phase, "power": power, "device_type": "HMA-2", "weight": weight}
+def _report(power: float, weight: float = 1.0, phase: str = "A") -> ConsumerReport:
+    return ConsumerReport(phase=phase, power=power, device_type="HMA-2", weight=weight)
 
 
-def test_fair_share_honours_weight():
+def test_fair_share_honours_weight() -> None:
     """With balancing off, the raw fair-share split follows the weight ratio."""
     lb = _make_balancer(fair_distribution=False)
     reports = {"a": _report(0.0, weight=1.5), "b": _report(0.0, weight=1.0)}
@@ -52,7 +56,7 @@ def test_fair_share_honours_weight():
     assert b_out[0] == 200.0
 
 
-def test_zero_weight_takes_no_share():
+def test_zero_weight_takes_no_share() -> None:
     """Weight 0.0 means the battery is parked at 0 W; the rest absorb the load."""
     lb = _make_balancer(fair_distribution=False)
     reports = {"a": _report(0.0, weight=0.0), "b": _report(0.0, weight=1.0)}
@@ -66,13 +70,13 @@ def test_zero_weight_takes_no_share():
     assert b_out[0] == 400.0
 
 
-def test_neutral_weight_matches_equal_split():
+def test_neutral_weight_matches_equal_split() -> None:
     """Default weight 1.0 (and an absent weight key) split demand evenly."""
     weighted = {"a": _report(0.0), "b": _report(0.0)}
     # An absent "weight" key must behave exactly like the neutral default.
     bare = {
-        "a": {"phase": "A", "power": 0, "device_type": "HMA-2"},
-        "b": {"phase": "A", "power": 0, "device_type": "HMA-2"},
+        "a": ConsumerReport(phase="A", power=0, device_type="HMA-2"),
+        "b": ConsumerReport(phase="A", power=0, device_type="HMA-2"),
     }
     for reports in (weighted, bare):
         lb = _make_balancer(fair_distribution=False)
@@ -82,7 +86,7 @@ def test_neutral_weight_matches_equal_split():
         assert out[0] == 200.0
 
 
-def test_balance_correction_targets_weighted_share():
+def test_balance_correction_targets_weighted_share() -> None:
     """Two equally-loaded batteries get nudged toward the weighted ratio.
 
     Both report 250 W; with weights 1.5/1.0 the heavier battery's target sits
@@ -100,3 +104,75 @@ def test_balance_correction_targets_weighted_share():
     # Weighted target for "a" (300) > its 250 reported → pushed up; "b" pushed down.
     assert a_out[0] > 250.0
     assert b_out[0] < 250.0
+
+
+@pytest.mark.parametrize("fair_distribution", [False, True])
+@pytest.mark.parametrize("grid", [-1000.0, 1000.0])
+@pytest.mark.parametrize("power", [0.0, 200.0, -200.0])
+def test_all_zero_weights_park_and_resume(
+    fair_distribution: bool, grid: float, power: float
+) -> None:
+    """Parking the last eligible battery must not reactivate the whole pool."""
+    lb = _make_balancer(fair_distribution=fair_distribution)
+    reports = {"a": _report(power, weight=0), "b": _report(power, weight=0)}
+    for cid in reports:
+        out = lb.compute_target(
+            cid, ConsumerMode("auto"), reports, grid, frozenset(), frozenset()
+        )
+        assert sum(out) == -power
+        assert lb.get_last_intent(cid) == 0
+    # Restoring a weight lets that battery cover the demand again.
+    reports["a"] = _report(0, weight=1)
+    reports["b"] = _report(0, weight=0)
+    out = lb.compute_target(
+        "a", ConsumerMode("auto"), reports, grid, frozenset(), frozenset()
+    )
+    assert sum(out) == grid
+
+
+def test_zero_weight_preserves_manual_override() -> None:
+    """Weight controls automatic allocation, not an explicit manual target."""
+    lb = _make_balancer()
+    reports = {"a": _report(0, weight=0)}
+    out = lb.compute_target(
+        "a", ConsumerMode("manual", 300), reports, 1000, frozenset(), frozenset({"a"})
+    )
+    assert sum(out) == 300
+
+
+@pytest.mark.parametrize("park_first", ["a", "b"])
+def test_parking_probe_participant_cancels_probe_before_resume(park_first: str) -> None:
+    """A parked probe must not resume its old low target when a weight returns."""
+    from dataclasses import replace
+
+    now = 1000.0
+    lb = _make_balancer()
+    lb._cfg = replace(lb._cfg, min_efficient_power=500)
+    lb._clock = lambda: now
+    lb._priority = ["a", "b"]
+    lb._last_rotation = now
+    lb._begin_probe("a", ("a",), ("b",), ("b",), now)
+    reports = {cid: _report(0, weight=0) for cid in ("a", "b")}
+    # Either the candidate or its backup can be the first parked participant.
+    lb.compute_target(
+        park_first, ConsumerMode("auto"), reports, 400, frozenset(), frozenset()
+    )
+    assert lb._probe_state is None
+    for cid in reports:
+        assert (
+            sum(
+                lb.compute_target(
+                    cid, ConsumerMode("auto"), reports, 400, frozenset(), frozenset()
+                )
+            )
+            == 0
+        )
+    now += 1  # Restore before the former probe's deadline.
+    reports["a"] = _report(0, weight=1)
+    out = lb.compute_target(
+        "a", ConsumerMode("auto"), reports, 400, frozenset(), frozenset()
+    )
+    assert lb._probe_state is None
+    # Normal allocation can still fade the efficiency pool, but must not
+    # restart the old probe at its initial 5 W request.
+    assert sum(out) > 100

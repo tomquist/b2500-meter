@@ -37,6 +37,20 @@ long round_half_even(double v) {
   return (fll % 2 == 0) ? fll : fll + 1;  // tie → nearest even
 }
 
+// Fold a fresh gap into an EMA-smoothed interval, rounded to a tenth.
+// Mirrors src/astrameter/ct002/ct002.py::_ema_interval — including the
+// banker's rounding, so poll_interval / answer_interval published to MQTT
+// match between the two stacks.
+constexpr float POLL_INTERVAL_EMA_ALPHA = 0.3f;
+
+std::optional<float> ema_interval(std::optional<float> previous, float raw) {
+  const auto round_tenth = [](float v) {
+    return static_cast<float>(round_half_even(static_cast<double>(v) * 10.0)) / 10.0f;
+  };
+  if (!previous.has_value()) return round_tenth(raw);
+  return round_tenth(POLL_INTERVAL_EMA_ALPHA * raw + (1.0f - POLL_INTERVAL_EMA_ALPHA) * *previous);
+}
+
 // Mirror of src/astrameter/ct002/protocol.py::parse_int → Python int():
 // strips surrounding whitespace and requires the ENTIRE remaining string
 // to be a valid base-10 integer, else returns the default. strtol alone
@@ -55,6 +69,22 @@ int parse_int_strict(const std::string &s, int default_value) {
   return static_cast<int>(parsed);
 }
 
+}  // namespace
+
+bool is_steered_phase(const std::string &phase) {
+  return phase == "A" || phase == "B" || phase == "C" || phase == "D";
+}
+
+std::string normalize_phase(const std::string &raw) {
+  std::string phase = raw;
+  for (auto &c : phase) c = static_cast<char>(std::toupper(c));
+  while (!phase.empty() && std::isspace(static_cast<unsigned char>(phase.front())))
+    phase.erase(phase.begin());
+  while (!phase.empty() && std::isspace(static_cast<unsigned char>(phase.back())))
+    phase.pop_back();
+  return is_steered_phase(phase) ? phase : std::string("0");
+}
+
 // Mirror of Python's _bucket_for_phase: A/B/C → their buckets, "D" → the
 // combined ABC bucket, anything else (the normalized "0") → x.
 size_t bucket_index_for_phase(const std::string &phase) {
@@ -64,8 +94,6 @@ size_t bucket_index_for_phase(const std::string &phase) {
   if (phase == "D") return BUCKET_ABC;
   return BUCKET_X;
 }
-
-}  // namespace
 
 // Wall-clock seconds for balancer/saturation accounting. Uses ESPHome's
 // monotonic millis() because absolute wall time isn't available on bare
@@ -93,6 +121,20 @@ void CT002Component::build_balancer_() {
       [this]() {
         for (auto &p : this->pipeline_) p->reset();
       });
+  // Per-poll steering diagnostics (mirrors balancer.py LoadBalancer._log_steer).
+  // The emit lives here rather than in the balancer so balancer.{h,cpp} stays
+  // free of ESPHome includes — both host build paths compile it with nothing
+  // but the repo root on the include path.
+  //
+  // Installed only on a build whose log level actually reaches DEBUG, exactly
+  // as ESP_LOGD is itself compiled out below that level. Without the gate the
+  // balancer would build the line — three std::string allocations, a set, and
+  // an snprintf, per consumer per poll — and hand it to a macro that throws it
+  // away. With no sink installed, log_steer_ returns on its first branch.
+#if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_DEBUG
+  this->balancer_->set_steer_log_sink(
+      [](const std::string &line) { ESP_LOGD(TAG, "%s", line.c_str()); });
+#endif
 }
 
 void CT002Component::enable_hampel(size_t window, float n_sigma, float min_threshold) {
@@ -110,6 +152,29 @@ void CT002Component::setup() {
   this->num_phases_ = (this->power_sensor_l2_ != nullptr) ? 3 : 1;
 
   auto cache = [this](size_t i, float v) {
+    // NAN is ESPHome's "no data" idiom (unavailable sensor, filter gap) —
+    // never a reading. Skip it without refreshing the stamp so the last good
+    // value bridges a transient gap and a persistent outage ages out into
+    // the meter-unavailable path, and so NaN never reaches the other
+    // raw_values_ readers (Marstek MQTT / cloud reporting). Issue #548.
+    if (!std::isfinite(v)) return;
+    // Convert a declared kW/MW/mW input to watts (issue #572); 1.0 when the
+    // sensor declares W or nothing.
+    v *= this->unit_scale_[i];
+    if (!this->unit_declared_[i] && !this->kw_suspect_warned_[i]) {
+      if (v != 0.0f && std::fabs(v) < 1.0f) {
+        if (++this->kw_suspect_count_[i] >= KW_SUSPECT_READINGS) {
+          this->kw_suspect_warned_[i] = true;
+          ESP_LOGW(TAG,
+                   "power_sensor_l%u: %u consecutive nonzero readings below 1 W — if this "
+                   "sensor reports kW, declare unit_of_measurement: kW on it (auto-converted "
+                   "to W) or scale the value to watts",
+                   static_cast<unsigned>(i + 1), static_cast<unsigned>(KW_SUSPECT_READINGS));
+        }
+      } else {
+        this->kw_suspect_count_[i] = 0;
+      }
+    }
     this->raw_values_[i] = v;
     this->raw_stamp_ms_[i] = ::esphome::millis();
   };
@@ -257,8 +322,7 @@ void CT002Component::handle_request_(const uint8_t *data, size_t len,
   // is combined / whole-home mode (newer Marstek firmware) — all four are
   // valid, actively-steered phases, so they are NOT inspection. Mirrors
   // ct002.py _handle_request.
-  const bool in_inspection_mode = reported_phase != "A" && reported_phase != "B" &&
-                                  reported_phase != "C" && reported_phase != "D";
+  const bool in_inspection_mode = !is_steered_phase(reported_phase);
   int reported_power = 0;
   if (fields.size() > 5) {
     // Match Python's parse_int (int()): reject trailing garbage / float
@@ -275,17 +339,14 @@ void CT002Component::handle_request_(const uint8_t *data, size_t len,
     participates = p.empty() || parse_int_strict(p, 1) != 0;
   }
 
-  // Deduplication — drop repeat polls from the same consumer inside the
-  // configured window (keyed by consumer_id so retransmits are suppressed
-  // regardless of source UDP port). Mirrors ct002.py:636-644. Disabled
-  // (default window 0) means every datagram is processed.
-  if (!this->dedup_should_process_(consumer_id)) {
-    ESP_LOGD(TAG, "Ignoring duplicate request from %s (consumer=%s) — dedupe window",
-             addr_ip.c_str(), consumer_id.c_str());
-    return;
-  }
-
   const std::string meter_dev_type = fields[0];
+  // Record the report for *every* poll, before the dedupe decision: the window
+  // suppresses our reply, it does not mean the battery went quiet. Booking it
+  // here keeps poll_interval measuring the battery's real cadence (rather than
+  // our answer rate), keeps the adaptive TTL from evicting a live battery whose
+  // polls we deliberately drop, and lets cross-talk aggregation use the
+  // freshest reported power. Mirrors ct002.py's _handle_request ordering.
+  //
   // Store the phase exactly as reported: "D" selects the combined ABC bucket
   // and any inspection marker is normalized to "0" (the x bucket) inside
   // update_consumer_report_ — forcing "A" here would mis-count inspection
@@ -293,6 +354,16 @@ void CT002Component::handle_request_(const uint8_t *data, size_t len,
   this->update_consumer_report_(consumer_id, reported_phase,
                                 static_cast<float>(reported_power), meter_dev_type, addr_ip,
                                 participates);
+
+  // Deduplication — drop repeat polls from the same consumer inside the
+  // configured window (keyed by consumer_id so retransmits are suppressed
+  // regardless of source UDP port). Disabled (default window 0) means every
+  // datagram is answered.
+  if (!this->dedup_should_process_(consumer_id)) {
+    ESP_LOGD(TAG, "Ignoring duplicate request from %s (consumer=%s) — dedupe window",
+             addr_ip.c_str(), consumer_id.c_str());
+    return;
+  }
 
   // Read the filter pipeline → balancer.
   std::vector<float> values;
@@ -302,10 +373,21 @@ void CT002Component::handle_request_(const uint8_t *data, size_t len,
   // active control so the stateful controller (grid-state predictor, saturation
   // EMA, ...) never treats a fabricated zero grid as a fresh sample and emits a
   // non-zero delta from its internal state — the wind-up issue #403 guards
-  // against. The battery holds on the literal zero adjustment instead. Mirrors
-  // ct002.py _handle_request.
-  const bool meter_ok = !values.empty();
-  if (values.empty()) values = {0.0f, 0.0f, 0.0f};
+  // against. The battery holds on the literal zero adjustment instead.
+  //
+  // A non-finite reading (NaN/Inf) is a meter failure too, not a sample: one
+  // NaN fed into the balancer poisons the grid-state predictor permanently
+  // (every later innovation is NaN, so no fresh meter sample can ever correct
+  // the estimate) and pins each battery at the ramp-pacing base step until
+  // reboot (issue #548). Mirrors ct002.py _handle_request.
+  bool meter_ok = !values.empty();
+  for (float v : values) {
+    if (!std::isfinite(v)) {
+      meter_ok = false;
+      break;
+    }
+  }
+  if (!meter_ok) values = {0.0f, 0.0f, 0.0f};
   while (values.size() < 3) values.push_back(0.0f);
   values.resize(3);
 
@@ -324,10 +406,7 @@ void CT002Component::handle_request_(const uint8_t *data, size_t len,
       // power plus the whole target, not a single phase.
       delta = values[0] + values[1] + values[2];
     } else {
-      size_t phase_idx = 0;
-      if (consumer.phase == "B") phase_idx = 1;
-      else if (consumer.phase == "C") phase_idx = 2;
-      delta = values[phase_idx];
+      delta = values[phase_index(consumer.phase)];
     }
     consumer.last_instructed_power = reported_power + delta;
   }
@@ -340,8 +419,17 @@ void CT002Component::handle_request_(const uint8_t *data, size_t len,
     socklen_t to_len = socket::set_sockaddr(reinterpret_cast<struct sockaddr *>(&to), sizeof(to),
                                             addr_ip, addr_port);
     if (to_len > 0) {
-      this->socket_->sendto(payload.data(), payload.size(), 0,
-                            reinterpret_cast<struct sockaddr *>(&to), to_len);
+      const ssize_t sent = this->socket_->sendto(payload.data(), payload.size(), 0,
+                                                 reinterpret_cast<struct sockaddr *>(&to), to_len);
+      // Only an actually-delivered datagram counts as an answer: sendto()
+      // returns -1 when the stack rejects it (ENOMEM under load is the common
+      // one), and the battery is no better off than if we had deduped it.
+      if (sent >= 0 && static_cast<size_t>(sent) == payload.size()) {
+        this->track_answer_(consumer_id);
+      } else {
+        ESP_LOGW(TAG, "CT002 response to %s was not sent (%d of %u bytes)", addr_ip.c_str(),
+                 static_cast<int>(sent), static_cast<unsigned>(payload.size()));
+      }
     }
   }
 
@@ -404,15 +492,7 @@ void CT002Component::update_consumer_report_(const std::string &consumer_id,
                                             const std::string &phase, float power,
                                             const std::string &device_type,
                                             const std::string &source_ip, bool participates) {
-  std::string normalized_phase = phase;
-  for (auto &c : normalized_phase) c = static_cast<char>(std::toupper(c));
-  if (normalized_phase != "A" && normalized_phase != "B" && normalized_phase != "C" &&
-      normalized_phase != "D") {
-    // Anything else ("0", empty, future markers) is the unassigned/
-    // inspection state; store the wire's canonical "0" so aggregation
-    // routes it to the x bucket instead of inventing a phase (issue #460).
-    normalized_phase = "0";
-  }
+  const std::string normalized_phase = normalize_phase(phase);
   auto &consumer = this->get_consumer_(consumer_id);
   const double now = now_seconds_();
   // Capture the prior phase BEFORE the update. Python keys "is there a
@@ -424,18 +504,8 @@ void CT002Component::update_consumer_report_(const std::string &consumer_id,
   // (ct002.py:298-307). Seeded on the second poll; round-trip to 0.1s
   // resolution to match what the Python service publishes to MQTT.
   if (consumer.timestamp > 0.0) {
-    const float raw_interval = static_cast<float>(now - consumer.timestamp);
-    // Python rounds poll_interval to 1 decimal with round(x, 1) — banker's.
-    auto round_tenth = [](float v) {
-      return static_cast<float>(round_half_even(static_cast<double>(v) * 10.0)) / 10.0f;
-    };
-    if (!consumer.poll_interval.has_value()) {
-      consumer.poll_interval = round_tenth(raw_interval);
-    } else {
-      consumer.poll_interval = round_tenth(POLL_INTERVAL_EMA_ALPHA * raw_interval +
-                                           (1.0f - POLL_INTERVAL_EMA_ALPHA) *
-                                               *consumer.poll_interval);
-    }
+    consumer.poll_interval =
+        ema_interval(consumer.poll_interval, static_cast<float>(now - consumer.timestamp));
   }
   consumer.phase = normalized_phase;
   consumer.power = power;
@@ -448,12 +518,8 @@ void CT002Component::update_consumer_report_(const std::string &consumer_id,
   // different leg) — mirrors Python's _update_consumer_report. Only fires
   // for a declared A/B/C/D phase that differs from the prior one;
   // inspection-mode polls (normalized to "0") never trigger it.
-  const auto is_declared = [](const std::string &p) {
-    return p == "A" || p == "B" || p == "C" || p == "D";
-  };
-  if (is_declared(normalized_phase) && previous_phase != normalized_phase) {
-    const bool prior_valid = is_declared(previous_phase);
-    if (prior_valid) {
+  if (is_steered_phase(normalized_phase) && previous_phase != normalized_phase) {
+    if (is_steered_phase(previous_phase)) {
       ESP_LOGI(TAG, "CT002 consumer %s phase changed: %s -> %s", consumer_id.c_str(),
                previous_phase.c_str(), normalized_phase.c_str());
     } else {
@@ -721,7 +787,15 @@ void CT002Component::dump_config() {
   ESP_LOGCONFIG(TAG, "  CT MAC: %s", this->ct_mac_.empty() ? "(mirror)" : this->ct_mac_.c_str());
   ESP_LOGCONFIG(TAG, "  UDP Port: %u", this->udp_port_);
   ESP_LOGCONFIG(TAG, "  Active Control: %s", YESNO(this->active_control_));
-  ESP_LOGCONFIG(TAG, "  Max Sensor Age: %u ms", this->max_sensor_age_ms_);
+  // uint32_t is `long unsigned` on xtensa, so %u needs the cast to match
+  // (lossless — both are 32 bits here and on the host build).
+  ESP_LOGCONFIG(TAG, "  Max Sensor Age: %u ms", static_cast<unsigned>(this->max_sensor_age_ms_));
+  for (uint8_t i = 0; i < this->num_phases_; ++i) {
+    if (this->unit_scale_[i] != 1.0f) {
+      ESP_LOGCONFIG(TAG, "  L%u Unit Scale: x%g (declared unit -> W)",
+                    static_cast<unsigned>(i + 1), this->unit_scale_[i]);
+    }
+  }
   ESP_LOGCONFIG(TAG, "  Reporting Consumers: %u", static_cast<unsigned>(this->reporting_consumer_count()));
 }
 
@@ -745,6 +819,7 @@ CT002Component::ConsumerSnapshot CT002Component::snapshot_consumer(
   snap.efficiency_window_weight = c.efficiency_window_weight;
   snap.min_dc_output = c.min_dc_output;
   snap.poll_interval = c.poll_interval;
+  snap.answer_interval = c.answer_interval;
   snap.timestamp = c.timestamp;
   snap.grid_power = this->last_grid_power_;
   snap.target = this->last_target_;
@@ -913,6 +988,18 @@ void CT002Component::evict_stale_consumers_() {
       else ++it;
     }
   }
+}
+
+void CT002Component::track_answer_(const std::string &consumer_id) {
+  auto it = this->consumers_.find(consumer_id);
+  if (it == this->consumers_.end()) return;
+  Consumer &c = it->second;
+  const double now = now_seconds_();
+  if (c.last_answer_at > 0.0) {
+    c.answer_interval =
+        ema_interval(c.answer_interval, static_cast<float>(now - c.last_answer_at));
+  }
+  c.last_answer_at = now;
 }
 
 bool CT002Component::dedup_should_process_(const std::string &consumer_id) {

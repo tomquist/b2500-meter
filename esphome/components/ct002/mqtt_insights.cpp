@@ -22,8 +22,8 @@
 // Floor we treat as "real wall-clock time available" — anything before
 // 2020-01-01 means SNTP hasn't synced yet and time(nullptr) is just
 // returning seconds-since-boot. HA renders sub-1970 timestamps as the
-// epoch start, which is worse than publishing null.
-static constexpr time_t WALL_CLOCK_SANE_THRESHOLD = 1577836800;  // 2020-01-01 UTC
+// epoch start, which is worse than publishing null. The floor itself lives in
+// status_json.h, so the dashboard and MQTT cannot disagree about it.
 
 namespace esphome {
 namespace ct002 {
@@ -112,7 +112,8 @@ void MqttInsightsComponent::on_mqtt_connected_() {
   if (this->ha_discovery_) {
     auto [topic, payload] = build_ct002_device_discovery(
         this->base_topic_, this->device_id_, this->ha_discovery_prefix_,
-        this->ct002_ != nullptr && this->ct002_->efficiency_rotation_enabled());
+        this->ct002_ != nullptr && this->ct002_->efficiency_rotation_enabled(),
+        this->git_commit_);
     this->mqtt_->publish(topic, payload, 0, true);
     this->device_discovered_ = true;
   }
@@ -187,7 +188,8 @@ void MqttInsightsComponent::publish_consumer_event_(const std::string &consumer_
                                   "/consumer/" + consumer_id;
 
   // Build per-consumer state JSON. Field set + value TYPES mirror
-  // service.py's consumer_state dict (ct002.py:719-744): grid_power.* and
+  // service.py's consumer_state dict, fed by the event payload CT002's
+  // _handle_request builds for _call_event_listener: grid_power.* and
   // target.* are floats; reported_power is an int (parse_int upstream);
   // last_target is the balancer's raw float. Emitting floats here matters
   // because the HA value_templates pass the value through unrounded, so
@@ -221,6 +223,11 @@ void MqttInsightsComponent::publish_consumer_event_(const std::string &consumer_
     } else {
       root["poll_interval"] = nullptr;
     }
+    if (snap.answer_interval.has_value()) {
+      root["answer_interval"] = *snap.answer_interval;
+    } else {
+      root["answer_interval"] = nullptr;
+    }
     // Last seen timestamp — HA's `device_class: timestamp` wants Unix
     // epoch seconds (or ISO 8601). snap.timestamp is millis()-derived
     // (monotonic seconds since boot), which HA would render as ~1970+uptime
@@ -228,7 +235,7 @@ void MqttInsightsComponent::publish_consumer_event_(const std::string &consumer_
     // (or any other time source has set it), otherwise publish null so
     // HA shows "unavailable" instead of a wildly-wrong date.
     const time_t now_wall = std::time(nullptr);
-    if (now_wall >= WALL_CLOCK_SANE_THRESHOLD) {
+    if (now_wall >= status::WALL_CLOCK_SANE_THRESHOLD) {
       root["last_seen"] = static_cast<long>(now_wall);
     } else {
       root["last_seen"] = nullptr;
@@ -252,7 +259,8 @@ void MqttInsightsComponent::publish_consumer_event_(const std::string &consumer_
   this->mqtt_->publish(state_topic + "/availability", "online", 6, 0, true);
 
   // Device-level status — published on every consumer update so HA sees
-  // fresh smooth_target / consumer_count. Mirrors service.py:425.
+  // fresh smooth_target / consumer_count. Mirrors the device_status dict in
+  // service.py's MqttInsightsService._handle_ct002_event.
   auto device_buf = json::build_json([&](JsonObject root) {
     // smooth_target is the total input grid power (post-filter,
     // pre-balancer), mirroring Python's _last_smooth_target — NOT the sum
@@ -263,6 +271,33 @@ void MqttInsightsComponent::publish_consumer_event_(const std::string &consumer_
     // (via YAML or the switch itself) rather than always reading "on".
     root["active_control"] = this->ct002_->active_control();
     root["consumer_count"] = this->ct002_->reporting_consumer_count();
+    // How well the loop is holding the grid at zero, plus a 0-100 score — the
+    // one pair of entities that answers "is this working?" without reading the
+    // balancer internals (mirrors service.py).
+    const auto quality = this->ct002_->control_quality();
+    root["control_quality"] = quality.verdict;
+    // Null while there is nothing to score, so the HA sensor reads "unknown"
+    // rather than a flawless 100 it has no evidence for (mirrors service.py).
+    if (quality.has_score) {
+      root["control_quality_score"] = std::round(quality.score * 10.0) / 10.0;
+    } else {
+      root["control_quality_score"] = nullptr;
+    }
+    // The evidence behind the verdict, which names no cause on purpose — an
+    // MQTT-only client needs these to act on "off_target". Null until at least
+    // one sample has been folded in (mirrors ct002.py).
+    if (quality.samples > 0) {
+      root["control_quality_error_w"] = std::round(quality.error_ema * 10.0) / 10.0;
+      root["control_quality_in_band_pct"] =
+          std::round(quality.in_band_fraction * 1000.0) / 10.0;
+      root["control_quality_crossings_per_min"] =
+          std::round(quality.crossings_per_second * 6000.0) / 100.0;
+    } else {
+      root["control_quality_error_w"] = nullptr;
+      root["control_quality_in_band_pct"] = nullptr;
+      root["control_quality_crossings_per_min"] = nullptr;
+    }
+    root["control_quality_band_w"] = std::round(quality.band * 10.0f) / 10.0f;
   });
   this->mqtt_->publish(this->base_topic_ + "/ct002/" + this->device_id_ + "/status", device_buf, 0,
                        true);
@@ -275,10 +310,22 @@ void MqttInsightsComponent::publish_consumer_event_(const std::string &consumer_
         this->discovered_consumers_.find(consumer_id) == this->discovered_consumers_.end();
     if (first_sight) {
       this->discovered_consumers_.insert(consumer_id);
+      const bool rotation =
+          this->ct002_ != nullptr && this->ct002_->efficiency_rotation_enabled();
+      // Retire entities this payload no longer carries first (issue #576) —
+      // HA keeps an entity that merely stops appearing — then publish the
+      // current payload, so the retained discovery message is the current one.
+      // Mirrors service.py::_publish_discovery. Scoped so the ~7 KB retirement
+      // payload is freed before the real one is built.
+      {
+        auto [retire_topic, retire_payload] = build_ct002_consumer_discovery(
+            this->base_topic_, this->device_id_, consumer_id, this->ha_discovery_prefix_,
+            snap.device_type, rotation, /*retire_removed=*/true, this->git_commit_);
+        this->mqtt_->publish(retire_topic, retire_payload, 0, true);
+      }
       auto [topic, payload] = build_ct002_consumer_discovery(
           this->base_topic_, this->device_id_, consumer_id, this->ha_discovery_prefix_,
-          snap.device_type,
-          this->ct002_ != nullptr && this->ct002_->efficiency_rotation_enabled());
+          snap.device_type, rotation, /*retire_removed=*/false, this->git_commit_);
       this->mqtt_->publish(topic, payload, 0, true);
     }
   }
@@ -496,8 +543,10 @@ void MqttInsightsComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Base topic: %s", this->base_topic_.c_str());
   ESP_LOGCONFIG(TAG, "  HA Discovery: %s (prefix=%s)", YESNO(this->ha_discovery_),
                 this->ha_discovery_prefix_.c_str());
+  // uint32_t is `long unsigned` on xtensa, so %u needs the cast to match
+  // (lossless — both are 32 bits here and on the host build).
   ESP_LOGCONFIG(TAG, "  Marstek MQTT: %s (interval=%us)", YESNO(this->marstek_mqtt_enabled_),
-                this->marstek_mqtt_interval_ms_ / 1000U);
+                static_cast<unsigned>(this->marstek_mqtt_interval_ms_ / 1000U));
   // ct_mac is resolved lazily at connect time; at dump_config (boot) it
   // may legitimately still be empty if marstek_registration hasn't applied
   // it yet — the App-topic subscribe happens once it's known.

@@ -107,6 +107,128 @@ const fronius3 = generateConfigIni({
   meters: [{ type: "fronius", phases: 3, fields: { IP: "10.0.0.9" }, tuning: {} }],
 });
 has(fronius3, "PER_PHASE = True", "fronius: PER_PHASE emitted in three-phase");
+const refoss1 = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellyproem50"] },
+  meters: [{ type: "refoss", phases: 1, fields: { IP: "192.168.1.150", CHANNELS: "1" }, tuning: {} }],
+});
+has(refoss1, "[REFOSS]", "refoss: section header");
+has(refoss1, "IP = 192.168.1.150", "refoss: IP emitted");
+has(refoss1, "CHANNELS = 1", "refoss: single-phase CHANNELS");
+const refoss3 = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellypro3em"] },
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "1" }, tuning: {} }],
+});
+has(refoss3, "CHANNELS = 1,2,3", "refoss: three-phase defaults CHANNELS when not a three-id list");
+const refoss456 = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellypro3em"] },
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "4,5,6" }, tuning: {} }],
+});
+has(refoss456, "CHANNELS = 4,5,6", "refoss: three-phase preserves explicit CHANNELS");
+const eyRefoss456 = generateEsphome({
+  target: "esphome",
+  esphome: {},
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "4,5,6" }, tuning: {} }],
+});
+has(
+  eyRefoss456,
+  "url: http://192.168.1.150/rpc/Em.Status.Get?id=65535",
+  "esp/refoss: polls configured IP",
+);
+has(eyRefoss456, 'root["status"][3]["power"]', "esp/refoss: L1 uses selected channel 4");
+has(eyRefoss456, 'root["status"][4]["power"]', "esp/refoss: L2 uses selected channel 5");
+has(eyRefoss456, 'root["status"][5]["power"]', "esp/refoss: L3 uses selected channel 6");
+lacks(eyRefoss456, 'root["status"][0]["power"]', "esp/refoss: does not hardcode status[0] for 4,5,6");
+const refossFloat = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellyproem50"] },
+  meters: [{ type: "refoss", phases: 1, fields: { IP: "192.168.1.150", CHANNELS: "1.0" }, tuning: {} }],
+});
+has(refossFloat, "CHANNELS = 1", "refoss: rejects 1.0, defaults single-phase CHANNELS");
+lacks(refossFloat, "CHANNELS = 1.0", "refoss: does not emit float CHANNELS");
+const refossSci = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellypro3em"] },
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "1e2" }, tuning: {} }],
+});
+has(refossSci, "CHANNELS = 1,2,3", "refoss: rejects 1e2, defaults three-phase CHANNELS");
+const refossMixed = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellypro3em"] },
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "4,5,1.0" }, tuning: {} }],
+});
+has(refossMixed, "CHANNELS = 1,2,3", "refoss: rejects mixed invalid three-phase CHANNELS");
+const eyRefossFloat = generateEsphome({
+  target: "esphome",
+  esphome: {},
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "1.0" }, tuning: {} }],
+});
+has(eyRefossFloat, 'root["status"][0]["power"]', "esp/refoss: 1.0 falls back to status[0]");
+has(eyRefossFloat, 'root["status"][1]["power"]', "esp/refoss: 1.0 falls back to status[1]");
+has(eyRefossFloat, 'root["status"][2]["power"]', "esp/refoss: 1.0 falls back to status[2]");
+const refossFour = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["shellypro3em"] },
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "4,5,6,7" }, tuning: {} }],
+});
+has(refossFour, "CHANNELS = 1,2,3", "refoss: four-id three-phase falls back to 1,2,3");
+lacks(refossFour, "CHANNELS = 4,5,6,7", "refoss: does not emit four-id CHANNELS for three-phase");
+const eyRefossFour = generateEsphome({
+  target: "esphome",
+  esphome: {},
+  meters: [{ type: "refoss", phases: 3, fields: { IP: "192.168.1.150", CHANNELS: "4,5,6,7" }, tuning: {} }],
+});
+has(eyRefossFour, 'root["status"][0]["power"]', "esp/refoss: four-id falls back to status[0]");
+has(eyRefossFour, 'root["status"][1]["power"]', "esp/refoss: four-id falls back to status[1]");
+has(eyRefossFour, 'root["status"][2]["power"]', "esp/refoss: four-id falls back to status[2]");
+lacks(eyRefossFour, 'root["status"][3]["power"]', "esp/refoss: four-id does not use truncated 4,5,6");
+
+// ── config.ini: Tibber Pulse timeout (#551) ──────────────────────────────────
+const tibber = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"] },
+  meters: [{ type: "tibber_pulse", phases: 1, fields: { IP: "192.168.1.140", PASSWORD: "AD56-54BA", TIMEOUT: "10" }, tuning: {} }],
+});
+has(tibber, "[TIBBER_PULSE]", "tibber: section header");
+has(tibber, "TIMEOUT = 10", "tibber: timeout override emitted");
+
+// ── config.ini: ESPHome native API ───────────────────────────────────────────
+const esphomeNative = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"] },
+  meters: [
+    {
+      type: "esphomenative",
+      phases: 1,
+      fields: {
+        ADDRESS: "device.local",
+        PORT: "6053",
+        API_KEY: "5BqtR16i91/+rwUl+QrJewKFOnyS/whHc3v9ySSKpb8=",
+        OBJECT_ID: "grid_power",
+        CLIENT_INFO: "AstraMeter",
+      },
+      tuning: {},
+    },
+  ],
+});
+has(esphomeNative, "[ESPHOMENATIVE]", "esphomenative: section header");
+has(esphomeNative, "ADDRESS = device.local", "esphomenative: address");
+has(esphomeNative, "PORT = 6053", "esphomenative: port");
+has(esphomeNative, "API_KEY = 5BqtR16i91/+rwUl+QrJewKFOnyS/whHc3v9ySSKpb8=", "esphomenative: api key");
+has(esphomeNative, "OBJECT_ID = grid_power", "esphomenative: object id");
+has(esphomeNative, "CLIENT_INFO = AstraMeter", "esphomenative: client info");
+
+// The native-API meter is Python-only — it must not emit an esphome sensor block
+// (on the ESP the same source is read via the homeassistant platform instead).
+const esphomeNativeEy = generateEsphome({
+  target: "esphome",
+  esphome: {},
+  meters: [{ type: "esphomenative", phases: 1, fields: { ADDRESS: "device.local", OBJECT_ID: "grid_power" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(esphomeNativeEy, "entity_id: sensor.grid_power", "esphomenative: ESP reads the entity via homeassistant platform");
 
 // ── config.ini: multi-meter NETMASK ──────────────────────────────────────────
 const multi = generateConfigIni({
@@ -420,6 +542,220 @@ const haUri = generateHomeAssistant({
 });
 has(haUri, "mqtt://a%40b:p%3Aw%2Fd@broker.local:1883", "ha-opts: mqtt_uri encodes creds and TLS string 'false' stays mqtt");
 lacks(haUri, "mqtts://", "ha-opts: string 'false' TLS is not treated as enabled");
+
+
+// ── dashboard options (config.ini + Home Assistant add-on) ──
+const dashOn = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: true, dashboardAllowWrite: true, webServerPort: "8123" },
+  meters: [{ type: "shelly", phases: 1, fields: { TYPE: "3EMPro", IP: "192.168.1.50" }, tuning: {} }],
+});
+has(dashOn, "DASHBOARD_ENABLED = True", "dashboard: enabled flag");
+has(dashOn, "DASHBOARD_ALLOW_WRITE = True", "dashboard: write flag");
+has(dashOn, "WEB_SERVER_PORT = 8123", "dashboard: port emitted without the INI editor");
+
+const dashReadOnly = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: true, dashboardAllowWrite: false },
+  meters: [{ type: "shelly", phases: 1, fields: { TYPE: "3EMPro", IP: "192.168.1.50" }, tuning: {} }],
+});
+has(dashReadOnly, "DASHBOARD_ENABLED = True", "dashboard: on");
+has(dashReadOnly, "DASHBOARD_ALLOW_WRITE = False", "dashboard: asking for read-only is written out");
+
+// Unset means the defaults, and both of them are on.
+const dashDefault = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], webServerPort: "8123" },
+  meters: [{ type: "shelly", phases: 1, fields: { TYPE: "3EMPro", IP: "192.168.1.50" }, tuning: {} }],
+});
+has(dashDefault, "DASHBOARD_ENABLED = True", "dashboard: on by default");
+has(dashDefault, "DASHBOARD_ALLOW_WRITE = True", "dashboard: writable by default");
+has(dashDefault, "WEB_SERVER_PORT = 8123", "dashboard: default-on dashboard still carries the port");
+
+const dashOff = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: false, dashboardAllowWrite: true, webServerPort: "8123" },
+  meters: [{ type: "shelly", phases: 1, fields: { TYPE: "3EMPro", IP: "192.168.1.50" }, tuning: {} }],
+});
+has(dashOff, "DASHBOARD_ENABLED = False", "dashboard: turning it off is written out");
+lacks(dashOff, "DASHBOARD_ALLOW_WRITE", "dashboard: no write flag for a dashboard that never runs");
+has(dashOff, "WEB_SERVER_PORT = 8123", "dashboard: a chosen port survives turning the dashboard off");
+
+// The config editor is tri-state: it follows the dashboard unless the user
+// says otherwise, so an unanswered question writes no line at all.
+lacks(dashDefault, "WEB_CONFIG_ENABLED", "editor: left to the dashboard by default");
+
+const editorOn = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: false, webConfigEnabled: "true" },
+  meters: [{ type: "shelly", phases: 1, fields: { TYPE: "3EMPro", IP: "192.168.1.50" }, tuning: {} }],
+});
+has(editorOn, "WEB_CONFIG_ENABLED = True", "editor: served on its own with no dashboard");
+
+const editorOff = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: true, webConfigEnabled: "false" },
+  meters: [{ type: "shelly", phases: 1, fields: { TYPE: "3EMPro", IP: "192.168.1.50" }, tuning: {} }],
+});
+has(editorOff, "WEB_CONFIG_ENABLED = False", "editor: refused even though the dashboard is on");
+has(editorOff, "DASHBOARD_ENABLED = True", "editor: turning it off leaves the rest of the page");
+
+// On an ESP32 the firmware serves the dashboard unless told not to, so the
+// on-and-read-only case is the default and writes nothing at all.
+const eyDash = generateEsphome({
+  target: "esphome",
+  esphome: { name: "my-ct002", ctType: "HME-4", board: "esp32dev" },
+  general: { deviceTypes: ["ct002"], esphomeDashboard: true },
+  meters: [
+    { type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} },
+  ],
+});
+lacks(eyDash, "dashboard", "esp/dashboard: on is the default, so nothing is emitted");
+
+const eyDashWritable = generateEsphome({
+  target: "esphome",
+  esphome: { name: "my-ct002", ctType: "HME-4", board: "esp32dev" },
+  general: { deviceTypes: ["ct002"], esphomeDashboard: true, esphomeControls: true },
+  meters: [
+    { type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} },
+  ],
+});
+has(eyDashWritable, "  dashboard:", "esp/dashboard: sub-block appears once it carries an option");
+has(eyDashWritable, "    controls: true", "esp/dashboard: controls are opt-in and emitted");
+
+// The service ships writes on; a board has no login to sit behind, so its
+// controls must not follow that flag.
+const eyDashServiceWrites = generateEsphome({
+  target: "esphome",
+  esphome: { name: "my-ct002", ctType: "HME-4", board: "esp32dev" },
+  general: { deviceTypes: ["ct002"], esphomeDashboard: true, dashboardAllowWrite: true },
+  meters: [
+    { type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} },
+  ],
+});
+lacks(eyDashServiceWrites, "controls: true", "esp/dashboard: DASHBOARD_ALLOW_WRITE does not turn on board controls");
+
+const eyNoDash = generateEsphome({
+  target: "esphome",
+  esphome: { name: "my-ct002", ctType: "HME-4", board: "esp32dev" },
+  general: { deviceTypes: ["ct002"], esphomeDashboard: false },
+  meters: [
+    { type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} },
+  ],
+});
+has(eyNoDash, "  dashboard: false", "esp/dashboard: turning it off is what has to be written down");
+
+// A state with no general block at all is "nothing said", not "off" — the
+// firmware default stands.
+const eyDashUnsaid = generateEsphome({
+  target: "esphome",
+  esphome: { name: "my-ct002", ctType: "HME-4", board: "esp32dev" },
+  meters: [
+    { type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} },
+  ],
+});
+lacks(eyDashUnsaid, "dashboard", "esp/dashboard: nothing said leaves the default alone");
+
+// The add-on ships the dashboard on and writable, so only a deviation from
+// those defaults is worth emitting into the options.
+const haDashDefault = generateHomeAssistant({
+  target: "homeassistant",
+  general: { deviceTypes: ["ct002"], dashboardAllowWrite: true },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+lacks(haDashDefault, "dashboard_allow_write", "ha-opts: nothing emitted when writes match the add-on default");
+lacks(haDashDefault, "dashboard_direct_access", "ha-opts: nothing emitted when the port stays behind ingress");
+
+// Reaching the page on the add-on's port instead of through ingress.
+const haDirect = generateHomeAssistant({
+  target: "homeassistant",
+  general: { deviceTypes: ["ct002"], dashboardAllowWrite: true, dashboardDirectAccess: true },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(haDirect, "dashboard_direct_access: true", "ha-opts: direct access is emitted when asked for");
+lacks(haDashDefault, "dashboard_allowed_hosts", "ha-opts: no host allowlist emitted when none is named");
+
+// A name the port has to answer under, e.g. behind a reverse proxy. Without
+// it the guard refuses the request, so it has to survive into the options.
+const haHosts = generateHomeAssistant({
+  target: "homeassistant",
+  general: { deviceTypes: ["ct002"], dashboardAllowWrite: true, dashboardAllowedHosts: "astra.example.lan" },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(haHosts, 'dashboard_allowed_hosts: "astra.example.lan"', "ha-opts: a named host is emitted");
+
+// The same option on the config.ini side, where it is only written when named.
+const iniHosts = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"], dashboardAllowedHosts: "astra.example.lan, proxy.example.lan" },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(iniHosts, "DASHBOARD_ALLOWED_HOSTS = astra.example.lan, proxy.example.lan", "config.ini: named hosts are written");
+const iniNoHosts = generateConfigIni({
+  target: "python",
+  general: { deviceTypes: ["ct002"] },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+lacks(iniNoHosts, "DASHBOARD_ALLOWED_HOSTS", "config.ini: nothing written when no host is named");
+
+// The board's page answers on a host name too, and its component takes the
+// same allowlist — so a name the user configures has to reach the YAML.
+const espHosts = generateEsphome({
+  target: "esphome",
+  general: { deviceTypes: ["ct002"], dashboardAllowedHosts: "astra.example.lan, proxy.example.lan" },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(espHosts, "allowed_hosts:", "esphome: the allowlist block is emitted");
+has(espHosts, "- astra.example.lan", "esphome: each named host is a list entry");
+has(espHosts, "- proxy.example.lan", "esphome: a second named host is emitted too");
+
+// Controls and hosts are independent: naming a host must not silently switch
+// writes on, and the dashboard block must still appear without controls.
+lacks(espHosts, "controls: true", "esphome: naming a host does not enable controls");
+
+const espBoth = generateEsphome({
+  target: "esphome",
+  general: { deviceTypes: ["ct002"], esphomeControls: true, dashboardAllowedHosts: "astra.example.lan" },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(espBoth, "controls: true", "esphome: controls and hosts coexist");
+has(espBoth, "- astra.example.lan", "esphome: hosts survive alongside controls");
+
+// A board with the dashboard turned off has nothing to allow hosts for.
+const espOff = generateEsphome({
+  target: "esphome",
+  general: { deviceTypes: ["ct002"], esphomeDashboard: false, dashboardAllowedHosts: "astra.example.lan" },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(espOff, "dashboard: false", "esphome: dashboard off wins over a named host");
+lacks(espOff, "allowed_hosts", "esphome: no allowlist when there is no dashboard");
+
+// The add-on's sidebar panel *is* the dashboard, so it cannot be turned off
+// there — no `dashboard` option exists to emit, whatever the form says.
+const haDashOff = generateHomeAssistant({
+  target: "homeassistant",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: false, dashboardAllowWrite: true },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+lacks(haDashOff, "dashboard:", "ha-opts: the add-on has no option to disable the dashboard");
+
+const haDashReadOnly = generateHomeAssistant({
+  target: "homeassistant",
+  general: { deviceTypes: ["ct002"], dashboardEnabled: true, dashboardAllowWrite: false },
+  meters: [{ type: "homeassistant", phases: 1, fields: { CURRENT_POWER_ENTITY: "sensor.p" }, tuning: {} }],
+  ct: { fields: {} },
+});
+has(haDashReadOnly, "dashboard_allow_write: false", "ha-opts: read-only dashboard is emitted");
+
 
 console.log("\n" + (failures ? `${failures} FAILED` : "ALL PASSED"));
 process.exit(failures ? 1 : 0);

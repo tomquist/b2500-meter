@@ -8,7 +8,6 @@ import configparser
 import contextlib
 import errno
 import importlib.resources
-import json
 import os
 import shutil
 import tempfile
@@ -16,6 +15,11 @@ import threading
 from collections import OrderedDict
 
 from configupdater import ConfigUpdater
+
+from astrameter.config.config_loader import (
+    new_config_parser,
+    read_all_powermeter_configs,
+)
 
 
 def _load_config_editor_html() -> str:
@@ -41,12 +45,8 @@ def read_config_as_dict(config_path: str) -> tuple[dict, list]:
     cfg.optionxform = str  # type: ignore[assignment]  # preserve key case
     if os.path.exists(config_path):
         cfg.read(config_path)
-    sections: dict[str, dict[str, str]] = {}
-    order = []
-    for section in cfg.sections():
-        sections[section] = dict(cfg.items(section))
-        order.append(section)
-    return sections, order
+    sections = {section: dict(cfg.items(section)) for section in cfg.sections()}
+    return sections, list(sections)
 
 
 _CONFIG_WRITE_LOCK = threading.Lock()
@@ -209,21 +209,10 @@ def validate_config(config_path: str) -> None:
     key, invalid value, etc.) so the caller can roll back before the
     service tries to restart with a broken config.
     """
-    import configparser as _cp
-    from collections import OrderedDict
-
-    from astrameter.config.config_loader import read_all_powermeter_configs
-
-    cfg = _cp.ConfigParser(dict_type=OrderedDict, interpolation=None)
+    cfg = new_config_parser()
     if not cfg.read(config_path):
         raise ValueError(f"Cannot read config file: {config_path}")
     read_all_powermeter_configs(cfg)
-
-
-def config_to_json(config_path: str) -> str:
-    """Return the config as a JSON string suitable for the web UI."""
-    sections, order = read_config_as_dict(config_path)
-    return json.dumps({"sections": sections, "order": order})
 
 
 # -- Key-type metadata served to the config editor --------------------------
@@ -231,8 +220,8 @@ def config_to_json(config_path: str) -> str:
 _PM_COMMON: dict[str, dict[str, object]] = {
     "THROTTLE_INTERVAL": {"type": "float"},
     "WAIT_FOR_NEXT_MESSAGE": {"type": "boolean"},
-    "POWER_OFFSET": {"type": "float"},
-    "POWER_MULTIPLIER": {"type": "float"},
+    "POWER_OFFSET": {},
+    "POWER_MULTIPLIER": {},
     "NETMASK": {},
     "PID_KP": {"type": "float"},
     "PID_KI": {"type": "float"},
@@ -261,10 +250,12 @@ SECTION_KEY_TYPES: dict[str, dict[str, dict[str, object]]] = {
         },
         "SKIP_POWERMETER_TEST": {"type": "boolean"},
         "WEB_CONFIG_ENABLED": {"type": "boolean"},
+        "DASHBOARD_ENABLED": {"type": "boolean"},
+        "DASHBOARD_ALLOW_WRITE": {"type": "boolean"},
+        "DASHBOARD_DIRECT_ACCESS": {"type": "boolean"},
+        "DASHBOARD_ALLOWED_HOSTS": {"type": "string"},
         "ENABLE_WEB_SERVER": {"type": "boolean"},
         "WEB_SERVER_PORT": {"type": "integer"},
-        "DISABLE_SUM_PHASES": {"type": "boolean"},
-        "DISABLE_ABSOLUTE_VALUES": {"type": "boolean"},
         "THROTTLE_INTERVAL": {"type": "float"},
         "WAIT_FOR_NEXT_MESSAGE": {"type": "boolean"},
         "DEDUPE_TIME_WINDOW": {"type": "float", "min": 0},
@@ -346,6 +337,7 @@ SECTION_KEY_TYPES: dict[str, dict[str, dict[str, object]]] = {
     ),
     "VZLOGGER": _pm(PORT={"type": "integer"}),
     "ESPHOME": _pm(PORT={"type": "integer"}),
+    "ESPHOMENATIVE": _pm(PORT={"type": "integer"}, API_KEY={"type": "password"}),
     "AMIS_READER": _pm(),
     "MODBUS": _pm(
         PORT={"type": "integer"},
@@ -388,7 +380,12 @@ SECTION_KEY_TYPES: dict[str, dict[str, dict[str, object]]] = {
         DEVICE_ID={"type": "integer"},
         PER_PHASE={"type": "boolean"},
     ),
-    "TIBBER_PULSE": _pm(PASSWORD={"type": "password"}),
+    "REFOSS": _pm(CHANNELS={}),
+    "MEROSS": _pm(CHANNELS={}),
+    "TIBBER_PULSE": _pm(
+        PASSWORD={"type": "password"},
+        TIMEOUT={"type": "float"},
+    ),
     "SCRIPT": _pm(),
     "SML": _pm(),
     "MQTT_INSIGHTS": {
@@ -400,8 +397,3 @@ SECTION_KEY_TYPES: dict[str, dict[str, dict[str, object]]] = {
 }
 # Resolve aliases
 SECTION_KEY_TYPES["CT003"] = SECTION_KEY_TYPES["CT002"]
-
-
-def section_key_types_json() -> str:
-    """Return SECTION_KEY_TYPES as a JSON string for the config editor."""
-    return json.dumps(SECTION_KEY_TYPES)

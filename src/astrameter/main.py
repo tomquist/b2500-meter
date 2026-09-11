@@ -1,29 +1,40 @@
 import argparse
 import asyncio
-import configparser
 import contextlib
 import os
 import signal
-from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import fields, replace
+from typing import Any
 
 from astrameter.cloud_reporting import (
     CloudReporter,
     CloudReporterConfig,
     CtMeasurement,
 )
-from astrameter.config.config_loader import (
-    ClientFilter,
-    read_all_powermeter_configs,
-    read_mqtt_insights_config,
-)
+from astrameter.config import addon
+from astrameter.config.config_loader import ClientFilter
+from astrameter.config.ini_config import IniAppConfig
 from astrameter.config.logger import logger, setLogLevel
-from astrameter.ct002 import CT002, UDP_PORT
+from astrameter.config.settings import (
+    CT_DEVICE_TYPES,
+    DEVICE_TYPES,
+    AppConfig,
+    ConfiguredPowermeter,
+    CtSettings,
+    GeneralSettings,
+    MarstekSettings,
+    is_ct,
+)
+from astrameter.ct002 import CT002
+from astrameter.ct002.balancer import BalancerConfig
+from astrameter.ct002.ct002 import CT002Request
 from astrameter.marstek_api import (
     MarstekApiError,
     MarstekConfig,
     ensure_managed_fake_device,
 )
+from astrameter.meter_pool import powermeter_for, powermeter_name, read_fresh
 from astrameter.mqtt_insights import (
     MarstekMqttBinding,
     MqttInsightsService,
@@ -31,370 +42,347 @@ from astrameter.mqtt_insights import (
     normalize_mac,
     ver_v_from_marstek_api_version,
 )
+from astrameter.power_units import three_phases
 from astrameter.powermeter import Powermeter
-from astrameter.powermeter.wrappers.health import HealthTrackingPowermeter
 from astrameter.shelly import Shelly
-from astrameter.version_info import get_git_commit_sha
-from astrameter.web_server import WebServer
+from astrameter.status import StatusRegistry, detect_config_mode
+from astrameter.version_info import get_git_commit_sha, get_version
+from astrameter.web_server import WebServer, parse_allowed_hosts
 
-# CT002/CT003 phase assignment is auto-managed by emulator runtime.
-
-
-def _powermeter_log_name(powermeter: Powermeter) -> str:
-    """Label for logs: the underlying meter class, seen through the outermost
-    HealthTrackingPowermeter wrapper that now wraps every configured meter."""
-    inner = (
-        powermeter.wrapped_powermeter
-        if isinstance(powermeter, HealthTrackingPowermeter)
-        else powermeter
-    )
-    return type(inner).__name__
-
-
-def get_ct_section(device_type: str, cfg: configparser.ConfigParser) -> str:
-    section = "CT002"
-    if device_type == "ct003" and cfg.has_section("CT003"):
-        section = "CT003"
-    return section
+#: How long a read waits for a fresh push before serving the cached value.
+FRESH_READING_TIMEOUT_S = 2.0
 
 
 async def read_ct_powermeter(
     addr: tuple[str, int],
-    powermeters: list[tuple[Powermeter, ClientFilter, bool]],
+    powermeters: list[ConfiguredPowermeter],
 ) -> list[float] | None:
-    """Pick the powermeter matching *addr* and return up to three phase values.
-
-    Optionally awaits a fresh push (with a 2 s cap) when the matched
-    powermeter has ``WAIT_FOR_NEXT_MESSAGE`` enabled. A timeout there is
-    swallowed so the cached value is still served — `update_readings`
-    callers should never see a stale-meter `TimeoutError`.
-    """
-    powermeter = None
-    wait_for_next = False
-    for pm, client_filter, wait_flag in powermeters:
-        if client_filter.matches(addr[0]):
-            powermeter = pm
-            wait_for_next = wait_flag
-            break
-    if powermeter is None:
-        logger.debug(f"No powermeter found for client {addr[0]}")
+    """Pick the powermeter matching *addr* and return up to three phase values."""
+    configured = powermeter_for(powermeters, addr[0])
+    if configured is None:
+        logger.debug("No powermeter found for client %s", addr[0])
         return None
-    if wait_for_next:
+    return three_phases(await read_fresh(configured))
+
+
+async def _read_grid_phases(powermeters: list[ConfiguredPowermeter]) -> list[float]:
+    """Raw three-phase reading from the meter that serves every client (or the
+    first one), waiting briefly for a fresh push so an idle meter cannot pin
+    the caller."""
+    chosen = next(
+        (c.powermeter for c in powermeters if c.client_filter.matches("0.0.0.0")), None
+    )
+    if chosen is None and powermeters:
+        chosen = powermeters[0].powermeter
+    if chosen is None:
+        return [0.0, 0.0, 0.0]
+    with contextlib.suppress(asyncio.TimeoutError, TimeoutError):
+        await asyncio.wait_for(
+            chosen.wait_for_next_message(), timeout=FRESH_READING_TIMEOUT_S
+        )
+    return [float(v) for v in three_phases(await chosen.get_powermeter_watts_raw())]
+
+
+async def check_powermeter(powermeter: Powermeter, client_filter: ClientFilter) -> None:
+    """Prove the meter delivers a reading before any battery is served."""
+    attempts = 4
+    retry_delay_s = 5
+    for attempt in range(1, attempts + 1):
         try:
-            await powermeter.wait_for_next_message(timeout=2)
-        except TimeoutError:
-            logger.debug(
-                "Powermeter %s produced no fresh message within 2s; "
-                "serving last known value",
-                _powermeter_log_name(powermeter),
-            )
-    values = await powermeter.get_powermeter_watts()
-    value1 = values[0] if len(values) > 0 else 0
-    value2 = values[1] if len(values) > 1 else 0
-    value3 = values[2] if len(values) > 2 else 0
-    return [value1, value2, value3]
-
-
-async def test_powermeter(powermeter: Powermeter, client_filter: ClientFilter):
-    """Test powermeter configuration with minimal retry logic for edge cases."""
-    max_retries = 3
-    retry_delay = 5  # seconds
-
-    for attempt in range(max_retries + 1):
-        try:
-            logger.debug(
-                f"Testing powermeter configuration... (attempt {attempt + 1}/{max_retries + 1})"
-            )
+            logger.debug("Testing powermeter (attempt %d/%d)", attempt, attempts)
             await powermeter.wait_for_message(timeout=30)
-            value = await powermeter.get_powermeter_watts()
-            value_with_units = " | ".join([f"{v}W" for v in value])
-            powermeter_name = _powermeter_log_name(powermeter)
-            filter_description = ", ".join([str(n) for n in client_filter.netmasks])
-            logger.info(
-                f"Successfully fetched {powermeter_name} powermeter value (filter {filter_description}): {value_with_units}"
-            )
-            return  # Success, exit the function
-        except Exception as e:
-            logger.debug(f"Error on attempt {attempt + 1}: {e}")
-
-            if attempt < max_retries:
-                logger.info(f"Retrying powermeter test in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
-                continue
-            else:
-                # Last attempt failed
+            values = await powermeter.get_powermeter_watts()
+        except Exception as exc:
+            logger.debug("Powermeter test attempt %d failed: %s", attempt, exc)
+            if attempt == attempts:
                 raise RuntimeError(
-                    f"Failed to test powermeter after {max_retries + 1} attempts: {e}"
-                ) from e
+                    f"Failed to test powermeter after {attempts} attempts: {exc}"
+                ) from exc
+            logger.info("Retrying powermeter test in %d seconds...", retry_delay_s)
+            await asyncio.sleep(retry_delay_s)
+            continue
+        logger.info(
+            "Successfully fetched %s powermeter value (filter %s): %s",
+            powermeter_name(powermeter),
+            ", ".join(str(n) for n in client_filter.netmasks),
+            " | ".join(f"{v}W" for v in values),
+        )
+        return
 
 
-def _reset_all_powermeters(
-    powermeters: Sequence[tuple[Powermeter, object, object]],
+def _reset_all_powermeters(powermeters: Sequence[ConfiguredPowermeter]) -> None:
+    for configured in powermeters:
+        configured.powermeter.reset()
+
+
+def _build_ct002(
+    ct: CtSettings,
+    ct_type: str,
+    device_id: str,
+    debug_status: bool,
+    reset_fn: Callable[[], None] | None,
+) -> CT002:
+    """Create the emulator a :class:`CtSettings` describes."""
+    return CT002(
+        udp_port=ct.udp_port,
+        ct_type=ct_type,
+        ct_mac=ct.ct_mac,
+        wifi_rssi=ct.wifi_rssi,
+        dedupe_time_window=ct.dedupe_time_window,
+        consumer_ttl=ct.consumer_ttl,
+        debug_status=debug_status,
+        active_control=ct.active_control,
+        balancer=_balancer_config(ct),
+        saturation_detection=ct.saturation_detection,
+        saturation_alpha=ct.saturation_alpha,
+        min_target_for_saturation=ct.min_target_for_saturation,
+        saturation_decay_factor=ct.saturation_decay_factor,
+        saturation_grace_seconds=ct.saturation_grace_seconds,
+        saturation_stall_timeout_seconds=ct.saturation_stall_timeout_seconds,
+        device_id=device_id,
+        reset_fn=reset_fn,
+    )
+
+
+def _balancer_config(ct: CtSettings) -> BalancerConfig:
+    """Every balancer knob is a ``CtSettings`` field of the same name, so a
+    new one reaches the balancer as soon as both sides declare it."""
+    return BalancerConfig(
+        **{f.name: getattr(ct, f.name) for f in fields(BalancerConfig)}
+    )
+
+
+def _log_ct_settings(ct: CtSettings, device_type: str, device_id: str) -> None:
+    if 0 < ct.min_dc_output < ct.min_target_for_saturation:
+        logger.warning(
+            "MIN_DC_OUTPUT (%gW) is below MIN_TARGET_FOR_SATURATION (%dW): a "
+            "floored battery's target never clears the saturation gate, so an "
+            "empty/full unit can't be detected. Consider MIN_DC_OUTPUT >= %d.",
+            ct.min_dc_output,
+            ct.min_target_for_saturation,
+            ct.min_target_for_saturation,
+        )
+    logger.debug("%s settings for %s: %s", device_type.upper(), device_id, ct)
+    if not ct.active_control:
+        logger.debug("CT control model: relay (forward consumer aggregates)")
+        return
+    extras = []
+    if ct.fair_distribution:
+        extras.append("fair distribution")
+    if ct.saturation_detection:
+        extras.append("saturation detection")
+    if ct.min_efficient_power > 0:
+        extras.append(f"efficiency optimization ({ct.min_efficient_power}W)")
+    logger.info("Active control enabled: %s", " + ".join(["load split", *extras]))
+
+
+def _forward_events(
+    insights: MqttInsightsService, device: CT002 | Shelly
+) -> Callable[[str, str, dict[str, Any]], None]:
+    """Route a device's per-battery events to MQTT Insights.  A battery that
+    the device evicted arrives as ``{"_removed": True}``."""
+    on_update: Callable[[str, str, dict[str, Any]], None]
+    on_removed: Callable[[str, str], None]
+    if isinstance(device, CT002):
+        on_update = insights.on_ct002_response
+        on_removed = insights.on_ct002_consumer_removed
+    else:
+        on_update = insights.on_shelly_response
+        on_removed = insights.on_shelly_battery_removed
+
+    def listener(device_id: str, battery_id: str, data: dict) -> None:
+        if data.get("_removed"):
+            on_removed(device_id, battery_id)
+        else:
+            on_update(device_id, battery_id, data)
+
+    return listener
+
+
+def _build_device(
+    device_type: str,
+    ct: CtSettings | None,
+    general: GeneralSettings,
+    powermeters: list[ConfiguredPowermeter],
+    device_id: str,
+) -> CT002 | Shelly:
+    if ct is not None:
+        ct_type = DEVICE_TYPES[device_type].ct_type
+        debug_status = ct.debug_status or os.environ.get(
+            "DEBUG_STATUS", ""
+        ).lower() in ("1", "true", "yes")
+        _log_ct_settings(ct, device_type, device_id)
+        device = _build_ct002(
+            ct,
+            ct_type,
+            device_id,
+            debug_status,
+            lambda: _reset_all_powermeters(powermeters),
+        )
+
+        async def update_readings(
+            addr: tuple[str, int],
+            _request: CT002Request | None = None,
+            _consumer_id: str | None = None,
+        ) -> list[float] | None:
+            return await read_ct_powermeter(addr, powermeters)
+
+        device.before_send = update_readings
+        return device
+    udp_port = (
+        DEVICE_TYPES[device_type].udp_port if device_type in DEVICE_TYPES else None
+    )
+    if udp_port is not None:
+        logger.debug("Shelly settings: device id %s, type %s", device_id, device_type)
+        return Shelly(
+            powermeters=powermeters,
+            device_id=device_id,
+            device_type=device_type,
+            udp_port=udp_port,
+            dedupe_time_window=general.dedupe_time_window,
+        )
+    raise ValueError(f"Unsupported device type: {device_type}")
+
+
+async def _bind_marstek_responder(
+    insights: MqttInsightsService,
+    device: CT002,
+    device_id: str,
+    powermeters: list[ConfiguredPowermeter],
+    marstek_mac: str,
+    marstek_ver_v: int | None,
 ) -> None:
-    for pm, *_ in powermeters:
-        pm.reset()
+    """Answer Marstek app polls over MQTT, if a managed MAC gives hame-relay
+    something to route the replies back to."""
+    if not marstek_mac:
+        logger.info(
+            "Marstek MQTT responder not wired for %s: no managed MAC "
+            "available. Enable [MARSTEK] with MAILBOX/PASSWORD to use "
+            "this feature, or set MARSTEK_MQTT_ENABLED=false to silence "
+            "this notice.",
+            device_id,
+        )
+        return
+    await insights.register_marstek(
+        MarstekMqttBinding(
+            device_id=device_id,
+            ct_type=device.ct_type,
+            mac=marstek_mac,
+            get_values=lambda: _read_grid_phases(powermeters),
+            get_connected_slave_count=device.reporting_consumer_count,
+            get_cd4_slave_csv=lambda: format_cd4_slave_csv(
+                device.reporting_consumer_rows()
+            ),
+            wifi_rssi=device.wifi_rssi,
+            ver_v=(
+                marstek_ver_v
+                if marstek_ver_v is not None
+                else ver_v_from_marstek_api_version(None)
+            ),
+        )
+    )
+
+
+def _ct_measurement(
+    device: CT002, phases: list[float], mqtt_connected: bool
+) -> CtMeasurement:
+    """What a real CT reports to the cloud: the grid phases plus the charge and
+    discharge power aggregated per phase bucket."""
+    ap, bp, cp = (round(p) for p in phases)
+    buckets = device.reporting_phase_buckets()
+
+    def charge(bucket: str) -> int:
+        return buckets[bucket].chrg_power
+
+    def discharge(bucket: str) -> int:
+        return buckets[bucket].dchrg_power
+
+    return CtMeasurement(
+        ap=ap,
+        bp=bp,
+        cp=cp,
+        dp=ap + bp + cp,
+        rssi=device.wifi_rssi,
+        slv=device.reporting_consumer_count(),
+        udp=1,
+        mqtt=1 if mqtt_connected else 0,
+        cz=charge("x"),
+        ca=charge("A"),
+        cb=charge("B"),
+        cc=charge("C"),
+        cd=charge("ABC"),
+        dz=discharge("x"),
+        da=discharge("A"),
+        db=discharge("B"),
+        dc=discharge("C"),
+        dd=discharge("ABC"),
+    )
+
+
+def _start_cloud_reporting(
+    device: CT002,
+    ct: CtSettings,
+    device_id: str,
+    powermeters: list[ConfiguredPowermeter],
+    report_id: str,
+    mqtt_connected: bool,
+    registry: StatusRegistry | None,
+) -> asyncio.Task[None] | None:
+    """Opt-in reporting to hamedata.com the way a real CT does: a handshake,
+    then a periodic report with live grid and bucket data."""
+    if not report_id:
+        logger.warning(
+            "CLOUD_REPORTING enabled for %s but no device id is available; "
+            "set CT_MAC, or enable the Marstek account so the registered "
+            "device id is used. Cloud reporting disabled.",
+            device_id,
+        )
+        return None
+
+    async def gather() -> CtMeasurement:
+        return _ct_measurement(
+            device, await _read_grid_phases(powermeters), mqtt_connected
+        )
+
+    reporter = CloudReporter(
+        CloudReporterConfig(
+            ct_type=device.ct_type,
+            device_id=report_id,
+            host=ct.cloud_reporting_host,
+            interval_seconds=ct.cloud_reporting_interval,
+        ),
+        gather,
+    )
+    if registry is not None:
+        registry.cloud_reporters[device_id] = reporter
+    return asyncio.create_task(reporter.run())
 
 
 async def run_device(
     device_type: str,
-    cfg: configparser.ConfigParser,
-    args: argparse.Namespace,
-    powermeters: list[tuple[Powermeter, ClientFilter, bool]],
-    device_id: str | None = None,
+    config: AppConfig,
+    general: GeneralSettings,
+    powermeters: list[ConfiguredPowermeter],
+    device_id: str = "",
     insights: MqttInsightsService | None = None,
     marstek_mac: str = "",
     marstek_ver_v: int | None = None,
-):
-    logger.debug(f"Starting device: {device_type}")
-
-    device: CT002 | Shelly
-
-    global_dedupe_time_window = cfg.getfloat(
-        "GENERAL", "DEDUPE_TIME_WINDOW", fallback=0.0
-    )
-
-    if device_type in ["ct002", "ct003"]:
-        ct_section = get_ct_section(device_type, cfg)
-        ct_type = "HME-4" if device_type == "ct002" else "HME-3"
-        ct_mac = cfg.get(ct_section, "CT_MAC", fallback="")
-        ct_udp_port = cfg.getint(ct_section, "UDP_PORT", fallback=UDP_PORT)
-        wifi_rssi = cfg.getint(ct_section, "WIFI_RSSI", fallback=-50)
-        # Opt-in Marstek HTTP cloud reporting (hamedata.com). Disabled by default;
-        # see docs/marstek-mqtt-http.md (§6) for what it sends and its limits.
-        cloud_reporting = cfg.getboolean(ct_section, "CLOUD_REPORTING", fallback=False)
-        cloud_reporting_host = (
-            cfg.get(ct_section, "CLOUD_REPORTING_HOST", fallback="").strip()
-            or "eu.hamedata.com"
-        )
-        cloud_reporting_interval = cfg.getfloat(
-            ct_section, "CLOUD_REPORTING_INTERVAL", fallback=60.0
-        )
-        dedupe_time_window = cfg.getfloat(
-            ct_section, "DEDUPE_TIME_WINDOW", fallback=global_dedupe_time_window
-        )
-        # Unset (default) → adaptive eviction (~2 missed poll cycles, like the
-        # real CT); a number → fixed TTL in seconds.
-        consumer_ttl = cfg.getint(ct_section, "CONSUMER_TTL", fallback=None)
-        debug_status = cfg.getboolean(ct_section, "DEBUG_STATUS", fallback=False)
-        if os.environ.get("DEBUG_STATUS", "").lower() in ("1", "true", "yes"):
-            debug_status = True
-        active_control = cfg.getboolean(ct_section, "ACTIVE_CONTROL", fallback=True)
-        fair_distribution = cfg.getboolean(
-            ct_section, "FAIR_DISTRIBUTION", fallback=True
-        )
-        balance_gain = cfg.getfloat(ct_section, "BALANCE_GAIN", fallback=0.2)
-        error_boost_threshold = cfg.getint(
-            ct_section, "ERROR_BOOST_THRESHOLD", fallback=150
-        )
-        error_boost_max = cfg.getfloat(ct_section, "ERROR_BOOST_MAX", fallback=0.5)
-        error_reduce_threshold = cfg.getint(
-            ct_section, "ERROR_REDUCE_THRESHOLD", fallback=20
-        )
-        balance_deadband = cfg.getint(ct_section, "BALANCE_DEADBAND", fallback=25)
-        max_correction_per_step = cfg.getint(
-            ct_section, "MAX_CORRECTION_PER_STEP", fallback=80
-        )
-        max_target_step = cfg.getint(ct_section, "MAX_TARGET_STEP", fallback=0)
-        pace_base_step = cfg.getint(ct_section, "PACE_BASE_STEP", fallback=30)
-        pace_max_step = cfg.getint(ct_section, "PACE_MAX_STEP", fallback=100)
-        osc_damp_max = cfg.getfloat(ct_section, "OSC_DAMP_MAX", fallback=0.95)
-        osc_damp_alpha = cfg.getfloat(ct_section, "OSC_DAMP_ALPHA", fallback=0.3)
-        osc_damp_decay = cfg.getfloat(ct_section, "OSC_DAMP_DECAY", fallback=0.05)
-        osc_damp_threshold = cfg.getfloat(
-            ct_section, "OSC_DAMP_THRESHOLD", fallback=300
-        )
-        grid_predict_trust = cfg.getfloat(
-            ct_section, "GRID_PREDICT_TRUST", fallback=0.5
-        )
-        concentrate_deadband = cfg.getfloat(
-            ct_section, "CONCENTRATE_DEADBAND", fallback=60.0
-        )
-        import_trim_w = cfg.getfloat(ct_section, "IMPORT_TRIM_W", fallback=15.0)
-        saturation_detection = cfg.getboolean(
-            ct_section, "SATURATION_DETECTION", fallback=True
-        )
-        saturation_alpha = cfg.getfloat(ct_section, "SATURATION_ALPHA", fallback=0.15)
-        min_target_for_saturation = cfg.getint(
-            ct_section, "MIN_TARGET_FOR_SATURATION", fallback=20
-        )
-        saturation_grace_seconds = cfg.getfloat(
-            ct_section, "SATURATION_GRACE_SECONDS", fallback=90
-        )
-        saturation_stall_timeout_seconds = cfg.getfloat(
-            ct_section, "SATURATION_STALL_TIMEOUT_SECONDS", fallback=60
-        )
-        min_efficient_power = cfg.getint(ct_section, "MIN_EFFICIENT_POWER", fallback=0)
-        probe_min_power = cfg.getint(ct_section, "PROBE_MIN_POWER", fallback=80)
-        efficiency_rotation_interval = cfg.getint(
-            ct_section, "EFFICIENCY_ROTATION_INTERVAL", fallback=900
-        )
-        efficiency_fade_alpha = cfg.getfloat(
-            ct_section, "EFFICIENCY_FADE_ALPHA", fallback=0.15
-        )
-        efficiency_saturation_threshold = cfg.getfloat(
-            ct_section, "EFFICIENCY_SATURATION_THRESHOLD", fallback=0.4
-        )
-        efficiency_demand_alpha = cfg.getfloat(
-            ct_section, "EFFICIENCY_DEMAND_ALPHA", fallback=0.1
-        )
-        saturation_decay_factor = cfg.getfloat(
-            ct_section, "SATURATION_DECAY_FACTOR", fallback=0.995
-        )
-        min_dc_output = cfg.getfloat(ct_section, "MIN_DC_OUTPUT", fallback=0.0)
-        if 0 < min_dc_output < min_target_for_saturation:
-            logger.warning(
-                "MIN_DC_OUTPUT (%gW) is below MIN_TARGET_FOR_SATURATION (%dW): a "
-                "floored battery's target never clears the saturation gate, so an "
-                "empty/full unit can't be detected. Consider MIN_DC_OUTPUT >= %d.",
-                min_dc_output,
-                min_target_for_saturation,
-                min_target_for_saturation,
-            )
-
-        logger.debug(f"{device_type.upper()} Settings for {device_id}:")
-        logger.debug(f"CT Type: {ct_type}")
-        logger.debug(f"CT MAC: {ct_mac}")
-        logger.debug(f"CT UDP Port: {ct_udp_port}")
-        logger.debug(f"WiFi RSSI: {wifi_rssi}")
-        logger.debug(
-            "CT control model: %s",
-            (
-                "active control (emulator computes targets)"
-                if active_control
-                else "relay (forward consumer aggregates)"
-            ),
-        )
-        if active_control:
-            extras = []
-            if fair_distribution:
-                extras.append("fair distribution")
-            if saturation_detection:
-                extras.append("saturation detection")
-            if min_efficient_power > 0:
-                extras.append(f"efficiency optimization ({min_efficient_power}W)")
-            logger.info(
-                "Active control enabled: load split%s",
-                " + " + " + ".join(extras) if extras else "",
-            )
-
-        device = CT002(
-            udp_port=ct_udp_port,
-            ct_type=ct_type,
-            ct_mac=ct_mac,
-            wifi_rssi=wifi_rssi,
-            dedupe_time_window=dedupe_time_window,
-            consumer_ttl=consumer_ttl,
-            debug_status=debug_status,
-            active_control=active_control,
-            fair_distribution=fair_distribution,
-            balance_gain=balance_gain,
-            error_boost_threshold=error_boost_threshold,
-            error_boost_max=error_boost_max,
-            error_reduce_threshold=error_reduce_threshold,
-            balance_deadband=balance_deadband,
-            max_correction_per_step=max_correction_per_step,
-            max_target_step=max_target_step,
-            pace_base_step=pace_base_step,
-            pace_max_step=pace_max_step,
-            osc_damp_max=osc_damp_max,
-            osc_damp_alpha=osc_damp_alpha,
-            osc_damp_decay=osc_damp_decay,
-            osc_damp_threshold=osc_damp_threshold,
-            grid_predict_trust=grid_predict_trust,
-            concentrate_deadband=concentrate_deadband,
-            import_trim_w=import_trim_w,
-            saturation_detection=saturation_detection,
-            saturation_alpha=saturation_alpha,
-            min_target_for_saturation=min_target_for_saturation,
-            saturation_grace_seconds=saturation_grace_seconds,
-            saturation_stall_timeout_seconds=saturation_stall_timeout_seconds,
-            min_efficient_power=min_efficient_power,
-            probe_min_power=probe_min_power,
-            efficiency_rotation_interval=efficiency_rotation_interval,
-            efficiency_fade_alpha=efficiency_fade_alpha,
-            efficiency_saturation_threshold=efficiency_saturation_threshold,
-            efficiency_demand_alpha=efficiency_demand_alpha,
-            min_dc_output=min_dc_output,
-            saturation_decay_factor=saturation_decay_factor,
-            device_id=device_id or "",
-            reset_fn=lambda: _reset_all_powermeters(powermeters),
-        )
-
-        async def update_readings(addr, _fields=None, _consumer_id=None):
-            return await read_ct_powermeter(addr, powermeters)
-
-        device.before_send = update_readings
-
-        if insights:
-
-            def _ct002_event_listener(dev_id, consumer_id, data):
-                # {"_removed": True} is a sentinel from _cleanup_consumers
-                if data.get("_removed"):
-                    insights.on_ct002_consumer_removed(dev_id, consumer_id)
-                else:
-                    insights.on_ct002_response(dev_id, consumer_id, data)
-
-            device.event_listener = _ct002_event_listener
-
-    elif device_type == "shellypro3em_old":
-        logger.debug("Shelly Pro 3EM Settings:")
-        logger.debug(f"Device ID: {device_id}")
-        device = Shelly(
-            powermeters=powermeters,
-            device_id=device_id,
-            udp_port=1010,
-            dedupe_time_window=global_dedupe_time_window,
-        )
-
-    elif device_type == "shellypro3em_new":
-        logger.debug("Shelly Pro 3EM Settings:")
-        logger.debug(f"Device ID: {device_id}")
-        device = Shelly(
-            powermeters=powermeters,
-            device_id=device_id,
-            udp_port=2220,
-            dedupe_time_window=global_dedupe_time_window,
-        )
-
-    elif device_type == "shellyemg3":
-        logger.debug("Shelly EM Gen3 Settings:")
-        logger.debug(f"Device ID: {device_id}")
-        device = Shelly(
-            powermeters=powermeters,
-            device_id=device_id,
-            udp_port=2222,
-            dedupe_time_window=global_dedupe_time_window,
-        )
-
-    elif device_type == "shellyproem50":
-        logger.debug("Shelly Pro EM 50 Settings:")
-        logger.debug(f"Device ID: {device_id}")
-        device = Shelly(
-            powermeters=powermeters,
-            device_id=device_id,
-            udp_port=2223,
-            dedupe_time_window=global_dedupe_time_window,
-        )
-
-    else:
-        raise ValueError(f"Unsupported device type: {device_type}")
-
-    # Wire Shelly event listener
-    if insights and isinstance(device, Shelly):
-
-        def _shelly_event_listener(dev_id, battery_ip, data):
-            if data.get("_removed"):
-                insights.on_shelly_battery_removed(dev_id, battery_ip)
-            else:
-                insights.on_shelly_response(dev_id, battery_ip, data)
-
-        device.event_listener = _shelly_event_listener
+    registry: StatusRegistry | None = None,
+) -> None:
+    """Run one emulated device until it stops, wiring it to the optional
+    integrations (MQTT Insights, the Marstek responder, cloud reporting)."""
+    logger.debug("Starting device: %s", device_type)
+    ct = config.ct(device_type) if is_ct(device_type) else None
+    device = _build_device(device_type, ct, general, powermeters, device_id)
+    if insights:
+        device.event_listener = _forward_events(insights, device)
 
     try:
         await device.start()
     except Exception:
-        # Log but don't re-raise: a single device failing to start (e.g. port
-        # conflict) should not take down other healthy devices in the gather.
+        # One device failing to start (a port conflict, say) must not take
+        # down the others.  It stays absent from the dashboard rather than
+        # reporting zeros.
         logger.exception("Device %s (%s) failed to start", device_type, device_id)
         try:
             await device.stop()
@@ -404,173 +392,45 @@ async def run_device(
             )
         return
 
-    # Register active handler only after successful start so MQTT commands
-    # are never routed to a device that failed to come up.
-    if insights and isinstance(device, CT002):
-        insights.register_active_handler(device_id or "", device.set_consumer_active)
-        insights.register_manual_target_handler(
-            device_id or "", device.set_consumer_manual_target
-        )
-        insights.register_auto_target_handler(
-            device_id or "", device.set_consumer_auto_target
-        )
-        insights.register_distribution_weight_handler(
-            device_id or "", device.set_consumer_distribution_weight
-        )
-        insights.register_efficiency_window_weight_handler(
-            device_id or "", device.set_consumer_efficiency_window_weight
-        )
-        insights.register_min_dc_output_handler(
-            device_id or "", device.set_consumer_min_dc_output
-        )
-        insights.register_rotation_handler(
-            device_id or "", device.force_efficiency_rotation
-        )
-        insights.register_active_control_handler(
-            device_id or "", device.set_active_control
-        )
+    if registry is not None:
+        registry.register_device(device_id, device_type, device)
 
-    # Marstek MQTT responder — only wired up when Marstek credentials
-    # yielded a managed MAC (so hame-relay can route the replies back to
-    # the Marstek app) and the feature is enabled.
-    if isinstance(device, CT002) and insights and insights.marstek_mqtt_enabled:
-        if marstek_mac:
-
-            async def _marstek_get_values(
-                _pms: list[tuple[Powermeter, ClientFilter, bool]] = powermeters,
-            ) -> list[float]:
-                chosen: Powermeter | None = next(
-                    (pm for pm, cf, _ in _pms if cf.matches("0.0.0.0")), None
+    cloud_task = None
+    if isinstance(device, CT002) and ct is not None:
+        if insights:
+            # Only now, so MQTT commands never reach a device that failed to
+            # come up.
+            insights.register_device(device_id, device)
+            if insights.marstek_mqtt_enabled:
+                await _bind_marstek_responder(
+                    insights, device, device_id, powermeters, marstek_mac, marstek_ver_v
                 )
-                if chosen is None and _pms:
-                    chosen = _pms[0][0]
-                if chosen is None:
-                    return [0.0, 0.0, 0.0]
-                # Bound the wait so a quiet/offline powermeter can't pin a
-                # Marstek poll responder task; fall back to last-known values.
-                with contextlib.suppress(asyncio.TimeoutError, TimeoutError):
-                    await asyncio.wait_for(chosen.wait_for_next_message(), timeout=2.0)
-                vs = await chosen.get_powermeter_watts_raw()
-                return [float(vs[i]) if i < len(vs) else 0.0 for i in range(3)]
-
-            def _marstek_connected_slave_count() -> int:
-                return device.reporting_consumer_count()
-
-            def _marstek_cd4_slave_csv() -> str:
-                return format_cd4_slave_csv(device.reporting_consumer_rows())
-
-            await insights.register_marstek(
-                MarstekMqttBinding(
-                    device_id=device_id or "",
-                    ct_type=device.ct_type,
-                    mac=marstek_mac,
-                    get_values=_marstek_get_values,
-                    get_connected_slave_count=_marstek_connected_slave_count,
-                    get_cd4_slave_csv=_marstek_cd4_slave_csv,
-                    wifi_rssi=device.wifi_rssi,
-                    ver_v=marstek_ver_v
-                    if marstek_ver_v is not None
-                    else ver_v_from_marstek_api_version(None),
-                )
-            )
-        else:
-            logger.info(
-                "Marstek MQTT responder not wired for %s: no managed MAC "
-                "available. Enable [MARSTEK] with MAILBOX/PASSWORD to use "
-                "this feature, or set MARSTEK_MQTT_ENABLED=false to silence "
-                "this notice.",
+        if ct.cloud_reporting:
+            # The cloud knows the CT by the MAC registered in the Marstek
+            # account when there is one, else by the locally set CT_MAC.
+            cloud_task = _start_cloud_reporting(
+                device,
+                ct,
                 device_id,
-            )
-
-    # Opt-in HTTP cloud reporting (hamedata.com), mimicking what a real CT does:
-    # a handshake then a periodic setCtReporting GET with live grid/bucket data.
-    cloud_task: asyncio.Task[None] | None = None
-    if isinstance(device, CT002) and cloud_reporting:
-        # The reported id is the CT's MAC: the one AstraMeter registered in the
-        # Marstek account (the id the cloud actually knows) when configured, else
-        # the locally set CT_MAC.
-        report_id = marstek_mac or ct_mac
-        if not report_id:
-            logger.warning(
-                "CLOUD_REPORTING enabled for %s but no device id is available; "
-                "set CT_MAC, or enable the Marstek account so the registered "
-                "device id is used. Cloud reporting disabled.",
-                device_id,
-            )
-        else:
-            ct_device: CT002 = device
-
-            async def _cloud_gather(
-                _pms: list[tuple[Powermeter, ClientFilter, bool]] = powermeters,
-                _dev: CT002 = ct_device,
-                _insights: MqttInsightsService | None = insights,
-            ) -> CtMeasurement:
-                chosen: Powermeter | None = next(
-                    (pm for pm, cf, _ in _pms if cf.matches("0.0.0.0")), None
-                )
-                if chosen is None and _pms:
-                    chosen = _pms[0][0]
-                phases = [0.0, 0.0, 0.0]
-                if chosen is not None:
-                    with contextlib.suppress(asyncio.TimeoutError, TimeoutError):
-                        await asyncio.wait_for(
-                            chosen.wait_for_next_message(), timeout=2.0
-                        )
-                    vs = await chosen.get_powermeter_watts_raw()
-                    phases = [float(vs[i]) if i < len(vs) else 0.0 for i in range(3)]
-                ap, bp, cp = (round(p) for p in phases)
-                buckets = _dev.reporting_phase_buckets()
-
-                def _chrg(b: str) -> int:
-                    return int(buckets.get(b, {}).get("chrg_power", 0))
-
-                def _dchrg(b: str) -> int:
-                    return int(buckets.get(b, {}).get("dchrg_power", 0))
-
-                return CtMeasurement(
-                    ap=ap,
-                    bp=bp,
-                    cp=cp,
-                    dp=ap + bp + cp,
-                    rssi=_dev.wifi_rssi,
-                    slv=_dev.reporting_consumer_count(),
-                    udp=1,
-                    mqtt=1 if _insights is not None else 0,
-                    cz=_chrg("x"),
-                    ca=_chrg("A"),
-                    cb=_chrg("B"),
-                    cc=_chrg("C"),
-                    cd=_chrg("ABC"),
-                    dz=_dchrg("x"),
-                    da=_dchrg("A"),
-                    db=_dchrg("B"),
-                    dc=_dchrg("C"),
-                    dd=_dchrg("ABC"),
-                )
-
-            cloud_task = asyncio.create_task(
-                CloudReporter(
-                    CloudReporterConfig(
-                        ct_type=device.ct_type,
-                        device_id=report_id,
-                        host=cloud_reporting_host,
-                        interval_seconds=cloud_reporting_interval,
-                    ),
-                    _cloud_gather,
-                ).run()
+                powermeters,
+                marstek_mac or ct.ct_mac,
+                insights is not None,
+                registry,
             )
 
     try:
         await device.wait()
     finally:
+        if registry is not None:
+            registry.unregister_device(device_id)
         if cloud_task is not None:
             cloud_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await cloud_task
         if insights and isinstance(device, CT002):
-            insights.unregister_handlers(device_id or "")
+            insights.unregister_device(device_id)
             with contextlib.suppress(Exception):
-                await insights.unregister_marstek(device_id or "")
+                await insights.unregister_marstek(device_id)
         try:
             await device.stop()
         except Exception:
@@ -578,61 +438,45 @@ async def run_device(
 
 
 async def async_main(
-    cfg: configparser.ConfigParser,
-    args: argparse.Namespace,
+    config: AppConfig,
+    general: GeneralSettings,
     device_types: list[str],
     device_ids: list[str],
     skip_test: bool,
     managed_marstek: dict[str, tuple[str, int]] | None = None,
-):
+    registry: StatusRegistry | None = None,
+) -> None:
     managed_marstek = managed_marstek or {}
-    web_server = None
-    if cfg.getboolean("GENERAL", "ENABLE_WEB_SERVER", fallback=True):
-        logger.info("Starting web server...")
-        try:
-            enable_web_config = cfg.getboolean(
-                "GENERAL", "WEB_CONFIG_ENABLED", fallback=False
-            )
-            port = cfg.getint("GENERAL", "WEB_SERVER_PORT", fallback=52500)
-            web_server = WebServer(
-                port=port,
-                config_path=args.config,
-                enable_web_config=enable_web_config,
-            )
-            if await web_server.start():
-                logger.info("Web server started successfully")
-            else:
-                logger.error("Failed to start web server")
-                web_server = None
-        except Exception:
-            logger.exception("Web server failed to initialize")
-            if web_server:
-                await web_server.stop()
-            web_server = None
 
-    powermeters: list[tuple[Powermeter, ClientFilter, bool]] = []
+    powermeters: list[ConfiguredPowermeter] = []
     insights: MqttInsightsService | None = None
 
     try:
         # Create powermeters
-        powermeters = read_all_powermeter_configs(cfg)
+        powermeters = config.powermeters(general)
+        if registry is not None:
+            registry.powermeters = [c.powermeter for c in powermeters]
+            registry.bump()
 
         # Start powermeter lifecycle
-        for pm, _, _ in powermeters:
-            await pm.start()
+        for configured in powermeters:
+            await configured.powermeter.start()
 
         if not skip_test:
-            for powermeter, client_filter, _ in powermeters:
-                await test_powermeter(powermeter, client_filter)
+            for configured in powermeters:
+                await check_powermeter(configured.powermeter, configured.client_filter)
 
         # MQTT Insights (optional)
-        insights_cfg = read_mqtt_insights_config(cfg)
+        insights_cfg = config.mqtt_insights()
         if insights_cfg:
             insights = MqttInsightsService(
-                insights_cfg, powermeters=[pm for pm, _, _ in powermeters]
+                insights_cfg, powermeters=[c.powermeter for c in powermeters]
             )
             await insights.start()
             logger.info("MQTT Insights service started")
+        if registry is not None:
+            registry.insights = insights
+            registry.bump()
 
         if not device_types:
             logger.warning("No runnable device types configured after filtering.")
@@ -642,12 +486,14 @@ async def async_main(
             *(
                 run_device(
                     device_type,
-                    cfg,
-                    args,
+                    config,
+                    general,
                     powermeters,
                     device_id,
                     insights,
-                    *managed_marstek.get(device_type, ("", None)),
+                    managed_marstek.get(device_type, ("", None))[0],
+                    managed_marstek.get(device_type, ("", None))[1],
+                    registry=registry,
                 )
                 for device_type, device_id in zip(
                     device_types, device_ids, strict=False
@@ -663,23 +509,15 @@ async def async_main(
                 logger.info("MQTT Insights service stopped")
             except Exception:
                 logger.exception("Error stopping MQTT Insights service")
-        for pm, _, _ in powermeters:
+        for configured in powermeters:
             try:
-                await pm.stop()
+                await configured.powermeter.stop()
             except Exception:
-                logger.exception("Error stopping powermeter %s", pm)
-        if web_server:
-            logger.info("Stopping web server...")
-            try:
-                await asyncio.wait_for(web_server.stop(), timeout=5.0)
-            except TimeoutError:
-                logger.warning("Web server stop timed out")
-            except Exception:
-                logger.exception("Error stopping web server")
+                logger.exception("Error stopping powermeter %s", configured.powermeter)
 
 
 def _build_managed_marstek(
-    cfg: configparser.ConfigParser, device_types: Sequence[str]
+    marstek: MarstekSettings, device_types: Sequence[str]
 ) -> dict[str, tuple[str, int]]:
     """Register managed fake CT devices with Marstek and return the MAC/ver map.
 
@@ -687,29 +525,24 @@ def _build_managed_marstek(
     wiring stays in sync with the (possibly reloaded) config and device_types.
     """
     managed_marstek: dict[str, tuple[str, int]] = {}
-    if not cfg.getboolean("MARSTEK", "ENABLE", fallback=False):
+    if not marstek.enable:
         return managed_marstek
 
-    mailbox = cfg.get("MARSTEK", "MAILBOX", fallback="")
-    password = cfg.get("MARSTEK", "PASSWORD", fallback="")
-    base_url = cfg.get("MARSTEK", "BASE_URL", fallback="https://eu.hamedata.com")
-    timezone_name = cfg.get("MARSTEK", "TIMEZONE", fallback="Europe/Berlin")
-
-    if not mailbox or not password:
+    if not marstek.mailbox or not marstek.password:
         logger.warning(
-            "MARSTEK.ENABLE is true, but MAILBOX/PASSWORD missing; skipping fake-device auto-registration"
+            "Marstek auto-registration is enabled, but the mailbox/password is missing; skipping it"
         )
         return managed_marstek
 
     marstek_cfg = MarstekConfig(
-        base_url=base_url,
-        mailbox=mailbox,
-        password=password,
-        timezone=timezone_name,
+        base_url=marstek.base_url,
+        mailbox=marstek.mailbox,
+        password=marstek.password,
+        timezone=marstek.timezone,
     )
     try:
         any_ct = False
-        for dt in ("ct002", "ct003"):
+        for dt in CT_DEVICE_TYPES:
             if dt in device_types:
                 any_ct = True
                 created = ensure_managed_fake_device(marstek_cfg, dt)
@@ -724,11 +557,11 @@ def _build_managed_marstek(
             logger.info(
                 "Managed fake CT registration completed. Fake CT devices appear as offline in the Marstek app CT list (this is expected)."
             )
-            ct_names = []
-            if "ct002" in device_types:
-                ct_names.append("AstraMeter CT002")
-            if "ct003" in device_types:
-                ct_names.append("AstraMeter CT003")
+            ct_names = [
+                f"AstraMeter {dt.upper()}"
+                for dt in CT_DEVICE_TYPES
+                if dt in device_types
+            ]
             logger.info(
                 "Pairing hint: refresh the CT device list (or log out/in if needed), select %s, switch battery mode to Automatic, and choose that CT."
                 " The CT should be selectable as soon as it appears in the device list.",
@@ -746,55 +579,50 @@ def _build_managed_marstek(
     return managed_marstek
 
 
+def _addon_slug(args: argparse.Namespace) -> str | None:
+    """This add-on's slug, so the dashboard can build ingress-relative links."""
+    if not args.addon:
+        return None
+    return addon.SupervisorClient().addon_slug() or None
+
+
 def _apply_cli_overrides(
-    cfg: configparser.ConfigParser, args: argparse.Namespace
-) -> None:
-    """Re-apply CLI flags that override config-file values."""
-    if args.throttle_interval is not None:
-        if not cfg.has_section("GENERAL"):
-            cfg.add_section("GENERAL")
-        cfg.set("GENERAL", "THROTTLE_INTERVAL", str(args.throttle_interval))
+    general: GeneralSettings, args: argparse.Namespace
+) -> GeneralSettings:
+    """Re-apply CLI flags that override configured values."""
+    if args.throttle_interval is None:
+        return general
+    # Also reaches the power sources: they are built from these settings.
+    return replace(
+        general,
+        signal=replace(general.signal, throttle_interval=args.throttle_interval),
+    )
 
 
 def _resolve_device_config(
-    cfg: configparser.ConfigParser, args: argparse.Namespace
+    config: AppConfig, general: GeneralSettings, args: argparse.Namespace
 ) -> tuple[list[str], list[str], bool]:
-    """Derive device_types, device_ids and skip_test from *cfg* and CLI *args*."""
+    """Derive device_types, device_ids and skip_test from the config and CLI."""
     device_types = (
         args.device_types
         if args.device_types is not None
-        else [
-            dt.strip()
-            for dt in cfg.get("GENERAL", "DEVICE_TYPE", fallback="shellypro3em").split(
-                ","
-            )
-            if dt.strip()
-        ]
+        else list(general.device_types)
     )
     skip_test = (
         args.skip_powermeter_test
         if args.skip_powermeter_test is not None
-        else cfg.getboolean("GENERAL", "SKIP_POWERMETER_TEST", fallback=False)
+        else general.skip_powermeter_test
     )
 
     device_ids: list[str] = list(args.device_ids) if args.device_ids is not None else []
     if not device_ids:
-        cfg_device_ids = cfg.get("GENERAL", "DEVICE_IDS", fallback="").strip()
-        if cfg_device_ids:
-            device_ids = [
-                did.strip() for did in cfg_device_ids.split(",") if did.strip()
-            ]
-    shelly_id_prefixes = {
-        "shellypro3em": "shellypro3em",
-        "shellypro3em_old": "shellypro3em",
-        "shellypro3em_new": "shellypro3em",
-        "shellyemg3": "shellyemg3",
-        "shellyproem50": "shellyproem50",
-    }
+        device_ids = list(general.device_ids)
     while len(device_ids) < len(device_types):
         device_type = device_types[len(device_ids)]
-        prefix = shelly_id_prefixes.get(device_type)
-        if prefix is not None:
+        prefix = (
+            DEVICE_TYPES[device_type].id_prefix if device_type in DEVICE_TYPES else ""
+        )
+        if prefix:
             device_ids.append(f"{prefix}-ec4609c439c{len(device_ids) + 1}")
         else:
             device_ids.append(f"device-{len(device_ids) + 1}")
@@ -805,28 +633,56 @@ def _resolve_device_config(
         device_types.append("shellypro3em_new")
         device_ids.append(device_ids[shellypro3em_index])
 
-    ct_ports = []
-    for device_type in device_types:
-        if device_type in ["ct002", "ct003"]:
-            section = get_ct_section(device_type, cfg)
-            ct_ports.append(cfg.getint(section, "UDP_PORT", fallback=UDP_PORT))
+    ct_ports = [
+        config.ct(device_type).udp_port
+        for device_type in device_types
+        if is_ct(device_type)
+    ]
     if len(ct_ports) != len(set(ct_ports)):
         raise ValueError(
             "Multiple CT002/CT003 devices are configured with the same UDP port. "
             "Set UDP_PORT in [CT002]/[CT003] to avoid conflicts."
         )
 
-    logger.info(f"Device Types: {device_types}")
-    logger.info(f"Device IDs: {device_ids}")
+    logger.info("Device Types: %s", device_types)
+    logger.info("Device IDs: %s", device_ids)
     logger.info(f"Skip Test: {skip_test}")
 
     return device_types, device_ids, skip_test
 
 
-def main():
+def _load_config(
+    args: argparse.Namespace, options: addon.Options | None = None
+) -> AppConfig:
+    """Pick the configuration backend the command line asks for.
+
+    ``--addon`` takes the settings from the Home Assistant add-on options (and
+    the Supervisor); otherwise they come from the ``--config`` file.
+
+    Whatever the backend has to fetch remotely is resolved here, while we are
+    still outside the event loop — this runs at startup *and* on a config
+    restart, so neither path can leave a blocking lookup to the running loop.
+    """
+    if args.addon:
+        config: AppConfig = addon.load_config(
+            addon.load_options() if options is None else options
+        )
+    else:
+        config = IniAppConfig.from_file(args.config)
+    config.prefetch()
+    return config
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Power meter device emulator")
     parser.add_argument(
         "-c", "--config", default="config.ini", help="Path to the configuration file"
+    )
+    parser.add_argument(
+        "--addon",
+        action="store_true",
+        help="Run as the Home Assistant add-on: take the configuration from the "
+        "add-on options and the Supervisor API instead of a config file",
     )
     parser.add_argument(
         "-t", "--skip-powermeter-test", action="store_true", default=None
@@ -835,15 +691,7 @@ def main():
         "-d",
         "--device-types",
         nargs="+",
-        choices=[
-            "ct002",
-            "ct003",
-            "shellypro3em",
-            "shellyemg3",
-            "shellyproem50",
-            "shellypro3em_old",
-            "shellypro3em_new",
-        ],
+        choices=list(DEVICE_TYPES),
         help="List of device types to emulate",
     )
     parser.add_argument("--device-ids", nargs="+", help="List of device IDs")
@@ -859,15 +707,49 @@ def main():
         type=float,
         help="Throttling interval in seconds to prevent control instability",
     )
+    return parser
 
-    args = parser.parse_args()
-    # Disable interpolation so literal '%' in credentials (e.g. MARSTEK.PASSWORD)
-    # is read as-is from config.ini.
-    cfg = configparser.ConfigParser(dict_type=OrderedDict, interpolation=None)
-    cfg.read(args.config)
 
-    # configure logger
-    setLogLevel(args.loglevel)
+def _adopt_config(
+    registry: StatusRegistry,
+    config: AppConfig,
+    general: GeneralSettings,
+    args: argparse.Namespace,
+    web_server: WebServer | None = None,
+) -> None:
+    """Point the status registry at the configuration now in force.
+
+    Start-up and a config restart run this same copy, so a field that has to
+    follow the configuration cannot be wired up on one path and forgotten on
+    the other.
+    """
+    # The dashboard can add or remove `custom_config`, so the source
+    # the next cycle runs from may not be the one this one used.
+    registry.app_config = config
+    registry.config_path = config.path
+    # The web server outlives every cycle, so the settings it reads per
+    # request have to be re-pointed at the configuration just loaded —
+    # otherwise editing them in the dashboard and restarting from it
+    # appears to do nothing until the process itself is restarted.
+    # Only the per-request gates: `dashboard_enabled` decides which
+    # routes `build_app` registers, and those were built once at
+    # start-up, so changing it here would disagree with the route table.
+    registry.allow_write = general.dashboard_allow_write
+    registry.direct_access = general.dashboard_direct_access
+    if web_server is not None:
+        web_server.allowed_hosts = parse_allowed_hosts(general.dashboard_allowed_hosts)
+    registry.config_mode = detect_config_mode(addon=args.addon, config_path=config.path)
+
+
+def main() -> None:
+    args = _build_arg_parser().parse_args()
+
+    # In add-on mode the log level is an add-on option, so the options have to
+    # be read before the logger is configured — everything the config backend
+    # logs while talking to the Supervisor honours the user's level that way.
+    addon_options = addon.load_options() if args.addon else {}
+    log_level = str(addon.get_option(addon_options, "log_level", args.loglevel))
+    setLogLevel(log_level)
     logger.info("started astrameter application")
     _sha = get_git_commit_sha()
     if _sha:
@@ -877,56 +759,185 @@ def main():
             "Git commit not logged (set GIT_COMMIT_SHA at image build for CI images)"
         )
 
-    device_types, device_ids, skip_test = _resolve_device_config(cfg, args)
+    config = _load_config(args, addon_options)
 
-    _apply_cli_overrides(cfg, args)
+    if args.addon:
+        # Home Assistant is the power source, so give it a chance to finish
+        # booting before the first reading is attempted.
+        addon.wait_for_home_assistant(addon.SupervisorClient())
 
-    # Optional Marstek cloud registration for managed fake CT devices (sync, before event loop).
-    # When registration succeeds, the returned MAC is captured per device
-    # type so the Marstek MQTT responder in MQTT Insights uses the same
-    # MAC that hame-relay will route back to the Marstek app.
-    managed_marstek = _build_managed_marstek(cfg, device_types)
+    general = _apply_cli_overrides(config.general(), args)
+    logger.info("Effective configuration: %s", general)
+
+    registry = StatusRegistry(
+        config_path=config.path,
+        log_level=log_level,
+        version=get_version(),
+        git_commit=_sha,
+        addon_slug=_addon_slug(args),
+        web_port=general.web_server_port,
+        dashboard_enabled=general.dashboard,
+    )
+    _adopt_config(registry, config, general, args)
 
     # Map SIGTERM to KeyboardInterrupt so asyncio.run cancels tasks and
     # runs finally-cleanup the same way it does for SIGINT (Ctrl+C).
     signal.signal(signal.SIGTERM, signal.default_int_handler)
 
-    # SIGUSR1 is used by the web UI restart button.  We set a flag *before*
-    # raising KeyboardInterrupt so the outer loop knows to re-run instead of
-    # exiting.
-    restart_requested = False
+    try:
+        asyncio.run(_supervise(config, general, args, registry))
+    except KeyboardInterrupt:
+        pass
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        exit(1)
 
-    def _restart_handler(signum, frame):
-        nonlocal restart_requested
-        restart_requested = True
-        signal.default_int_handler(signum, frame)
 
-    signal.signal(signal.SIGUSR1, _restart_handler)
+async def _start_web_server(
+    config: AppConfig, general: GeneralSettings, registry: StatusRegistry
+) -> WebServer | None:
+    """The web server that outlives every device cycle, or ``None`` for none.
 
-    while True:
-        restart_requested = False
-        try:
-            asyncio.run(
+    A server that cannot be started is not fatal: the devices still run, they
+    just have no dashboard.
+    """
+    if not general.enable_web_server:
+        return None
+    logger.info("Starting web server...")
+    web_server = None
+    try:
+        web_server = WebServer(
+            port=general.web_server_port,
+            config_path=config.path,
+            enable_web_config=general.web_config_enabled,
+            status=registry,
+            allowed_hosts=general.dashboard_allowed_hosts,
+        )
+        if not await web_server.start():
+            logger.error("Failed to start web server")
+            return None
+    except Exception:
+        logger.exception("Web server failed to initialize")
+        if web_server:
+            await web_server.stop()
+        return None
+    return web_server
+
+
+def _reload_config(
+    args: argparse.Namespace, config: AppConfig, general: GeneralSettings
+) -> tuple[AppConfig, GeneralSettings]:
+    """The configuration to run the next cycle from, re-read from its source.
+
+    The dashboard is what writes the file this re-reads, so a bad write must
+    not be fatal: letting the error out would stop the web server in the
+    caller's `finally` and take away the only surface that can repair the
+    configuration. Keep running the last good one.
+    """
+    try:
+        new_config = _load_config(args)
+        return new_config, _apply_cli_overrides(new_config.general(), args)
+    except Exception:
+        logger.exception(
+            "Could not reload the configuration; continuing with the previous one"
+        )
+        return config, general
+
+
+async def _supervise(
+    config: AppConfig,
+    general: GeneralSettings,
+    args: argparse.Namespace,
+    registry: StatusRegistry,
+) -> None:
+    """Own the one asyncio loop for the process lifetime.
+
+    The web server is started here, *outside* the per-cycle ``async_main``,
+    so the dashboard URL and the add-on watchdog endpoint survive a restart.
+    An ``AppRunner`` is bound to the loop that created it, so a long-lived
+    server is only possible with exactly one loop per process — which is why
+    the restart is an :class:`asyncio.Event` rather than a re-``asyncio.run``.
+    """
+    loop = asyncio.get_running_loop()
+    restart = asyncio.Event()
+
+    def _on_sigusr1() -> None:
+        registry.restart_pending = True
+        registry.bump()
+        restart.set()
+
+    loop.add_signal_handler(signal.SIGUSR1, _on_sigusr1)
+
+    web_server = await _start_web_server(config, general, registry)
+
+    try:
+        while True:
+            restart.clear()
+            registry.restart_pending = False
+            device_types, device_ids, skip_test = _resolve_device_config(
+                config, general, args
+            )
+            # Marstek registration is blocking HTTP with retries; off-loop so a
+            # slow or unreachable cloud cannot stall /health for ~40 s.
+            managed_marstek = await asyncio.to_thread(
+                _build_managed_marstek, config.marstek(), device_types
+            )
+            registry.managed_marstek = managed_marstek
+            registry.bump()
+
+            cycle = asyncio.create_task(
                 async_main(
-                    cfg, args, device_types, device_ids, skip_test, managed_marstek
+                    config,
+                    general,
+                    device_types,
+                    device_ids,
+                    skip_test,
+                    managed_marstek,
+                    registry,
                 )
             )
-            break  # clean exit
-        except KeyboardInterrupt:
-            if not restart_requested:
-                break
+            waiter = asyncio.create_task(restart.wait())
+            try:
+                await asyncio.wait({cycle, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                waiter.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await waiter
+
+            if cycle.done():
+                # A finished cycle means the devices exited on their own; let
+                # the exception (if any) propagate as before.
+                await cycle
+                if not restart.is_set():
+                    break
+
+            # Restart requested: unwind this cycle fully before starting the
+            # next one, so no device task, powermeter or MQTT client leaks
+            # into it.
             logger.info("Restarting service…")
-            cfg = configparser.ConfigParser(dict_type=OrderedDict, interpolation=None)
-            cfg.read(args.config)
-            _apply_cli_overrides(cfg, args)
-            device_types, device_ids, skip_test = _resolve_device_config(cfg, args)
-            managed_marstek = _build_managed_marstek(cfg, device_types)
-        except RuntimeError as exc:
-            logger.error("%s", exc)
-            exit(1)
+            cycle.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await cycle
+            registry.reset_cycle()
 
+            # Re-read the configuration off-loop: a backend may have to ask
+            # the Supervisor for part of it, and prefetch() is blocking.
+            config, general = await asyncio.to_thread(
+                _reload_config, args, config, general
+            )
+            _adopt_config(registry, config, general, args, web_server)
+            registry.bump()
+    finally:
+        loop.remove_signal_handler(signal.SIGUSR1)
+        if web_server:
+            logger.info("Stopping web server...")
+            try:
+                await asyncio.wait_for(web_server.stop(), timeout=5.0)
+            except TimeoutError:
+                logger.warning("Web server stop timed out")
+            except Exception:
+                logger.exception("Error stopping web server")
 
-# end main
 
 if __name__ == "__main__":
     main()

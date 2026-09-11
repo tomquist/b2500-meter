@@ -1,21 +1,27 @@
 from __future__ import annotations
 
 import configparser
+import dataclasses
 import os
+import typing
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
 
 if TYPE_CHECKING:
     from astrameter.mqtt_insights import MqttInsightsConfig
 
 from astrameter.config.logger import logger
+from astrameter.config.settings import ConfiguredPowermeter, SignalSettings
 from astrameter.powermeter import (
     AmisReader,
     Emlog,
     Envoy,
     ESPHome,
+    ESPHomeNative,
     FritzSmartEnergy,
     Fronius,
     HomeAssistant,
@@ -26,7 +32,9 @@ from astrameter.powermeter import (
     MqttPowermeter,
     PidPowermeter,
     Powermeter,
+    Refoss,
     Script,
+    Shelly,
     Shelly1PM,
     Shelly3EMPro,
     ShellyEM,
@@ -59,6 +67,7 @@ VZLOGGER_SECTION = "VZLOGGER"
 SCRIPT_SECTION = "SCRIPT"
 SML_SECTION = "SML"
 ESPHOME_SECTION = "ESPHOME"
+ESPHOMENATIVE_SECTION = "ESPHOMENATIVE"
 AMIS_READER_SECTION = "AMIS_READER"
 MODBUS_SECTION = "MODBUS"
 JSON_HTTP_SECTION = "JSON_HTTP"
@@ -68,22 +77,169 @@ ENVOY_SECTION = "ENVOY"
 SMA_ENERGY_METER_SECTION = "SMA_ENERGY_METER"
 FRITZ_SECTION = "FRITZ"
 FRONIUS_SECTION = "FRONIUS"
+REFOSS_SECTION = "REFOSS"
+MEROSS_SECTION = "MEROSS"
 TIBBER_PULSE_SECTION = "TIBBER_PULSE"
+MQTT_SECTION = "MQTT"
 MQTT_INSIGHTS_SECTION = "MQTT_INSIGHTS"
+
+DEFAULT_MQTT_PORT = 1883
+DEFAULT_MQTTS_PORT = 8883
+
+_GETTERS: dict[type, str] = {
+    bool: "getboolean",
+    int: "getint",
+    float: "getfloat",
+    str: "get",
+}
+
+
+def read_option(
+    config: configparser.ConfigParser,
+    section: str,
+    key: str,
+    kind: type,
+    fallback: Any = None,
+) -> Any:
+    """*key* through the configparser getter for *kind*.
+
+    One place picks the getter, so ``yes``/``no`` booleans and integers that
+    refuse ``1.5`` parse the same in every backend.
+    """
+    return getattr(config, _GETTERS[kind])(section, key, fallback=fallback)
+
+
+def _declared(
+    config: configparser.ConfigParser,
+    section: str,
+    *,
+    blank_is_unset: bool = False,
+    **keys: tuple[str, type],
+) -> dict[str, Any]:
+    """Keyword arguments for the keys *section* sets; the class default covers the rest.
+
+    ``blank_is_unset`` also skips a key written with no value, so
+    ``HA_DISCOVERY =`` means "leave it to the class" rather than a parse
+    error or a zero.
+    """
+    out: dict[str, Any] = {}
+    for arg, (key, kind) in keys.items():
+        if not config.has_option(section, key):
+            continue
+        if blank_is_unset and not config.get(section, key, fallback="").strip():
+            continue
+        out[arg] = read_option(config, section, key, kind)
+    return out
+
+
+# A field's INI key is its name uppercased, except for these. Readers and the
+# renderer in ``ini_config`` share the maps, and ``ini_config_test.py``
+# round-trips every field, so a key read one way and written another fails there.
+GENERAL_KEY_OVERRIDES = {
+    "device_types": "DEVICE_TYPE",
+    "dashboard": "DASHBOARD_ENABLED",
+}
+
+SIGNAL_KEY_OVERRIDES = {
+    "smooth_alpha": "SMOOTH_TARGET_ALPHA",
+    "offsets": "POWER_OFFSET",
+    "multipliers": "POWER_MULTIPLIER",
+}
+
+
+def ini_key(field: str, overrides: dict[str, str]) -> str:
+    return overrides.get(field, field.upper())
+
+
+def general_key(field: str) -> str:
+    """The ``[GENERAL]`` key backing *field* of :class:`GeneralSettings`.
+
+    Lets another backend name a key in a message without hardcoding it, so a
+    rename here cannot leave that message pointing at a key nobody reads.
+    """
+    return ini_key(field, GENERAL_KEY_OVERRIDES)
+
+
+def _field_kinds(settings_type: type) -> dict[str, type]:
+    """Each field's scalar type — ``int`` for both ``int`` and ``int | None``."""
+    kinds = {}
+    for name, hint in typing.get_type_hints(settings_type).items():
+        members = [t for t in typing.get_args(hint) or (hint,) if t is not type(None)]
+        kinds[name] = members[0]
+    return kinds
+
+
+def read_fields(
+    config: configparser.ConfigParser,
+    section: str,
+    settings_type: type[Any],
+    key_overrides: dict[str, str] | None = None,
+    *,
+    skip: tuple[str, ...] = (),
+    defaults: Any = None,
+) -> dict[str, Any]:
+    """Every field of *settings_type* but *skip*, parsed by the getter its type asks for.
+
+    An absent key yields the dataclass default, so a field typed ``X | None``
+    stays ``None`` — unset ``web_config_enabled`` is not "off", and unset
+    ``consumer_ttl`` is adaptive rather than a number. *defaults* overrides
+    those per-field fallbacks with another instance's values, which is how a
+    section inherits what ``[GENERAL]`` was configured with.
+    """
+    if defaults is None:
+        defaults = settings_type()
+    kinds = _field_kinds(settings_type)
+    values = {}
+    for f in dataclasses.fields(settings_type):
+        if f.name in skip:
+            continue
+        key = ini_key(f.name, key_overrides or {})
+        values[f.name] = read_option(
+            config, section, key, kinds[f.name], getattr(defaults, f.name)
+        )
+    return values
+
+
+def split_csv(raw: str) -> list[str]:
+    """The comma-separated items of *raw*, trimmed, blanks dropped."""
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def one_or_many(raw: str) -> str | list[str]:
+    """Like :func:`split_csv`, but a lone item stays a plain string.
+
+    Power sources take either shape and treat a list as one value per phase,
+    so a single-entry list would not mean the same thing as the entry itself.
+    """
+    parts = split_csv(raw)
+    return parts[0] if len(parts) == 1 else parts
+
+
+def new_config_parser() -> configparser.ConfigParser:
+    """Parser used for every config backend.
+
+    Interpolation is disabled so a literal ``%`` in a credential (e.g.
+    ``MARSTEK.PASSWORD``) is read as-is.
+    """
+    return configparser.ConfigParser(dict_type=OrderedDict, interpolation=None)
 
 
 class ClientFilter:
-    def __init__(self, netmasks: list[IPv4Network]):
+    def __init__(self, netmasks: list[IPv4Network]) -> None:
         self.netmasks = netmasks
 
-    def matches(self, client_ip) -> bool:
+    def matches(self, client_ip: str) -> bool:
         try:
             client_ip_addr = IPv4Address(client_ip)
             for netmask in self.netmasks:
                 if client_ip_addr in netmask:
                     return True
-        except ValueError as e:
-            logger.error(f"Error: {e}")
+        except ValueError:
+            logger.error(
+                "Client %r is not an IPv4 address; it matches none of %s",
+                client_ip,
+                [str(netmask) for netmask in self.netmasks],
+            )
             return False
         return False
 
@@ -130,7 +286,7 @@ def parse_mqtt_uri(uri: str) -> MqttUriParts:
         )
 
     tls = scheme == "mqtts"
-    port = parsed.port if parsed.port is not None else (8883 if tls else 1883)
+    port = parsed.port or (DEFAULT_MQTTS_PORT if tls else DEFAULT_MQTT_PORT)
     username = unquote(parsed.username) if parsed.username is not None else None
     password = unquote(parsed.password) if parsed.password is not None else None
 
@@ -140,6 +296,28 @@ def parse_mqtt_uri(uri: str) -> MqttUriParts:
         username=username,
         password=password,
         tls=tls,
+    )
+
+
+def read_mqtt_connection(
+    section: str, config: configparser.ConfigParser
+) -> MqttUriParts:
+    """The broker a section points at: its ``URI``, else the separate keys.
+
+    A blank key counts as unset, so ``PORT =`` gets the default port rather
+    than a parse error.
+    """
+    uri = config.get(section, "URI", fallback="").strip()
+    if uri:
+        return parse_mqtt_uri(uri)
+    port = config.get(section, "PORT", fallback="").strip()
+    tls = config.get(section, "TLS", fallback="").strip()
+    return MqttUriParts(
+        host=config.get(section, "BROKER", fallback=""),
+        port=int(port) if port else DEFAULT_MQTT_PORT,
+        username=config.get(section, "USERNAME", fallback=None) or None,
+        password=config.get(section, "PASSWORD", fallback=None) or None,
+        tls=config.getboolean(section, "TLS") if tls else False,
     )
 
 
@@ -158,195 +336,146 @@ def parse_float_list(value: str, key_name: str, section: str) -> list[float]:
     return result if result else [0.0]
 
 
+def read_signal_settings(
+    section: str,
+    config: configparser.ConfigParser,
+    defaults: SignalSettings,
+    *,
+    with_transform: bool = True,
+) -> SignalSettings:
+    """Read one section's signal conditioning, falling back to *defaults*.
+
+    Called with the ``[GENERAL]`` section to derive the defaults themselves —
+    ``with_transform`` is off there, since the offset/multiplier pair applies
+    to the source that declares it, not to every source.
+    """
+    offsets: list[float] | None = None
+    multipliers: list[float] | None = None
+    if with_transform and (
+        config.has_option(section, "POWER_OFFSET")
+        or config.has_option(section, "POWER_MULTIPLIER")
+    ):
+        offsets = parse_float_list(
+            config.get(section, "POWER_OFFSET", fallback="0"), "POWER_OFFSET", section
+        )
+        multipliers = parse_float_list(
+            config.get(section, "POWER_MULTIPLIER", fallback="1"),
+            "POWER_MULTIPLIER",
+            section,
+        )
+    values = read_fields(
+        config,
+        section,
+        SignalSettings,
+        SIGNAL_KEY_OVERRIDES,
+        skip=("offsets", "multipliers"),
+        defaults=defaults,
+    )
+    values["pid_mode"] = values["pid_mode"].strip().lower()
+    return SignalSettings(offsets=offsets, multipliers=multipliers, **values)
+
+
+def apply_signal_wrappers(
+    powermeter: Powermeter, name: str, signal: SignalSettings
+) -> Powermeter:
+    """Wrap *powermeter* in the conditioning stages *signal* asks for.
+
+    Shared by every config backend, so a power source behaves the same however
+    it was configured. *name* labels it in logs and MQTT Insights.
+    """
+    if signal.offsets is not None or signal.multipliers is not None:
+        offsets = signal.offsets if signal.offsets is not None else [0.0]
+        multipliers = signal.multipliers if signal.multipliers is not None else [1.0]
+        logger.info(
+            "Applying power transform (multiplier=%s, offset=%s) to %s",
+            multipliers,
+            offsets,
+            name,
+        )
+        powermeter = TransformedPowermeter(powermeter, offsets, multipliers)
+
+    if signal.throttle_interval > 0:
+        logger.info("Applying throttling (%.1fs) to %s", signal.throttle_interval, name)
+        powermeter = ThrottledPowermeter(powermeter, signal.throttle_interval)
+
+    if signal.hampel_window > 0:
+        logger.info(
+            "Applying Hampel outlier filter (window=%d, n_sigma=%.2f, min_threshold=%.0fW) to %s",
+            signal.hampel_window,
+            signal.hampel_n_sigma,
+            signal.hampel_min_threshold,
+            name,
+        )
+        powermeter = HampelPowermeter(
+            powermeter,
+            window=signal.hampel_window,
+            n_sigma=signal.hampel_n_sigma,
+            min_threshold=signal.hampel_min_threshold,
+        )
+
+    if signal.smooth_alpha > 0:
+        alpha = max(0.01, min(1.0, signal.smooth_alpha))
+        logger.info(
+            "Applying EMA smoothing (alpha=%.2f, max_step=%.0f) to %s",
+            alpha,
+            signal.max_smooth_step,
+            name,
+        )
+        powermeter = SmoothedPowermeter(
+            powermeter, alpha=alpha, max_step=signal.max_smooth_step
+        )
+
+    if signal.deadband > 0:
+        logger.info("Applying deadband (%.0fW) to %s", signal.deadband, name)
+        powermeter = DeadbandPowermeter(powermeter, deadband=signal.deadband)
+
+    if signal.pid_kp > 0:
+        logger.info(
+            "Applying PID controller (Kp=%s, Ki=%s, Kd=%s, max=%sW, mode=%s) to %s",
+            signal.pid_kp,
+            signal.pid_ki,
+            signal.pid_kd,
+            signal.pid_output_max,
+            signal.pid_mode,
+            name,
+        )
+        powermeter = PidPowermeter(
+            powermeter,
+            kp=signal.pid_kp,
+            ki=signal.pid_ki,
+            kd=signal.pid_kd,
+            output_max=signal.pid_output_max,
+            mode=signal.pid_mode,
+        )
+
+    # Wrap outermost so health tracking sees the final processed read and
+    # labels the powermeter's MQTT Insights device.
+    return HealthTrackingPowermeter(powermeter, name=name)
+
+
 def read_all_powermeter_configs(
     config: configparser.ConfigParser,
-) -> list[tuple[Powermeter, ClientFilter, bool]]:
-    powermeters: list[tuple[Powermeter, ClientFilter, bool]] = []
-    global_throttle_interval = config.getfloat(
-        "GENERAL", "THROTTLE_INTERVAL", fallback=0.0
-    )
-    global_wait_for_next_message = config.getboolean(
-        "GENERAL", "WAIT_FOR_NEXT_MESSAGE", fallback=True
-    )
-    global_smooth_alpha = config.getfloat(
-        "GENERAL", "SMOOTH_TARGET_ALPHA", fallback=0.0
-    )
-    global_max_smooth_step = config.getfloat("GENERAL", "MAX_SMOOTH_STEP", fallback=0.0)
-    global_deadband = config.getfloat("GENERAL", "DEADBAND", fallback=0.0)
-    global_hampel_window = config.getint("GENERAL", "HAMPEL_WINDOW", fallback=0)
-    global_hampel_n_sigma = config.getfloat("GENERAL", "HAMPEL_N_SIGMA", fallback=3.0)
-    global_hampel_min_threshold = config.getfloat(
-        "GENERAL", "HAMPEL_MIN_THRESHOLD", fallback=0.0
-    )
-    global_pid_kp = config.getfloat("GENERAL", "PID_KP", fallback=0.0)
-    global_pid_ki = config.getfloat("GENERAL", "PID_KI", fallback=0.0)
-    global_pid_kd = config.getfloat("GENERAL", "PID_KD", fallback=0.0)
-    global_pid_output_max = config.getfloat("GENERAL", "PID_OUTPUT_MAX", fallback=800.0)
-    global_pid_mode = config.get("GENERAL", "PID_MODE", fallback="bias").strip().lower()
+    global_signal: SignalSettings | None = None,
+) -> list[ConfiguredPowermeter]:
+    """Build every power source the config file declares."""
+    if global_signal is None:
+        global_signal = read_signal_settings(
+            "GENERAL", config, SignalSettings(), with_transform=False
+        )
 
+    powermeters: list[ConfiguredPowermeter] = []
     for section in config.sections():
         powermeter = create_powermeter(section, config)
-        if powermeter is not None:
-            # Apply power transform if configured
-            has_offset = config.has_option(section, "POWER_OFFSET")
-            has_multiplier = config.has_option(section, "POWER_MULTIPLIER")
-            if has_offset or has_multiplier:
-                offsets = parse_float_list(
-                    config.get(section, "POWER_OFFSET", fallback="0"),
-                    "POWER_OFFSET",
-                    section,
-                )
-                multipliers = parse_float_list(
-                    config.get(section, "POWER_MULTIPLIER", fallback="1"),
-                    "POWER_MULTIPLIER",
-                    section,
-                )
-                logger.info(
-                    f"Applying power transform (multiplier={multipliers}, offset={offsets}) to {section}"
-                )
-                powermeter = TransformedPowermeter(powermeter, offsets, multipliers)
-
-            section_throttle_interval = config.getfloat(
-                section, "THROTTLE_INTERVAL", fallback=global_throttle_interval
+        if powermeter is None:
+            continue
+        signal = read_signal_settings(section, config, global_signal)
+        powermeters.append(
+            ConfiguredPowermeter(
+                apply_signal_wrappers(powermeter, section, signal),
+                create_client_filter(section, config),
+                signal.wait_for_next_message,
             )
-
-            if section_throttle_interval > 0:
-                throttle_source = (
-                    "section-specific"
-                    if config.has_option(section, "THROTTLE_INTERVAL")
-                    else "global"
-                )
-                logger.info(
-                    "Applying %s throttling (%.1fs) to %s",
-                    throttle_source,
-                    section_throttle_interval,
-                    section,
-                )
-                powermeter = ThrottledPowermeter(powermeter, section_throttle_interval)
-
-            section_hampel_window = config.getint(
-                section, "HAMPEL_WINDOW", fallback=global_hampel_window
-            )
-            if section_hampel_window > 0:
-                section_hampel_n_sigma = config.getfloat(
-                    section, "HAMPEL_N_SIGMA", fallback=global_hampel_n_sigma
-                )
-                section_hampel_min_threshold = config.getfloat(
-                    section,
-                    "HAMPEL_MIN_THRESHOLD",
-                    fallback=global_hampel_min_threshold,
-                )
-                hampel_source = (
-                    "section-specific"
-                    if config.has_option(section, "HAMPEL_WINDOW")
-                    else "global"
-                )
-                logger.info(
-                    "Applying %s Hampel outlier filter (window=%d, n_sigma=%.2f, min_threshold=%.0fW) to %s",
-                    hampel_source,
-                    section_hampel_window,
-                    section_hampel_n_sigma,
-                    section_hampel_min_threshold,
-                    section,
-                )
-                powermeter = HampelPowermeter(
-                    powermeter,
-                    window=section_hampel_window,
-                    n_sigma=section_hampel_n_sigma,
-                    min_threshold=section_hampel_min_threshold,
-                )
-
-            section_smooth_alpha = config.getfloat(
-                section, "SMOOTH_TARGET_ALPHA", fallback=global_smooth_alpha
-            )
-            if section_smooth_alpha > 0:
-                section_smooth_alpha = max(0.01, min(1.0, section_smooth_alpha))
-                section_max_smooth_step = config.getfloat(
-                    section, "MAX_SMOOTH_STEP", fallback=global_max_smooth_step
-                )
-                smooth_source = (
-                    "section-specific"
-                    if config.has_option(section, "SMOOTH_TARGET_ALPHA")
-                    else "global"
-                )
-                logger.info(
-                    "Applying %s EMA smoothing (alpha=%.2f, max_step=%.0f) to %s",
-                    smooth_source,
-                    section_smooth_alpha,
-                    section_max_smooth_step,
-                    section,
-                )
-                powermeter = SmoothedPowermeter(
-                    powermeter,
-                    alpha=section_smooth_alpha,
-                    max_step=section_max_smooth_step,
-                )
-
-            section_deadband = config.getfloat(
-                section, "DEADBAND", fallback=global_deadband
-            )
-            if section_deadband > 0:
-                deadband_source = (
-                    "section-specific"
-                    if config.has_option(section, "DEADBAND")
-                    else "global"
-                )
-                logger.info(
-                    "Applying %s deadband (%.0fW) to %s",
-                    deadband_source,
-                    section_deadband,
-                    section,
-                )
-                powermeter = DeadbandPowermeter(powermeter, deadband=section_deadband)
-
-            section_pid_kp = config.getfloat(section, "PID_KP", fallback=global_pid_kp)
-            if section_pid_kp > 0:
-                pid_source = (
-                    "section-specific"
-                    if config.has_option(section, "PID_KP")
-                    else "global"
-                )
-                section_pid_ki = config.getfloat(
-                    section, "PID_KI", fallback=global_pid_ki
-                )
-                section_pid_kd = config.getfloat(
-                    section, "PID_KD", fallback=global_pid_kd
-                )
-                section_pid_output_max = config.getfloat(
-                    section, "PID_OUTPUT_MAX", fallback=global_pid_output_max
-                )
-                section_pid_mode = (
-                    config.get(section, "PID_MODE", fallback=global_pid_mode)
-                    .strip()
-                    .lower()
-                )
-                logger.info(
-                    "Applying %s PID controller (Kp=%s, Ki=%s, Kd=%s, max=%sW, mode=%s) to %s",
-                    pid_source,
-                    section_pid_kp,
-                    section_pid_ki,
-                    section_pid_kd,
-                    section_pid_output_max,
-                    section_pid_mode,
-                    section,
-                )
-                powermeter = PidPowermeter(
-                    powermeter,
-                    kp=section_pid_kp,
-                    ki=section_pid_ki,
-                    kd=section_pid_kd,
-                    output_max=section_pid_output_max,
-                    mode=section_pid_mode,
-                )
-
-            client_filter = create_client_filter(section, config)
-            wait_for_next_message = config.getboolean(
-                section, "WAIT_FOR_NEXT_MESSAGE", fallback=global_wait_for_next_message
-            )
-            # Wrap outermost so health tracking sees the final processed read
-            # and labels the powermeter's MQTT Insights device with the section.
-            powermeter = HealthTrackingPowermeter(powermeter, name=section)
-            powermeters.append((powermeter, client_filter, wait_for_next_message))
+        )
     return powermeters
 
 
@@ -358,75 +487,29 @@ def create_client_filter(
     return ClientFilter(netmasks)
 
 
-# Helper function to create a powermeter instance
-def create_powermeter(
-    section: str, config: configparser.ConfigParser
-) -> Powermeter | None:
-    if section.startswith(SHELLY_SECTION):
-        return create_shelly_powermeter(section, config)
-    elif section.startswith(TASMOTA_SECTION):
-        return create_tasmota_powermeter(section, config)
-    elif section.startswith(SHRDZM_SECTION):
-        return create_shrdzm_powermeter(section, config)
-    elif section.startswith(EMLOG_SECTION):
-        return create_emlog_powermeter(section, config)
-    elif section.startswith(IOBROKER_SECTION):
-        return create_iobroker_powermeter(section, config)
-    elif section.startswith(HOMEASSISTANT_SECTION):
-        return create_homeassistant_powermeter(section, config)
-    elif section.startswith(VZLOGGER_SECTION):
-        return create_vzlogger_powermeter(section, config)
-    elif section.startswith(SCRIPT_SECTION):
-        return create_script_powermeter(section, config)
-    elif section.startswith(SML_SECTION):
-        return create_sml_powermeter(section, config)
-    elif section.startswith(ESPHOME_SECTION):
-        return create_esphome_powermeter(section, config)
-    elif section.startswith(AMIS_READER_SECTION):
-        return create_amisreader_powermeter(section, config)
-    elif section.startswith(MODBUS_SECTION):
-        return create_modbus_powermeter(section, config)
-    elif section.startswith(TQ_EM_SECTION):
-        return create_tq_em_powermeter(section, config)
-    elif section.startswith(JSON_HTTP_SECTION):
-        return create_json_http_powermeter(section, config)
-    elif section.startswith(HOMEWIZARD_SECTION):
-        return create_homewizard_powermeter(section, config)
-    elif section.startswith(ENVOY_SECTION):
-        return create_envoy_powermeter(section, config)
-    elif section.startswith(SMA_ENERGY_METER_SECTION):
-        return create_sma_energy_meter_powermeter(section, config)
-    elif section.startswith(FRITZ_SECTION):
-        return create_fritz_powermeter(section, config)
-    elif section.startswith(FRONIUS_SECTION):
-        return create_fronius_powermeter(section, config)
-    elif section.startswith(TIBBER_PULSE_SECTION):
-        return create_tibber_pulse_powermeter(section, config)
-    elif section.startswith("MQTT") and not section.startswith(MQTT_INSIGHTS_SECTION):
-        return create_mqtt_powermeter(section, config)
-    else:
-        return None
-
-
 def create_shelly_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
     shelly_type = config.get(section, "TYPE", fallback="")
-    shelly_ip = config.get(section, "IP", fallback="")
-    shelly_user = config.get(section, "USER", fallback="")
-    shelly_pass = config.get(section, "PASS", fallback="")
-    shelly_meterindex = config.get(section, "METER_INDEX", fallback=None)
-    meter_index = shelly_meterindex if shelly_meterindex is not None else ""
-    if shelly_type == "1PM":
-        return Shelly1PM(shelly_ip, shelly_user, shelly_pass, meter_index)
-    elif shelly_type == "PLUS1PM":
-        return ShellyPlus1PM(shelly_ip, shelly_user, shelly_pass, meter_index)
-    elif shelly_type == "EM" or shelly_type == "3EM":
-        return ShellyEM(shelly_ip, shelly_user, shelly_pass, meter_index)
-    elif shelly_type == "3EMPro":
-        return Shelly3EMPro(shelly_ip, shelly_user, shelly_pass, meter_index)
-    else:
-        raise Exception(f"Error: unknown Shelly type '{shelly_type}'")
+    models: dict[str, type[Shelly]] = {
+        "1PM": Shelly1PM,
+        "PLUS1PM": ShellyPlus1PM,
+        "EM": ShellyEM,
+        "3EM": ShellyEM,
+        "3EMPro": Shelly3EMPro,
+    }
+    model = models.get(shelly_type)
+    if model is None:
+        raise ValueError(
+            f"Unknown Shelly TYPE {shelly_type!r} in section [{section}]; "
+            f"expected one of {', '.join(models)}"
+        )
+    return model(
+        config.get(section, "IP", fallback=""),
+        config.get(section, "USER", fallback=""),
+        config.get(section, "PASS", fallback=""),
+        config.get(section, "METER_INDEX", fallback=""),
+    )
 
 
 def create_amisreader_powermeter(
@@ -462,74 +545,50 @@ def create_sml_powermeter(
 def create_mqtt_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
-    # Multi-topic: TOPICS takes precedence over TOPIC
-    topics_raw = config.get(section, "TOPICS", fallback=None)
-    if topics_raw:
-        topic: str | list[str] = [t.strip() for t in topics_raw.split(",") if t.strip()]
-    else:
-        topic = config.get(section, "TOPIC", fallback="")
+    # The plural key wins where both are set: a list of one is still a list,
+    # which is one value per phase rather than the single value TOPIC means.
+    topics = config.get(section, "TOPICS", fallback="")
+    single_topic: str = config.get(section, "TOPIC", fallback="")
+    topic: str | list[str] = split_csv(topics) if topics else single_topic
+    json_paths = config.get(section, "JSON_PATHS", fallback="")
+    single_path: str | None = config.get(section, "JSON_PATH", fallback=None)
+    json_path: str | list[str] | None = (
+        split_csv(json_paths) if json_paths else single_path
+    )
 
-    # Multi-path: JSON_PATHS takes precedence over JSON_PATH
-    json_paths_raw = config.get(section, "JSON_PATHS", fallback=None)
-    if json_paths_raw:
-        json_path: str | list[str] | None = [
-            p.strip() for p in json_paths_raw.split(",") if p.strip()
-        ]
-    else:
-        json_path = config.get(section, "JSON_PATH", fallback=None)
-
-    uri = config.get(section, "URI", fallback="").strip()
-    if uri:
-        parts = parse_mqtt_uri(uri)
-        broker = parts.host
-        port = parts.port
-        username = parts.username
-        password = parts.password
-        tls = parts.tls
-    else:
-        broker = config.get(section, "BROKER", fallback="")
-        port = config.getint(section, "PORT", fallback=1883)
-        username = config.get(section, "USERNAME", fallback=None)
-        password = config.get(section, "PASSWORD", fallback=None)
-        tls = config.getboolean(section, "TLS", fallback=False)
-
+    broker = read_mqtt_connection(section, config)
     return MqttPowermeter(
-        broker,
-        port,
+        broker.host,
+        broker.port,
         topic,
         json_path,
-        username,
-        password,
-        tls=tls,
+        broker.username,
+        broker.password,
+        tls=broker.tls,
     )
 
 
 def create_json_http_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
-    json_paths = config.get(section, "JSON_PATHS", fallback="").split(",")
-    json_paths = [p.strip() for p in json_paths if p.strip()]
-    json_path_value = json_paths[0] if len(json_paths) == 1 else json_paths
+    json_path_value = one_or_many(config.get(section, "JSON_PATHS", fallback=""))
+    headers_raw = config.get(section, "HEADERS", fallback="")
+    headers = (
+        {
+            name.strip(): value.strip()
+            for name, value in (
+                item.split(":", 1) for item in headers_raw.split(";") if ":" in item
+            )
+        }
+        if headers_raw
+        else None
+    )
     return JsonHttpPowermeter(
         config.get(section, "URL", fallback=""),
         json_path_value,
-        config.get(section, "USERNAME", fallback=None),
-        config.get(section, "PASSWORD", fallback=None),
-        (
-            {
-                k.strip(): v.strip()
-                for k, v in (
-                    [
-                        item.split(":", 1)
-                        for item in config.get(section, "HEADERS", fallback="").split(
-                            ";"
-                        )
-                        if ":" in item
-                    ]
-                )
-            }
-            if config.get(section, "HEADERS", fallback="")
-            else None
+        headers=headers,
+        **_declared(
+            config, section, username=("USERNAME", str), password=("PASSWORD", str)
         ),
     )
 
@@ -543,11 +602,27 @@ def create_modbus_powermeter(
         config.getint(section, "UNIT_ID", fallback=1),
         config.getint(section, "ADDRESS", fallback=0),
         config.getint(section, "COUNT", fallback=1),
-        config.get(section, "DATA_TYPE", fallback="UINT16"),
-        config.get(section, "BYTE_ORDER", fallback="BIG"),
-        config.get(section, "WORD_ORDER", fallback="BIG"),
-        config.get(section, "REGISTER_TYPE", fallback="HOLDING"),
-        config.get(section, "TRANSPORT", fallback="TCP"),
+        **_declared(
+            config,
+            section,
+            data_type=("DATA_TYPE", str),
+            byte_order=("BYTE_ORDER", str),
+            word_order=("WORD_ORDER", str),
+            register_type=("REGISTER_TYPE", str),
+            transport=("TRANSPORT", str),
+        ),
+    )
+
+
+def create_esphomenative_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    return ESPHomeNative(
+        address=config.get(section, "ADDRESS", fallback=""),
+        port=config.get(section, "PORT", fallback="6053"),
+        api_key=config.get(section, "API_KEY", fallback=""),
+        object_id=config.get(section, "OBJECT_ID", fallback=""),
+        client_info=config.get(section, "CLIENT_INFO", fallback="AstraMeter"),
     )
 
 
@@ -568,31 +643,13 @@ def create_vzlogger_powermeter(
     return VZLogger(
         config.get(section, "IP", fallback=""),
         config.get(section, "PORT", fallback=""),
-        _split_labels(config.get(section, "UUID", fallback="")),
+        one_or_blank(config.get(section, "UUID", fallback="")),
     )
 
 
 def create_homeassistant_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
-    # Split entity strings on commas and strip whitespace
-    def parse_entities(value: str) -> str | list[str]:
-        if not value:
-            return ""
-        entities = [entity.strip() for entity in value.split(",")]
-        # Return single string if only one entity, otherwise return list
-        return entities[0] if len(entities) == 1 else entities
-
-    current_power_entity = parse_entities(
-        config.get(section, "CURRENT_POWER_ENTITY", fallback="")
-    )
-    power_input_alias = parse_entities(
-        config.get(section, "POWER_INPUT_ALIAS", fallback="")
-    )
-    power_output_alias = parse_entities(
-        config.get(section, "POWER_OUTPUT_ALIAS", fallback="")
-    )
-
     ip = config.get(section, "IP", fallback="")
     if ip == "supervisor":
 
@@ -602,7 +659,7 @@ def create_homeassistant_powermeter(
     else:
         _static_token = config.get(section, "ACCESSTOKEN", fallback="")
 
-        def token_getter() -> str:  # type: ignore[no-redef]
+        def token_getter() -> str:
             return _static_token
 
     return HomeAssistant(
@@ -610,10 +667,10 @@ def create_homeassistant_powermeter(
         config.get(section, "PORT", fallback=""),
         config.getboolean(section, "HTTPS", fallback=False),
         token_getter,
-        current_power_entity,
+        one_or_blank(config.get(section, "CURRENT_POWER_ENTITY", fallback="")),
         config.getboolean(section, "POWER_CALCULATE", fallback=False),
-        power_input_alias,
-        power_output_alias,
+        one_or_blank(config.get(section, "POWER_INPUT_ALIAS", fallback="")),
+        one_or_blank(config.get(section, "POWER_OUTPUT_ALIAS", fallback="")),
         config.get(section, "API_PATH_PREFIX", fallback=None),
     )
 
@@ -651,11 +708,9 @@ def create_shrdzm_powermeter(
     )
 
 
-def _split_labels(raw: str) -> str | list[str]:
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    if len(parts) <= 1:
-        return parts[0] if parts else ""
-    return parts
+def one_or_blank(raw: str) -> str | list[str]:
+    """Like :func:`one_or_many`, but an unset key is "" rather than []."""
+    return one_or_many(raw) or ""
 
 
 def create_tasmota_powermeter(
@@ -667,9 +722,9 @@ def create_tasmota_powermeter(
         config.get(section, "PASS", fallback=""),
         config.get(section, "JSON_STATUS", fallback=""),
         config.get(section, "JSON_PAYLOAD_MQTT_PREFIX", fallback=""),
-        _split_labels(config.get(section, "JSON_POWER_MQTT_LABEL", fallback="")),
-        _split_labels(config.get(section, "JSON_POWER_INPUT_MQTT_LABEL", fallback="")),
-        _split_labels(config.get(section, "JSON_POWER_OUTPUT_MQTT_LABEL", fallback="")),
+        one_or_blank(config.get(section, "JSON_POWER_MQTT_LABEL", fallback="")),
+        one_or_blank(config.get(section, "JSON_POWER_INPUT_MQTT_LABEL", fallback="")),
+        one_or_blank(config.get(section, "JSON_POWER_OUTPUT_MQTT_LABEL", fallback="")),
         config.getboolean(section, "JSON_POWER_CALCULATE", fallback=False),
     )
 
@@ -679,8 +734,9 @@ def create_tq_em_powermeter(
 ) -> Powermeter:
     return TQEnergyManager(
         config.get(section, "IP", fallback=""),
-        config.get(section, "PASSWORD", fallback=""),
-        timeout=config.getfloat(section, "TIMEOUT", fallback=5.0),
+        **_declared(
+            config, section, password=("PASSWORD", str), timeout=("TIMEOUT", float)
+        ),
     )
 
 
@@ -691,7 +747,7 @@ def create_homewizard_powermeter(
         config.get(section, "IP", fallback=""),
         config.get(section, "TOKEN", fallback=""),
         config.get(section, "SERIAL", fallback=""),
-        verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=True),
+        **_declared(config, section, verify_ssl=("VERIFY_SSL", bool)),
     )
 
 
@@ -700,11 +756,15 @@ def create_envoy_powermeter(
 ) -> Powermeter:
     return Envoy(
         host=config.get(section, "HOST", fallback=""),
-        token=config.get(section, "TOKEN", fallback=""),
-        username=config.get(section, "USERNAME", fallback=""),
-        password=config.get(section, "PASSWORD", fallback=""),
-        serial=config.get(section, "SERIAL", fallback=""),
-        verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=False),
+        **_declared(
+            config,
+            section,
+            token=("TOKEN", str),
+            username=("USERNAME", str),
+            password=("PASSWORD", str),
+            serial=("SERIAL", str),
+            verify_ssl=("VERIFY_SSL", bool),
+        ),
     )
 
 
@@ -712,10 +772,14 @@ def create_sma_energy_meter_powermeter(
     section: str, config: configparser.ConfigParser
 ) -> Powermeter:
     return SmaEnergyMeter(
-        config.get(section, "MULTICAST_GROUP", fallback="239.12.255.254"),
-        config.getint(section, "PORT", fallback=9522),
-        config.getint(section, "SERIAL_NUMBER", fallback=0),
-        config.get(section, "INTERFACE", fallback=""),
+        **_declared(
+            config,
+            section,
+            multicast_group=("MULTICAST_GROUP", str),
+            port=("PORT", int),
+            serial_number=("SERIAL_NUMBER", int),
+            interface=("INTERFACE", str),
+        )
     )
 
 
@@ -727,9 +791,13 @@ def create_fritz_powermeter(
         config.get(section, "USER", fallback=""),
         config.get(section, "PASSWORD", fallback=""),
         config.get(section, "AIN", fallback=""),
-        use_tls=config.getboolean(section, "HTTPS", fallback=False),
-        verify_ssl=config.getboolean(section, "VERIFY_SSL", fallback=True),
-        timeout=config.getfloat(section, "TIMEOUT", fallback=10.0),
+        **_declared(
+            config,
+            section,
+            use_tls=("HTTPS", bool),
+            verify_ssl=("VERIFY_SSL", bool),
+            timeout=("TIMEOUT", float),
+        ),
     )
 
 
@@ -738,8 +806,21 @@ def create_fronius_powermeter(
 ) -> Powermeter:
     return Fronius(
         config.get(section, "IP", fallback=""),
-        config.get(section, "DEVICE_ID", fallback="0"),
-        per_phase=config.getboolean(section, "PER_PHASE", fallback=False),
+        **_declared(
+            config, section, device_id=("DEVICE_ID", str), per_phase=("PER_PHASE", bool)
+        ),
+    )
+
+
+def create_refoss_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter:
+    """Build a Refoss/Meross powermeter from a ``[REFOSS]`` / ``[MEROSS]`` section."""
+    from astrameter.powermeter.refoss import parse_channels
+
+    return Refoss(
+        config.get(section, "IP", fallback=""),
+        parse_channels(config.get(section, "CHANNELS", fallback="1")),
     )
 
 
@@ -750,13 +831,64 @@ def create_tibber_pulse_powermeter(
     return TibberPulse(
         config.get(section, "IP", fallback=""),
         config.get(section, "PASSWORD", fallback=""),
-        config.get(section, "NODE_ID", fallback="1"),
-        config.get(section, "USER", fallback="admin"),
         obis_power_current=oc,
         obis_power_l1=o1,
         obis_power_l2=o2,
         obis_power_l3=o3,
+        **_declared(
+            config,
+            section,
+            node_id=("NODE_ID", str),
+            user=("USER", str),
+            timeout=("TIMEOUT", float),
+        ),
     )
+
+
+PowermeterFactory = Callable[[str, configparser.ConfigParser], Powermeter]
+
+# Matched longest prefix first, so [ESPHOMENATIVE] is never read as [ESPHOME]
+# and [MQTT_INSIGHTS] — not a power source — is refused before [MQTT] matches.
+_FACTORIES: list[tuple[str, PowermeterFactory | None]] = sorted(
+    [
+        (SHELLY_SECTION, create_shelly_powermeter),
+        (TASMOTA_SECTION, create_tasmota_powermeter),
+        (SHRDZM_SECTION, create_shrdzm_powermeter),
+        (EMLOG_SECTION, create_emlog_powermeter),
+        (IOBROKER_SECTION, create_iobroker_powermeter),
+        (HOMEASSISTANT_SECTION, create_homeassistant_powermeter),
+        (VZLOGGER_SECTION, create_vzlogger_powermeter),
+        (SCRIPT_SECTION, create_script_powermeter),
+        (SML_SECTION, create_sml_powermeter),
+        (ESPHOME_SECTION, create_esphome_powermeter),
+        (ESPHOMENATIVE_SECTION, create_esphomenative_powermeter),
+        (AMIS_READER_SECTION, create_amisreader_powermeter),
+        (MODBUS_SECTION, create_modbus_powermeter),
+        (TQ_EM_SECTION, create_tq_em_powermeter),
+        (JSON_HTTP_SECTION, create_json_http_powermeter),
+        (HOMEWIZARD_SECTION, create_homewizard_powermeter),
+        (ENVOY_SECTION, create_envoy_powermeter),
+        (SMA_ENERGY_METER_SECTION, create_sma_energy_meter_powermeter),
+        (FRITZ_SECTION, create_fritz_powermeter),
+        (FRONIUS_SECTION, create_fronius_powermeter),
+        (REFOSS_SECTION, create_refoss_powermeter),
+        (MEROSS_SECTION, create_refoss_powermeter),
+        (TIBBER_PULSE_SECTION, create_tibber_pulse_powermeter),
+        (MQTT_SECTION, create_mqtt_powermeter),
+        (MQTT_INSIGHTS_SECTION, None),
+    ],
+    key=lambda entry: len(entry[0]),
+    reverse=True,
+)
+
+
+def create_powermeter(
+    section: str, config: configparser.ConfigParser
+) -> Powermeter | None:
+    for prefix, factory in _FACTORIES:
+        if section.startswith(prefix):
+            return factory(section, config) if factory else None
+    return None
 
 
 def read_mqtt_insights_config(
@@ -767,60 +899,27 @@ def read_mqtt_insights_config(
 
     for section in config.sections():
         if section.startswith(MQTT_INSIGHTS_SECTION):
-            raw_port = config.get(section, "PORT", fallback="")
-            raw_tls = config.get(section, "TLS", fallback="")
-            raw_ha_discovery = config.get(section, "HA_DISCOVERY", fallback="")
-            raw_marstek_mqtt_enabled = config.get(
-                section, "MARSTEK_MQTT_ENABLED", fallback=""
-            ).strip()
-            uri = config.get(section, "URI", fallback="").strip()
-            if uri:
-                parts = parse_mqtt_uri(uri)
-                broker_value = parts.host
-                port_value = parts.port
-                username_value: str | None = parts.username
-                password_value: str | None = parts.password
-                tls_value = parts.tls
-            else:
-                broker_value = config.get(section, "BROKER", fallback="") or "localhost"
-                port_value = int(raw_port) if raw_port else 1883
-                username_value = config.get(section, "USERNAME", fallback=None) or None
-                password_value = config.get(section, "PASSWORD", fallback=None) or None
-                tls_value = config.getboolean(section, "TLS") if raw_tls else False
+            broker = read_mqtt_connection(section, config)
             return MqttInsightsConfig(
-                broker=broker_value,
-                port=port_value,
-                username=username_value,
-                password=password_value,
-                tls=tls_value,
-                base_topic=config.get(section, "BASE_TOPIC", fallback="")
-                or "astrameter",
-                ha_discovery=config.getboolean(section, "HA_DISCOVERY")
-                if raw_ha_discovery
-                else True,
-                ha_discovery_prefix=config.get(
-                    section, "HA_DISCOVERY_PREFIX", fallback=""
-                )
-                or "homeassistant",
-                addon_slug=(
-                    config.get(section, "ADDON_SLUG", fallback="").strip() or None
+                broker=broker.host or "localhost",
+                port=broker.port,
+                username=broker.username,
+                password=broker.password,
+                tls=broker.tls,
+                # Everything else keeps whatever MqttInsightsConfig declares
+                # unless this section really sets it — a key left blank means
+                # "default", not "off" or "zero".
+                **_declared(
+                    config,
+                    section,
+                    blank_is_unset=True,
+                    base_topic=("BASE_TOPIC", str),
+                    ha_discovery=("HA_DISCOVERY", bool),
+                    ha_discovery_prefix=("HA_DISCOVERY_PREFIX", str),
+                    addon_slug=("ADDON_SLUG", str),
+                    marstek_mqtt_enabled=("MARSTEK_MQTT_ENABLED", bool),
+                    marstek_mqtt_interval=("MARSTEK_MQTT_INTERVAL", float),
+                    powermeter_health_interval=("POWERMETER_HEALTH_INTERVAL", float),
                 ),
-                marstek_mqtt_enabled=config.getboolean(section, "MARSTEK_MQTT_ENABLED")
-                if raw_marstek_mqtt_enabled
-                else True,
-                marstek_mqtt_interval=float(raw_interval)
-                if (
-                    raw_interval := config.get(
-                        section, "MARSTEK_MQTT_INTERVAL", fallback=""
-                    ).strip()
-                )
-                else 300,
-                powermeter_health_interval=float(raw_health_interval)
-                if (
-                    raw_health_interval := config.get(
-                        section, "POWERMETER_HEALTH_INTERVAL", fallback=""
-                    ).strip()
-                )
-                else 30.0,
             )
     return None

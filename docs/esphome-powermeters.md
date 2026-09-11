@@ -7,6 +7,12 @@ the `ct002:` block does **not** talk to your meter directly. Instead it consumes
 powermeter" here means: *give ESPHome a sensor that reads your meter, then point
 `ct002:` at it.*
 
+A sensor that declares `unit_of_measurement: kW` (or `MW`/`mW`) is converted to
+watts automatically; a declared non-power unit (`°C`, `kWh`, …) is rejected at
+config validation. A sensor with no declared unit is assumed to report W — so
+for sources that deliver kW (common for Home Assistant template sensors),
+either declare the kW unit or scale the value with a `multiply: 1000` filter.
+
 ## How a reading reaches the emulator
 
 There is no "powermeter" object in the ESPHome component — the integration is a
@@ -50,6 +56,7 @@ Running the Python add-on instead? See [powermeters.md](powermeters.md).
 - [HomeAssistant](#homeassistant) — 🟢 Native
 - [VZLogger](#vzlogger) — 🔵 Generic (or 🟢 native by reading the meter directly)
 - [ESPHome](#esphome) — 🟢 Native (it's already ESPHome)
+- [ESPHomeNative](#esphomenative) — 🟢 Native (it's already ESPHome)
 - [AMIS Reader](#amis-reader) — 🔵 Generic
 - [Modbus](#modbus) — 🟢 Native (RS485 serial; see TCP caveat)
 - [MQTT](#mqtt) — 🟢 Native
@@ -61,6 +68,7 @@ Running the Python add-on instead? See [powermeters.md](powermeters.md).
 - [SMA Energy Meter](#sma-energy-meter) — 🔴 Not yet available
 - [FRITZ!Smart Energy 250](#fritzsmart-energy-250) — 🟠 Alternate (via Home Assistant)
 - [Fronius Smart Meter](#fronius-smart-meter) — 🔵 Generic
+- [Refoss / Meross energy monitor](#refoss--meross-energy-monitor) — 🔵 Generic
 - [Tibber Pulse](#tibber-pulse) — 🟠 Alternate (native SML / community component)
 
 > **Script** (the Python `[SCRIPT]` source) has no ESPHome equivalent by design —
@@ -86,7 +94,7 @@ family, RPC `apower`):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -123,7 +131,7 @@ poll, all three phases on `ct002:`:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -189,7 +197,7 @@ Tasmota answers `GET /cm?cmnd=status%2010` with sensor JSON nested under
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -232,7 +240,7 @@ returning OBIS keys; grid power is `1.7.0` (import) minus `2.7.0` (export):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -274,7 +282,7 @@ ct002:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -315,7 +323,7 @@ returns a JSON array (`GET /getPlainValue/<id>` returns a bare number):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -361,7 +369,7 @@ required for this source):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 api:        # native API link to Home Assistant is required for this source
@@ -390,7 +398,7 @@ vzlogger's HTTP interface serves `GET /<uuid>` with the latest tuple at
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -439,7 +447,35 @@ The latter, complete:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
+    components: [ct002]
+
+api:        # required to import the other node's entity from Home Assistant
+
+sensor:
+  - platform: homeassistant     # the other ESPHome node's entity, via HA
+    id: grid_l1
+    entity_id: sensor.other_esphome_grid_power
+
+ct002:
+  id: ct002_main
+  power_sensor_l1: grid_l1
+```
+
+You can also subscribe over [MQTT](#mqtt) if both nodes share a broker.
+
+## ESPHomeNative
+
+**Tier: 🟢 Native.** The Python `[ESPHOMENATIVE]` source polls another ESPHome
+device's native API. On the ESP32 there's no bridge to build — if your
+grid-power source is already an ESPHome device, either define that meter's sensor
+in the **same** YAML as `ct002:` (any native chip / Modbus / pulse-counter sensor
+with `id: grid_l1`), or import another ESPHome node's entity via Home Assistant.
+The latter, complete:
+
+```yaml
+external_components:
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 api:        # required to import the other node's entity from Home Assistant
@@ -463,7 +499,7 @@ You can also subscribe over [MQTT](#mqtt) if both nodes share a broker.
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -503,7 +539,7 @@ sensor over an RS485 transceiver wired to the ESP:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 uart:
@@ -551,7 +587,7 @@ ct002:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 mqtt:
@@ -575,7 +611,7 @@ sensor:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 mqtt:
@@ -610,7 +646,7 @@ set the lambda to your JSON field. Headers and basic auth are supported on the
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -653,7 +689,7 @@ UART RX pin, then select the OBIS register:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 uart:
@@ -698,7 +734,7 @@ register map — `address` / `value_type` below are placeholders):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 uart:
@@ -745,7 +781,7 @@ API (TLS + token), which has no ESPHome component. Easiest ESP path: enable
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -841,7 +877,7 @@ platform (the same bridge the [HomeAssistant](#homeassistant) source uses):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 api:        # native API link to Home Assistant is required for this source
@@ -881,7 +917,7 @@ the signed `PowerReal_P_Sum` (positive = grid import, negative = feed-in):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 http_request:
@@ -938,6 +974,57 @@ per-phase power — some firmwares report it unsigned, which breaks export):
 
 …and set `power_sensor_l2` / `power_sensor_l3` on `ct002:`.
 
+## Refoss / Meross energy monitor
+
+**Tier: 🔵 Generic.** Poll the local Open API
+`GET /rpc/Em.Status.Get?id=65535` and read `status[N].power` for the CT channel
+on the grid main (`N` is channel id minus one: channel 1 → index 0). The device
+API is **cleartext HTTP** — use only on a trusted local network.
+
+```yaml
+external_components:
+  - source: github://tomquist/astrameter@2.3.0
+    components: [ct002]
+
+http_request:
+  useragent: esphome/astrameter
+  timeout: 5s
+  # Em.Status.Get returns a full JSON status object for all channels; raise the
+  # default buffer so the response body is complete before parse_json runs.
+  buffer_size_rx: 4096
+
+sensor:
+  - platform: template
+    id: grid_l1
+    unit_of_measurement: W
+    device_class: power
+
+interval:
+  - interval: 1s
+    then:
+      - http_request.get:
+          url: http://192.168.1.150/rpc/Em.Status.Get?id=65535
+          capture_response: true
+          max_response_buffer_size: 4096
+          on_response:
+            then:
+              - lambda: |-
+                  json::parse_json(body, [](JsonObject root) -> bool {
+                    // Channel 1 → status[0]. Change index for another CT.
+                    id(grid_l1).publish_state(root["status"][0]["power"]);
+                    return true;
+                  });
+
+ct002:
+  id: ct002_main
+  power_sensor_l1: grid_l1
+```
+
+For three-phase, publish `status[0]` / `status[1]` / `status[2]` into
+`grid_l1` / `grid_l2` / `grid_l3` (or indices 3–5 for the EM06P second CT group)
+and set `power_sensor_l2` / `power_sensor_l3` on `ct002:`. Prefer a numeric IP;
+mDNS `*.local` names often fail on ESPHome as well.
+
 ## Tibber Pulse
 
 **Tier: 🟠 Alternate.** The Python `[TIBBER_PULSE]` source fetches a **binary SML
@@ -952,7 +1039,7 @@ skipping the bridge entirely (the same approach as the [SML](#sml) source):
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 uart:

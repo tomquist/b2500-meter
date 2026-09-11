@@ -24,10 +24,11 @@ Application code lives under **`src/astrameter/`** (src layout). Notable pieces:
 | Path | Role |
 |------|------|
 | `src/astrameter/main.py` | CLI entry and device orchestration |
-| `src/astrameter/config/` | INI loading, powermeter factories |
+| `src/astrameter/config/` | Settings (`settings.py`) and the backends that fill them: `ini_config.py` (config.ini), `addon.py` (Home Assistant add-on options), plus the powermeter factories |
 | `src/astrameter/powermeter/` | Powermeter backends |
 | `src/astrameter/ct002/` | CT002/CT003 UDP emulator |
 | `src/astrameter/shelly/` | Shelly protocol emulation |
+| `src/astrameter/udp_server.py` | The listening socket both emulators serve on |
 | `tests/` | Integration-style tests |
 
 Co-located tests use `*_test.py` next to modules under `src/astrameter/`.
@@ -45,7 +46,7 @@ CI runs the same (ruff format check, ruff check, mypy on `src/`, pytest with cov
 
 ## Adding a powermeter
 
-Follow the checklist in [AGENTS.md](AGENTS.md) (**Adding a powermeter**), using paths under `src/astrameter/` (e.g. `src/astrameter/powermeter/<module>.py`, `src/astrameter/config/config_loader.py`).
+Follow the checklist in [`.agents/skills/add-powermeter/SKILL.md`](.agents/skills/add-powermeter/SKILL.md), using paths under `src/astrameter/` (e.g. `src/astrameter/powermeter/<module>.py`, `src/astrameter/config/config_loader.py`).
 
 ## ESPHome external component (parity rule)
 
@@ -61,9 +62,17 @@ When you fix a bug in:
 - `src/astrameter/mqtt_insights/discovery.py` → `esphome/components/ct002/ha_discovery.{h,cpp}`. Keep `node_id`/`unique_id`/`value_template` strings identical so HA dedupe across the Python and ESPHome paths works correctly when both happen to share a broker. **Exception:** the top-level **AstraMeter hub device** (`build_addon_device_discovery`, the retained `{base}/bridge` state, and the `via_device` links on the meter devices) is **Python-only**. The hub is published whenever HA discovery is on — identified by `ADDON_SLUG` on the Supervisor add-on, or a base-topic fallback (`MqttInsightsService._hub_identifier`) in standalone/Docker — and groups the per-meter devices under it. It has no ESPHome equivalent, so the ESPHome CT002 device stands alone with no `via_device`. **Exception:** the per-powermeter **Online** diagnostic device (`build_powermeter_device_discovery` and the retained `{base}/powermeter/<section>` state) is **Python-only** — powermeters have no ESPHome counterpart (the ESPHome component reads grid power from a native sensor), so there is nothing to mirror.
 - `src/astrameter/mqtt_insights/service.py` → `esphome/components/ct002/mqtt_insights.{h,cpp}`. The ESPHome port intentionally omits the asyncio queue and the reconnect loop — see the header for the documented architectural diff. The whole file is gated by `#ifdef USE_MQTT` so it's a no-op on builds without `mqtt:` configured. **Exception:** the powermeter health loop (`_powermeter_health_loop` and the `stream_online()` hooks it reads) is **Python-only**, since it tracks Python powermeter backends that the firmware doesn't have.
 - `src/astrameter/marstek_api.py` → `esphome/components/ct002/marstek_registration.{h,cpp}`. Keep the URL paths (`/app/Solar/v2_get_device.php`, `/ems/api/v1/getDeviceList`, `/app/Solar/v2_add_device.php`), the User-Agent (`Dart/2.19 (dart:io)`), the password MD5 hashing, and the `02b250` managed-MAC prefix in lockstep — the cloud API responses depend on a specific payload shape. The ESPHome port's only architectural change is running the Python helper's linear flow as a state machine in `loop()` so the watchdog stays fed between HTTPS calls. Gated by `#ifdef USE_CT002_MARSTEK_REGISTRATION` (defined from `_to_code_marstek_registration` in ct002/__init__.py).
+- `src/astrameter/status/serialize.py` → `esphome/components/ct002/status_json.{h,cpp}` (the wire layer of the dashboard's status document), and `CT002.status_snapshot` / `LoadBalancer.status_snapshot` → their C++ namesakes in `dashboard_state.cpp` / `balancer.{h,cpp}`. Both stacks serve the **same** schema to the **same** page (`web/ts/dashboard/`), so a field belongs on both sides under the same name and unit; the firmware serves a reduced document, which the schema allows (every field optional at every level). `tests/components/ct002/host_status_json_test.cpp` guards the wire format. The HTTP component around it (`dashboard.{h,cpp}`) is ESPHome-only and gated by `#ifdef USE_CT002_DASHBOARD` (from `_to_code_dashboard` in ct002/__init__.py); the dashboard's **configuration** endpoints are Python-only and stay that way — an ESPHome device's config lives in its firmware.
+- The dashboard's **write path**: `CONSUMER_CONTROLS` / `coerce_consumer_control` in `src/astrameter/ct002/controls.py` → `esphome/components/ct002/controls.{h,cpp}`, and that table's setter column plus `apply_device_control` → `apply_consumer_control` / `apply_device_control` in `dashboard_state.cpp`. On the Python side that one table is the only definition of a control: the dashboard write path (`web_server.py`), the MQTT command handlers (`mqtt_insights/service.py`) and the Home Assistant number entities (`mqtt_insights/discovery.py`) all read it, so a bound cannot drift between surfaces. The bounds must stay identical across the two stacks — the CT002 setters don't bound their own inputs — or a value one stack accepts and the other refuses would be settable from one dashboard and then silently reverted by the next retained-command replay. `host_controls_test.cpp` holds the two tables against each other and `test_dashboard_e2e.py` asserts the firmware's refusal message equals Python's for the same input.
 - `src/astrameter/cloud_reporting.py` → `esphome/components/ct002/cloud_reporting.{h,cpp}` plus the pure URL builders in `cloud_reporting_url.{h,cpp}`. The `getDateInfoeu.php` / `setCtReporting` query strings must stay byte-identical between the Python `build_*_url` helpers and the C++ ones — `tests/components/ct002/host_cloud_reporting_test.cpp` mirrors `cloud_reporting_test.py` and guards the wire format (incl. the model differences and the HME-3 missing-`&` quirk). The runtime component runs the handshake-then-report flow as a `loop()` state machine; gated by `#ifdef USE_CT002_CLOUD_REPORTING` (from `_to_code_cloud_reporting` in ct002/__init__.py). The CT data it reads is exposed by `CT002Component::reporting_phase_buckets()` (mirror of Python's `CT002.reporting_phase_buckets()`).
 
+**Diagnostic logging follows the parity rule too.** A support log is read by one person across both stacks, so a line the Python service emits and the firmware does not is a blind spot in exactly the reports that are hardest to reproduce. `LoadBalancer._log_steer` (`balancer.py`, the per-consumer DEBUG record of how each command was decided) ↔ `format_steer_log` / `LoadBalancer::log_steer_` in `balancer.{h,cpp}`; the format string is mirrored byte for byte and `host_balancer_test.cpp` pins it. Note the shape this takes: `balancer.{h,cpp}` has **no ESPHome includes at all** — two separate host build paths compile it with nothing but the repo root on the include path (`host_balancer_test` via CMake, and the `balancer_parity_harness` that `test_balancer_parity.py` builds with a bare `g++`). So the balancer formats the line and hands it to a `set_steer_log_sink` callback; the `ESP_LOGD` emit lives in `ct002.cpp`, which already depends on ESPHome. Keep new balancer logging on that seam rather than adding an ESPHome header — and keep the formatter a free function, so a host gtest can drive it without a firmware build. **Gate it on the log level on both sides**: `logger.debug` and `ESP_LOGD` both discard the line, but only after their arguments are built, so an ungated line makes every normal install pay to render diagnostics nobody reads. Python checks `logger.isEnabledFor(logging.DEBUG)` before rendering; the firmware installs the sink only under `#if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_DEBUG`, and with no sink `log_steer_` returns on its first branch.
+
+`split_balancer_knobs` in `balancer.py` is Python-only too — it sorts the flat tuning knobs a scenario file or a `--set` override names into a `BalancerConfig`, and the firmware takes its configuration from codegen instead.
+
 Fixes to `src/astrameter/powermeter/wrappers/{transform,throttling}.py` have **no** C++ counterpart — those wrappers are delegated to ESPHome's standard `sensor: filters:` (`offset:`, `multiply:`, `throttle:`) on the upstream sensor. `src/astrameter/powermeter/wrappers/health.py` (the outermost `HealthTrackingPowermeter` feeding the MQTT Insights Online sensor) likewise has **no** C++ counterpart — it tracks Python powermeter reads, which the firmware doesn't have.
+
+The `power_sensor_lX` unit handling (unit→W auto-conversion, non-power-unit rejection, and the kW-suspicion warning — issue #572) is **ESPHome-only**: it lives in `ct002/__init__.py` (`FINAL_VALIDATE_SCHEMA` + `set_power_unit_scale` codegen) and the sensor-callback cache in `ct002.cpp`, with no counterpart in `src/astrameter/ct002/` — the Python stack receives watts from its powermeter layer, where the equivalent unit handling is implemented per-source (currently `powermeter/homeassistant.py`, which reads the entity's `unit_of_measurement` attribute). Keep the two accepted-unit tables (`POWER_UNIT_SCALES` in `ct002/__init__.py`, `POWER_UNIT_SCALE` in `src/astrameter/power_units.py`) in sync — the Python side keeps its copy in that leaf module because the dashboard's sensor picker reads it too, and drift between the two is what hid working sensors from the form.
 
 The host-gcc gtest suite (`uv run pytest tests/components/ct002/test_host_protocol.py`) is the C++-side guard against translation drift. It builds via CMake with FetchContent-fetched googletest, so all you need locally is `cmake` and a C++17 compiler. Add a gtest case for any new C++ behavior that doesn't map 1:1 to a Python file.
 
@@ -90,3 +99,49 @@ merges and the occasional hotfix from them.
 ## Changelog
 
 For user-visible changes, add or update **the bullet for your change** under **`## Next`** in [CHANGELOG.md](CHANGELOG.md). The unit is the **change, not the branch or PR** — a change that spans several branches or PRs edits the *same* bullet rather than adding one each. `## Next` accumulates **one bullet per change** (so it normally holds several at once); add yours once, edit it on later iterations, and never consolidate or remove a bullet belonging to a *different* change (see [AGENTS.md](AGENTS.md) — Changelog).
+
+## Web dashboard
+
+`web/ts/dashboard/` is **one page served by both stacks** — the Python service
+and the ESPHome component — so a UI change lands on both at once. The status
+document behind it does follow the parity rule
+(`src/astrameter/status/serialize.py` ↔
+`esphome/components/ct002/status_json.{h,cpp}`, and the `status_snapshot`
+methods on each side); the *configuration* half is Python-only, because an
+ESPHome device's config is compiled into its firmware. See the
+`.agents/skills/check-ct002-parity/SKILL.md` for the full split and for the
+constraints the firmware puts on the page.
+
+The page ships as a committed, generated single-file bundle at
+`src/astrameter/static/dashboard.html`, plus the gzipped copy the ESP32 serves
+from flash at `esphome/components/ct002/dashboard_asset.h`. Rebuild **both**
+with `cd web && npm run build:dashboard` after any change under `web/`, and
+commit them; the `web` CI job fails if a committed file does not match its
+source or exceeds the size budget.
+
+### Dashboard end-to-end tests
+
+`web/e2e/` holds Playwright tests that boot the real stack — the battery
+simulator speaking CT002 UDP, a real AstraMeter reading it, and the committed
+dashboard bundle — and drive the page in a browser:
+
+```bash
+cd web
+npm ci
+npx playwright install --with-deps chromium   # first run only
+npm run e2e            # or: npm run e2e:ui
+```
+
+They exist because a whole class of defect is invisible to the string-rendered
+unit tests: a control destroyed by a re-render, a disclosure that snaps shut on
+the next poll, a write that reaches the server but never the device. Several
+such bugs were found this way, and each has a named regression test.
+
+The Home Assistant specs run against `web/e2e/fake-supervisor.mjs`, a stand-in
+Supervisor that serves the repository's **own** `ha_addon/config.yaml` options
+and schema — so the guided form is exercised against the add-on's real option
+definitions. It is the only stand-in; everything below that boundary is the
+actual software.
+
+If Chromium is already on the machine, point the tests at it with
+`ASTRAMETER_E2E_CHROMIUM=/path/to/chrome`.

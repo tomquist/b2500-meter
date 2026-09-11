@@ -26,6 +26,7 @@ Powermeters](configuration.md#multiple-powermeters) are documented in the
 - [HomeAssistant](#homeassistant)
 - [VZLogger](#vzlogger)
 - [ESPHome](#esphome)
+- [ESPHomeNative](#esphomenative)
 - [AMIS Reader](#amis-reader)
 - [Modbus (TCP/UDP)](#modbus-tcpudp)
 - [MQTT](#mqtt)
@@ -36,6 +37,7 @@ Powermeters](configuration.md#multiple-powermeters) are documented in the
 - [SMA Energy Meter](#sma-energy-meter)
 - [FRITZ!Smart Energy 250](#fritzsmart-energy-250)
 - [Fronius Smart Meter](#fronius-smart-meter)
+- [Refoss / Meross energy monitor](#refoss--meross-energy-monitor)
 - [Tibber Pulse](#tibber-pulse)
 - [Script](#script)
 - [SML](#sml)
@@ -182,6 +184,14 @@ API_PATH_PREFIX = ""|/core
 THROTTLE_INTERVAL = 2
 ```
 
+**Units:** the entity's `unit_of_measurement` attribute is respected
+automatically — a sensor reporting `kW` (or `MW`/`mW`) is converted to watts,
+so no manual `POWER_MULTIPLIER = 1000` workaround is needed (remove it if you
+added one, or the value gets scaled twice). An entity with a non-power unit
+(`°C`, `%`, `kWh`, …) is rejected with an explicit error instead of silently
+feeding wrong values. Entities without a unit attribute are assumed to report
+watts.
+
 Example: Variant 1 with a single combined input & output sensor
 ```ini
 [HOMEASSISTANT]
@@ -249,6 +259,8 @@ UUID = uuid-l1, uuid-l2, uuid-l3
 
 ## ESPHome
 
+Poll data from an esphome device via http-requests.
+
 ```ini
 [ESPHOME]
 IP = 192.168.1.107
@@ -256,6 +268,29 @@ PORT = 6052
 DOMAIN = your_domain
 ID = your_id
 ```
+
+## ESPHomeNative
+
+Connect to an esphome device via its native API (the same connection method used by HomeAssistant).
+
+This creates a persistent connection to the device with instant status updates via protocol buffers.
+This should be more performant than the http-polling used by `[ESPHome]`.
+
+
+```ini
+[ESPHOMENATIVE]
+ADDRESS = powermeter.local
+PORT = 6053
+API_KEY = 5BqtR16i91/+rwUl+QrJewKFOnyS/whHc3v9ySSKpb8=
+OBJECT_ID = grid_power
+```
+
+**Units:** the sensor's `unit_of_measurement` is respected automatically — one
+reporting `kW` (or `MW`/`mW`) is converted to watts, so no manual
+`POWER_MULTIPLIER = 1000` workaround is needed (remove it if you added one, or
+the value gets scaled twice). A sensor with a non-power unit (`°C`, `%`, `kWh`,
+…) is rejected with an explicit error instead of silently feeding wrong values.
+Sensors that declare no unit are assumed to report watts.
 
 ## AMIS Reader
 
@@ -377,6 +412,12 @@ SERIAL = your_device_serial
 # THROTTLE_INTERVAL = 0
 ```
 
+Per-phase readings are used when the meter publishes them. Some meters — notably
+three-phase connections without neutral (3x230 V, common in Belgium) — report a
+correct total beside a constant 0 W on every phase. AstraMeter then steers on the
+total, which it notes once in the log; the reading appears on phase A, exactly as a
+single-phase meter's does.
+
 ## Enphase Envoy (IQ Gateway)
 
 Reads grid power from an [Enphase IQ Gateway / Envoy](https://enphase.com/installers/microinverters/iq-gateway) over the local HTTPS API (`/production.json?details=1`). The reading comes from the `net-consumption` measurement (positive = grid import, negative = export). Per-phase readings are reported automatically when the gateway exposes them; otherwise the aggregate single-phase value is used. Requires consumption CTs installed on the Envoy.
@@ -475,6 +516,52 @@ PER_PHASE = True
 > positive), which would make exported power read as imported on each phase. If
 > in doubt, leave it off and use the always-signed sum.
 
+## Refoss / Meross energy monitor
+
+Reads a [Refoss](https://docs.refoss.net/open-api/) (or Meross-branded) energy
+monitor — EM01P, EM06P, EM16P — over the local Open API. AstraMeter polls
+`Em.Status.Get` and returns the signed `power` field (watts) for each configured
+CT channel: positive = grid import, negative = feed-in. No token or login is
+required on the LAN. `[MEROSS]` is an alias for `[REFOSS]` (same hardware API).
+
+```ini
+[REFOSS]
+IP = 192.168.1.150
+# Single-phase: one CT channel id (default 1)
+CHANNELS = 1
+```
+
+**Three-phase.** List three channel ids for L1/L2/L3 (typical EM06P first CT
+group is `1,2,3`; the second group is `4,5,6`):
+
+```ini
+[REFOSS]
+IP = 192.168.1.150
+CHANNELS = 1,2,3
+```
+
+**Docker / DNS.** A numeric IP always works. Hostnames that your **LAN DNS**
+knows (router / Pi-hole / AdGuard, etc.) also work on Docker **bridge** networks
+if the container uses that resolver — for example in Compose:
+
+```yaml
+dns:
+  - 192.168.1.1   # your LAN DNS / router
+```
+
+Default Docker DNS often cannot resolve LAN names. **mDNS** hostnames
+(`meross-em06p-….local`) usually still fail in bridge mode unless you add
+mDNS support or `extra_hosts`; prefer a numeric IP or a real DNS name.
+
+**Security.** The Refoss / Meross local Open API is **cleartext HTTP** (no TLS
+on the device). Power readings can be observed or altered by anyone on the
+network path between AstraMeter and the meter. Use this source only on an
+**explicitly trusted local network** (typical home LAN). Do not expose the
+meter's HTTP port to the internet or an untrusted VLAN. Prefer `[REFOSS]`
+**or** `[MEROSS]`, not both.
+
+**Sign.** If import/export looks reversed, flip with `POWER_MULTIPLIER = -1`.
+
 ## Tibber Pulse
 
 Reads a [Tibber Pulse](https://tibber.com/) locally through the **Pulse Bridge**,
@@ -493,6 +580,9 @@ PASSWORD = AD56-54BA
 # NODE_ID = 1
 # Optional: override the Basic-auth user (defaults to "admin")
 # USER = admin
+# Optional: request timeout in seconds (default 5); the bridge's webserver can
+# be slow, so raise this if readings drop with connection timeouts
+# TIMEOUT = 5.0
 ## Optional OBIS overrides (12 hex digits; omit to use eHZ-style defaults)
 # OBIS_POWER_CURRENT = 0100100700ff
 # OBIS_POWER_L1 = 0100240700ff

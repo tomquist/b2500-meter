@@ -14,11 +14,11 @@ etc.).
 
 ## Minimal YAML
 
-Point `power_sensor_l1` at any ESPHome sensor that reports grid power in watts:
+Point `power_sensor_l1` at any ESPHome sensor that reports grid power:
 
 ```yaml
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 sensor:
@@ -31,6 +31,14 @@ ct002:
   power_sensor_l1: grid_l1
 ```
 
+**Units:** the emulator works in watts internally. A sensor that declares
+`unit_of_measurement: kW` (or `MW`/`mW`) is converted to W automatically, and a
+sensor declaring a non-power unit (`°C`, `%`, `kWh`, …) is rejected at config
+validation with an explicit error. A sensor with **no** declared unit is assumed
+to already report W — if such a sensor actually feeds kW, typical household
+values round to 0 W on the wire; the firmware logs a warning when readings look
+like kW, but the fix is to declare the real unit (or scale the value to W).
+
 Everything else is optional. See **[`esphome.example.yaml`](../../esphome.example.yaml)**
 for the complete, annotated config — three-phase sensors, the cross-phase filter
 pipeline (Hampel / smoothing / deadband / PID), balancer and saturation tuning,
@@ -40,8 +48,13 @@ supported on the ESP yet), see **[esphome-powermeters.md](../esphome-powermeters
 
 ## Optional sub-blocks
 
-Two optional sub-blocks nest under the same `ct002:` key:
+Optional sub-blocks nest under the same `ct002:` key:
 
+- **`dashboard:`** — serves AstraMeter's [live status dashboard](../dashboard.md)
+  from the ESP32 itself: the same page the add-on shows, at
+  `http://<device>/`. **On by default** — the block is only needed to change
+  something, and `dashboard: false` leaves it out of the firmware. Read-only
+  unless you add `controls: true`.
 - **`mqtt_insights:`** — publishes Home Assistant Device Discovery (one device
   per battery + a parent CT002 device with manual-target / active / auto-target /
   distribution-weight controls and a force-rotation button) and answers

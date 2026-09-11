@@ -11,16 +11,44 @@
 #include <vector>
 
 #include "esphome/core/component.h"
+#include "esphome/core/defines.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/socket/socket.h"
 
 #include "balancer.h"
+#include "controls.h"
 #include "pid.h"
 #include "sensor_backed.h"
+#include "status_json.h"
 #include "wrapper_base.h"
+
+// The dashboard's read/write state layer (dashboard_state.cpp) is compiled for
+// a `dashboard:` build and for the test-hooks build, which drives the same
+// document and the same setters over UDP because the host platform has no
+// ESPHome web server to serve them from.
+#if defined(USE_CT002_DASHBOARD) || defined(USE_CT002_TEST_HOOKS)
+#define USE_CT002_DASHBOARD_STATE
+#endif
 
 namespace esphome {
 namespace ct002 {
+
+// Mirror of Python's _bucket_for_phase: A/B/C → their buckets, "D" → the
+// combined ABC bucket, anything else (the normalized "0") → x. Indexes both
+// the PhaseBucket enum below and status::BUCKET_NAMES.
+size_t bucket_index_for_phase(const std::string &phase);
+
+// Whether *phase* is one active control steers: A/B/C are physical legs and
+// "D" is combined / whole-home mode (newer Marstek firmware). Anything else --
+// "0", empty, a future marker -- marks an unassigned / inspection reporter.
+// Mirrors ct002.py STEERED_PHASES.
+bool is_steered_phase(const std::string &phase);
+
+// Canonical stored phase for a reported value: a steered phase, or the wire's
+// canonical "0" for the unassigned / inspection state, so aggregation routes it
+// to the x bucket instead of inventing a phase (issue #460). Mirrors ct002.py
+// normalize_phase.
+std::string normalize_phase(const std::string &raw);
 
 // Cross-talk aggregation bucket indices, mirroring Python's PHASE_BUCKETS
 // ("x", "A", "B", "C", "ABC"): x collects unassigned/inspection ("0")
@@ -41,6 +69,12 @@ constexpr double ADAPTIVE_TTL_POLL_MULTIPLIER = 2.0;
 constexpr double ADAPTIVE_TTL_MIN_SECONDS = 5.0;
 constexpr double ADAPTIVE_TTL_FALLBACK_SECONDS = 30.0;
 
+// A run of this many consecutive nonzero sub-1 W readings on a phase whose
+// sensor declares no unit_of_measurement triggers a one-shot "input looks
+// like kW" log warning (issue #572). Real watt-denominated grid meters
+// don't sustain nonzero magnitudes below 1 W; a kW feed misread as W does.
+constexpr uint8_t KW_SUSPECT_READINGS = 10;
+
 // Per-consumer (battery) state mirrored from src/astrameter/ct002/ct002.py's
 // `Consumer` dataclass. Lives in CT002Component::consumers_; mutated by
 // _update_consumer_report and the MQTT/insights setters.
@@ -50,8 +84,15 @@ struct Consumer {
   float power{0.0f};
   std::string device_type;
   std::string last_ip;
+  // Last request *received* (every poll, whether or not the dedupe window
+  // suppressed the reply) and the EMA of those gaps: the battery's own
+  // cadence. Liveness/TTL keys off this. Mirrors Python's Consumer.
   double timestamp{0.0};
   std::optional<float> poll_interval;
+  // Last request we actually *answered*, and the EMA of those gaps — how
+  // often this consumer receives an instruction.
+  double last_answer_at{0.0};
+  std::optional<float> answer_interval;
   // Cached input value(s) from before_send-style hooks (manual injection
   // path used by MQTT insights). When unset the SensorBackedPowermeter feed
   // is used directly.
@@ -101,12 +142,35 @@ class CT002Component : public Component {
   void setup() override;
   void loop() override;
   void dump_config() override;
+
+  /// Age in ms of the most recent raw sensor reading across the live phases,
+  /// or nothing when no phase has ever reported. Freshness comes from the
+  /// sensor feed rather than the control loop: with no battery polling, the
+  /// last reply can be minutes old while the sensor is live.
+  optional<uint32_t> freshest_sensor_age_ms() const {
+    const uint32_t now_ms = ::esphome::millis();
+    optional<uint32_t> freshest;
+    for (uint8_t i = 0; i < this->num_phases_ && i < 3; i++) {
+      if (this->raw_stamp_ms_[i] == 0) continue;
+      const uint32_t age = now_ms - this->raw_stamp_ms_[i];
+      if (!freshest.has_value() || age < *freshest) freshest = age;
+    }
+    return freshest;
+  }
   float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
 
   // Configuration setters (called from to_code()).
   void set_power_sensor_l1(sensor::Sensor *s) { this->power_sensor_l1_ = s; }
   void set_power_sensor_l2(sensor::Sensor *s) { this->power_sensor_l2_ = s; }
   void set_power_sensor_l3(sensor::Sensor *s) { this->power_sensor_l3_ = s; }
+  // Per-phase unit→W conversion (issue #572). Called from to_code() when the
+  // referenced sensor declares a power unit_of_measurement (kW → 1000, etc.).
+  // Declaring any unit — even "W" — also disables the runtime kW-suspicion
+  // warning for that phase, since the user has stated their intent.
+  void set_power_unit_scale(uint8_t idx, float scale) {
+    this->unit_scale_[idx] = scale;
+    this->unit_declared_[idx] = true;
+  }
   void set_ct_type(const std::string &v) { this->ct_type_ = v; }
   void set_ct_mac(const std::string &v) { this->ct_mac_ = v; }
   void set_wifi_rssi(int v) { this->wifi_rssi_ = v; }
@@ -147,6 +211,32 @@ class CT002Component : public Component {
   // Observability (MQTT insights and future automation hooks read these).
   size_t reporting_consumer_count() const;
 
+#ifdef USE_CT002_DASHBOARD_STATE
+  // ── Dashboard status API (dashboard_state.cpp) ───────────────────────
+  // Mirrors CT002.status_snapshot() and the powermeter health snapshot in
+  // the Python stack. Plain synchronous attribute reads: the dashboard
+  // builds these from loop(), between UDP handlers, so nothing can tear.
+  //
+  // *wall_now* is the current wall-clock epoch, or 0 when the clock has not
+  // synced — the one place that decides whether a mark can be emitted as a
+  // timestamp or has to stay an age.
+  status::DeviceStatus status_snapshot(double wall_now) const;
+  status::PowermeterStatus powermeter_status() const;
+
+  /// Whether this id names a battery the status document already shows —
+  /// either one that has polled, or a placeholder holding a saved setting.
+  ///
+  /// The dashboard's write path checks this first. Every setter creates the
+  /// consumer if it is missing, which is what lets a retained MQTT command
+  /// hold a setting for a battery that has not reported yet; on an
+  /// unauthenticated HTTP endpoint the same behaviour would let any caller
+  /// mint entries in `consumers_` until the heap ran out.
+  bool knows_consumer(const std::string &consumer_id) const {
+    return this->consumers_.count(consumer_id) > 0 ||
+           this->consumer_overrides_.count(consumer_id) > 0;
+  }
+#endif
+
   // ── MQTT-insights integration API ────────────────────────────────────
   // Snapshot of one consumer's state for publish-time JSON building.
   // Mirrors src/astrameter/mqtt_insights/service.py::_handle_ct002_event's
@@ -165,6 +255,7 @@ class CT002Component : public Component {
     float efficiency_window_weight{1.0f};
     std::optional<float> min_dc_output;
     std::optional<float> poll_interval;
+    std::optional<float> answer_interval;
     double timestamp{0.0};
     // Cross-phase grid power last observed at the pipeline head (post-
     // filters, pre-balancer). Mirrors Python's `grid_power.{l1,l2,l3}`.
@@ -246,6 +337,13 @@ class CT002Component : public Component {
     return this->balancer_cfg_.min_efficient_power > 0.0f;
   }
 
+  // How well the loop is holding the grid at zero (see ControlQualityTracker).
+  // Mirrors CT002's use of LoadBalancer.control_quality in the Python stack;
+  // read by mqtt_insights for the device-level status payload.
+  ControlQualitySnapshot control_quality() const {
+    return this->balancer_ ? this->balancer_->control_quality() : ControlQualitySnapshot{};
+  }
+
   // Listener registration — mqtt_insights subscribes once at setup() to
   // be notified after every successful UDP poll-reply round trip. Allows
   // the insights component to push fresh state without polling.
@@ -285,6 +383,10 @@ class CT002Component : public Component {
   // from the last ACCEPTED request (dropped polls don't refresh the
   // timestamp), matching RequestDeduplicator.should_process.
   bool dedup_should_process_(const std::string &consumer_id);
+
+  // Folds the gap since the previous reply to this consumer into its
+  // answer_interval. Called right after a response goes out.
+  void track_answer_(const std::string &consumer_id);
   void update_consumer_report_(const std::string &consumer_id, const std::string &phase,
                               float power, const std::string &device_type,
                               const std::string &source_ip, bool participates = true);
@@ -336,10 +438,6 @@ class CT002Component : public Component {
   // Last-accepted-poll timestamp (monotonic seconds) per consumer_id,
   // for the dedup gate. Purged alongside consumer eviction.
   std::unordered_map<std::string, double> dedup_last_;
-  // Per-consumer EMA alpha for the poll_interval diagnostic (Python:
-  // POLL_INTERVAL_EMA_ALPHA=0.3). Same value here so the published
-  // MQTT-insights poll_interval matches between stacks.
-  static constexpr float POLL_INTERVAL_EMA_ALPHA = 0.3f;
   BalancerConfig balancer_cfg_;
   // double (matching Python) so the saturation EMA bit-matches across stacks.
   double saturation_alpha_{0.15};
@@ -353,6 +451,14 @@ class CT002Component : public Component {
   std::array<float, 3> raw_values_{0.0f, 0.0f, 0.0f};
   std::array<uint32_t, 3> raw_stamp_ms_{0, 0, 0};
   uint8_t num_phases_{0};
+
+  // Unit→W scale per phase (1.0 unless the YAML sensor declares kW/MW/mW —
+  // see set_power_unit_scale). unit_declared_ gates the kW-suspicion
+  // heuristic; the counters back its one-shot warning.
+  std::array<float, 3> unit_scale_{1.0f, 1.0f, 1.0f};
+  std::array<bool, 3> unit_declared_{false, false, false};
+  std::array<uint8_t, 3> kw_suspect_count_{0, 0, 0};
+  std::array<bool, 3> kw_suspect_warned_{false, false, false};
 
   // Pipeline: head is SensorBackedPowermeter, then optional wrappers.
   std::vector<std::unique_ptr<Powermeter>> pipeline_;
@@ -412,6 +518,16 @@ class CT002Component : public Component {
   double mock_clock_seconds_{0.0};
 #endif
 };
+
+#ifdef USE_CT002_DASHBOARD_STATE
+// Apply one already-validated dashboard control (dashboard_state.cpp). False
+// means the field is not one this firmware knows. Main loop only — these walk
+// the consumer map, which the HTTP handler must never touch from its own task.
+bool apply_consumer_control(CT002Component *ct002, const std::string &consumer_id,
+                            const std::string &field, const controls::ControlValue &value);
+bool apply_device_control(CT002Component *ct002, const std::string &field,
+                          const controls::ControlValue &value);
+#endif
 
 }  // namespace ct002
 }  // namespace esphome

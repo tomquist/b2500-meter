@@ -32,16 +32,16 @@ REGISTER_TYPES = {
 class ModbusPowermeter(Powermeter):
     def __init__(
         self,
-        host,
-        port,
-        unit_id,
-        address,
-        count,
-        data_type="UINT16",
-        byte_order="BIG",
-        word_order="BIG",
-        register_type="HOLDING",
-        transport="TCP",
+        host: str,
+        port: int,
+        unit_id: int,
+        address: int,
+        count: int,
+        data_type: str = "UINT16",
+        byte_order: str = "BIG",
+        word_order: str = "BIG",
+        register_type: str = "HOLDING",
+        transport: str = "TCP",
     ) -> None:
         self.host = host
         self.port = port
@@ -93,7 +93,7 @@ class ModbusPowermeter(Powermeter):
         read = getattr(self.client, self._read_method)
         result = await read(self.address, self.count, slave=self.unit_id)
         if result.isError():
-            raise Exception("Error reading Modbus data")
+            raise ValueError("Error reading Modbus data")
         decoder = BinaryPayloadDecoder.fromRegisters(
             result.registers,
             byteorder=self._byte_order,

@@ -9,21 +9,63 @@ and a small-import hold). It is the steering law documented in
 per-step arithmetic, and the gate thresholds and ordering, are the exact values
 the HMG-50 firmware uses.
 
-Scope: the gain table and ramp arithmetic here are the **HMG-50** (Venus C)
-ones. The VNSE3-0 (Venus E) shares the *same input-conditioning gate* — the
-same >50 W spike filter, <20 W own-output exemption, signed deadband and
-small-import hold — but with a tighter ±10 W deadband, and it uses a different
-ramp/step law (no float gain table), so the GOLDEN ramp vectors here are
-HMG-50-specific.
+**This law is almost certainly not the one your HMG-50 runs.** The firmware
+carries two, and picks between them on a model code it parses out of the CT
+meter's greeting: it takes the ramp below only when that code is ``1``, the
+"no model suffix" fallback, and takes the integer integrator
+(:mod:`astrameter.simulator.venus_integer_steering`) for every meter it
+recognises. AstraMeter announces itself as ``HME-4`` (``ct002.py``), which is
+not code 1, so a real HMG-50 driven by AstraMeter runs the integer law and
+never reaches the gain table. The selector is a single ``cmp #1`` at
+file+0x20b8e; the model code is written by the CT002 parser's string-compare
+chain at file+0x24344. :class:`BatterySimulator` routes HMG-50 devices
+accordingly; this module is kept because the code-1 path is real, and because
+its gain table is the thing that distinguishes an HMG-50 image from a Venus one.
 
-The **VNSD-0** (Venus D) does *not* use this law at all -- none of the float
-gain-table / ``sqrt``-step constants apply. Its CT-following loop is an integer
-proportional integrator -- ``setpoint += (ctrl_ratio/100)*error - 5 W`` clamped
-to the configured charge/discharge limits with a +/-11 W (single) / +/-15 W
-(combined) deadband -- modelled separately in
-:mod:`astrameter.simulator.venus_d_steering`. Neither this controller nor its
-GOLDEN vectors model Venus D. See ``docs/ct002-ct003-protocol.md`` ("Model
-scope", VNSD-0 note).
+Scope: the gain table and ramp arithmetic here are the **HMG-50** (Venus C)
+ones, and they are HMG-50-*only*. No other Venus runs this law: the VNSA-0,
+VNSD-0 and VNSE3-0 firmwares contain none of the gain-table constants and share
+an integer integrator behind a gate of their own (a tighter ±10 W deadband and
+a one-shot spike filter), modelled in
+:mod:`astrameter.simulator.venus_integer_steering`.
+
+That shared law is ``setpoint += (ctrl_ratio/100)*g - 5 W``, clamped to the
+configured charge/discharge limits and then parked near zero — inside +/-11 W
+for a Venus alone on its bucket, or the HMG-50's own wider bound. Neither this
+controller nor its GOLDEN vectors model it. See
+``docs/ct002-ct003-protocol.md`` ("Model scope").
+
+Open questions from the 2026-08 firmware audit
+----------------------------------------------
+Two independent analyses of HMG-50 v156 (plus a direct check of the registers)
+disagree with this model on two points. Neither is fixed here, because both
+need the sign mapping below resolved first — this module stores the firmware's
+setpoint **negated** (see Conventions), so the firmware's direction counter
+does not map onto ``ramp`` one-for-one, and a naive edit inverts the loop.
+
+Code sites are **file offsets** into the v156 Control ``.bin``. Like the Venus
+images it is an app flashed above the bootloader, so it loads at ``0x08002800``
+rather than ``0x08000000``: the reset vector reads ``0x08002ab1`` (file+0x2b0),
+and that base is also the one that makes pointer literals resolve to strings
+(113 hits, against at most 12 at any other alignment). Runtime address = file
+offset + ``0x08002800``.
+
+* **Reversal target.** On a rising grid the firmware stores ``-1`` when its
+  counter is positive and ``+1`` otherwise (``movs r6,#1`` at +0x1e290,
+  ``mov.w r2,#-1`` at +0x1e3ce, stored at +0x1e420/+0x1e424; same shape at the
+  lower rail, +0x1e400). This module stores ``-1`` or ``0``. Under the negated
+  convention the firmware's ``+1`` most likely corresponds to ``-1`` here, which
+  would shift the first step from ``GAIN[0]`` to ``GAIN[-1]`` (50.23 -> 50.12 W)
+  — small, but a real divergence.
+* **The spike filter is a one-shot.** The firmware latches a flag
+  (+0x1bc7a/+0x1bc84) so the sample after a skipped one is forced through,
+  bypassing the deadband and small-import hold as well; at most every other
+  sample can be suppressed. :meth:`_gate` below suppresses indefinitely, and
+  ``GATED``'s ``drift_keeps_skipping`` vector encodes that behaviour.
+
+The ``GOLDEN`` / ``GATED`` vectors were generated from this model, not from
+firmware traces, so they cannot arbitrate either question — they will need
+regenerating alongside whichever fix lands.
 
 Conventions
 -----------
@@ -44,12 +86,17 @@ import math
 import struct
 from dataclasses import dataclass
 
+from .steering_common import (
+    SMALL_IMPORT_HOLD_W,
+    SPIKE_JUMP_W,
+    SPIKE_OWN_DELTA_W,
+    _f32,
+    _share_split,
+)
+
 __all__ = [
     "DEADBAND_W",
     "HARD_CLAMP_W",
-    "SMALL_IMPORT_HOLD_W",
-    "SPIKE_JUMP_W",
-    "SPIKE_OWN_DELTA_W",
     "STEP_BASE_W",
     "FirmwareSteeringController",
 ]
@@ -57,18 +104,10 @@ __all__ = [
 HARD_CLAMP_W = 2500.0
 STEP_BASE_W = 10.0
 WINDOW_PULLBACK_W = 100.0
-# Input-conditioning thresholds the HMG-50 applies before the ramp law (see
-# the module docstring).
+# The gate's rest deadband; the spike thresholds and the small-import hold it
+# also applies are shared with the Venus law (``steering_common``).
 DEADBAND_W = 20
-SPIKE_JUMP_W = 50
-SPIKE_OWN_DELTA_W = 20
-SMALL_IMPORT_HOLD_W = 10
 _RAMP_MIN, _RAMP_MAX = -5, 5
-
-
-def _f32(x: float) -> float:
-    """Round *x* to single precision, mirroring the device's 32-bit FPU."""
-    return struct.unpack("<f", struct.pack("<f", x))[0]
 
 
 def _hex_f32(bits: int) -> float:
@@ -95,15 +134,6 @@ GAIN: dict[int, float] = {
 
 def _u32(x: int) -> int:
     return x & 0xFFFFFFFF
-
-
-def _share_split(g: float, device_count: int) -> int:
-    """Split the grid value across the batteries sharing the bucket."""
-    nb = max(1, int(device_count))
-    g = int(g)
-    if nb > 1:
-        g = int(g / nb)  # signed integer division, truncated toward zero
-    return g
 
 
 @dataclass

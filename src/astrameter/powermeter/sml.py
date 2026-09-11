@@ -1,17 +1,20 @@
 import asyncio
 import configparser
 import datetime
+import logging
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 import serial_asyncio_fast
 import smllib.errors
 from smllib import SmlFrame, SmlStreamReader
 from smllib.const import UNITS
 
-from astrameter.config.logger import logger
-
 from .base import Powermeter
+
+# Stdlib logger: avoid importing astrameter.config (config_loader imports powermeter).
+logger = logging.getLogger("astrameter")
 
 # Default OBIS hex (smllib const / German eHZ-style meters)
 # Aggregate instantaneous active power (1-0:16.7.0)
@@ -69,7 +72,7 @@ def _optional_w(by_obis: dict, obis_key: str, label: str) -> float | None:
     return _apply_scaler(ov)
 
 
-def _apply_scaler(ov) -> float:
+def _apply_scaler(ov: Any) -> float:
     """Scale an SML value by its ``10**scaler`` exponent.
 
     smllib exposes the meter's raw integer in ``ov.value`` and the decimal
@@ -86,7 +89,7 @@ def _apply_scaler(ov) -> float:
     return round(value * 10**scaler, abs(scaler) + 3)
 
 
-def _expect_unit(ov, expected: str, label: str) -> None:
+def _expect_unit(ov: Any, expected: str, label: str) -> None:
     actual = UNITS.get(ov.unit)
     if actual != expected:
         raise ValueError(
@@ -104,7 +107,7 @@ class Sml(Powermeter):
         obis_power_l1: str = _OBIS_POWER_L1,
         obis_power_l2: str = _OBIS_POWER_L2,
         obis_power_l3: str = _OBIS_POWER_L3,
-    ):
+    ) -> None:
         if not serial_device.strip():
             raise ValueError("serial_device must be non-empty (config: SERIAL)")
         self._serial_device = serial_device.strip()
@@ -116,10 +119,6 @@ class Sml(Powermeter):
         self._lock = asyncio.Lock()
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
-
-    @property
-    def current(self) -> EnergyStats:
-        return self._current
 
     async def start(self) -> None:
         if self._reader is not None:
@@ -146,10 +145,11 @@ class Sml(Powermeter):
         if self._reader is None:
             raise RuntimeError("Sml not started; call start() first")
         stream = SmlStreamReader()
-        try:
-            data = await asyncio.wait_for(self._reader.read(512), timeout=10)
-        except asyncio.TimeoutError:
-            logger.error("serial read timed out")
+        data = await self._read_chunk()
+        if data is None:
+            return
+        if not data:
+            logger.error("serial connection closed")
             return
         stream.add(data)
         for i in range(10):
@@ -166,6 +166,15 @@ class Sml(Powermeter):
                 return
         logger.error("failed to read SML frame after 10 attempts")
 
+    async def _read_chunk(self) -> bytes | None:
+        """Read the next chunk from the serial port, or ``None`` on timeout."""
+        assert self._reader is not None
+        try:
+            return await asyncio.wait_for(self._reader.read(512), timeout=10)
+        except asyncio.TimeoutError:
+            logger.error("serial read timed out")
+            return None
+
     async def _try_read_frame(self, stream: SmlStreamReader) -> SmlFrame | None:
         try:
             sml_frame = stream.get_frame()
@@ -176,11 +185,8 @@ class Sml(Powermeter):
             logger.error("error reading frame: %s", e)
             sml_frame = None
         if sml_frame is None:
-            assert self._reader is not None
-            try:
-                data = await asyncio.wait_for(self._reader.read(512), timeout=10)
-            except asyncio.TimeoutError:
-                logger.error("serial read timed out")
+            data = await self._read_chunk()
+            if data is None:
                 return None
             if not data:
                 logger.error("serial connection closed")

@@ -34,7 +34,7 @@ wifi:
   password: !secret wifi_password
 
 external_components:
-  - source: github://tomquist/astrameter@2.2.4
+  - source: github://tomquist/astrameter@2.3.0
     components: [ct002]
 
 # Uncomment to enable the `mqtt_insights:` sub-block (Home Assistant Device
@@ -62,6 +62,11 @@ sensor:
     id: grid_l1
     name: Grid L1 Power
     entity_id: sensor.grid_power_l1
+    # ct002 works in watts. If your source reports kW, declare it here —
+    # `unit_of_measurement: kW` is converted to W automatically (a declared
+    # non-power unit like °C is rejected at config validation). With no
+    # declared unit the value is taken as W as-is.
+    # unit_of_measurement: W
     filters:
       # - offset: -20      # small negative offset → import safety buffer
       # - multiply: 1.0
@@ -173,6 +178,27 @@ ct002:
   #   decay_factor: 0.995
   #   grace_seconds: 90s
   #   stall_timeout_seconds: 60s
+
+  # ── Optional sub-block: dashboard ────────────────────────────────────
+  # AstraMeter's live status dashboard, served from this board — the same
+  # page the Home Assistant add-on shows, at http://<device>/. Grid power,
+  # every battery with its target and saturation, the balancer's internals.
+  # There is no configuration to change from it (that is compiled into this
+  # firmware), and it is read-only unless controls: is on.
+  #
+  # It is ON by default and needs no block at all. Add one only to change
+  # something — or `dashboard: false` to leave it out of the firmware
+  # entirely (~90 KB of flash, and no HTTP server).
+  # dashboard:
+  #   controls: false                # true → steer batteries from the page.
+  #                                  # Off by default: the page has no login
+  #                                  # of its own (see docs/dashboard.md).
+  #   path: /                        # mount point. Left unset it takes the
+  #                                  # root, or /astrameter when ESPHome's
+  #                                  # own `web_server:` already holds it.
+  #   web_server_link: true          # when it has moved aside like that, add
+  #                                  # a link to it at the top of ESPHome's
+  #                                  # own page. false leaves that page alone.
 
   # ── Optional sub-block: mqtt_insights ────────────────────────────────
   # Publishes per-consumer + device-level state to MQTT with full Home

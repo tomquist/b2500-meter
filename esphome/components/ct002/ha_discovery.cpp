@@ -46,13 +46,17 @@ std::string sanitize_id(const std::string &value) {
 
 namespace {
 
-// Build the standard `origin` block — we lose Python's git-sha resolution
-// since the firmware build doesn't have access to it at runtime; emit a
-// stable string so HA's "added by" metadata still groups our entities.
-void add_origin(JsonObject obj) {
+// Build the standard `origin` block. Mirrors discovery.py::_origin, down to
+// the git SHA: codegen resolves it from the checked-out component repo and
+// bakes it into the firmware, so the same build identifier reaches HA from
+// either stack. Empty (an unusual layout, or a checkout with no git metadata)
+// falls back to "unknown", which is what Python emits in the same case.
+void add_origin(JsonObject obj, const std::string &sw_version) {
   JsonObject origin = obj["origin"].to<JsonObject>();
   origin["name"] = "astrameter";
-  origin["sw_version"] = "esphome";
+  // Assigned as a std::string: ArduinoJson copies one, but only borrows a
+  // const char*, and the caller's buffer need not outlive the document.
+  origin["sw_version"] = sw_version.empty() ? std::string("unknown") : sw_version;
   origin["support_url"] = "https://github.com/tomquist/astrameter";
 }
 
@@ -89,7 +93,8 @@ void add_power_sensor(JsonObject components, const std::string &key, const std::
 std::pair<std::string, std::string> build_ct002_consumer_discovery(
     const std::string &base_topic, const std::string &device_id,
     const std::string &consumer_id, const std::string &ha_prefix,
-    const std::string &device_type, bool efficiency_rotation) {
+    const std::string &device_type, bool efficiency_rotation, bool retire_removed,
+    const std::string &sw_version) {
   const std::string safe_dev = sanitize_id(device_id);
   const std::string safe_cid = sanitize_id(consumer_id);
   const std::string node_id = "astrameter_ct002_" + safe_dev + "_" + safe_cid;
@@ -99,7 +104,8 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
   const std::string uid_prefix = "astrameter_ct002_" + safe_dev + "_" + safe_cid;
   const std::string meter_identifier = "astrameter_ct002_" + safe_dev;
   // mac_slug: lowercase, strip "-" / "_" — used for both the device identifier
-  // and the optional bluetooth connection. Mirrors discovery.py:190.
+  // and the optional bluetooth connection. Mirrors the mac_slug in
+  // discovery.py's build_ct002_consumer_discovery.
   std::string mac_slug = safe_cid;
   for (auto &c : mac_slug) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   std::string mac_slug_clean;
@@ -141,7 +147,11 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
     sat["state_topic"] = state_topic;
     sat["value_template"] = "{{ (value_json.saturation * 100) | round(1) }}";
 
-    // Phase enum
+    // Phase enum.  The options must cover every phase a consumer payload can
+    // carry, or Home Assistant drops the state and logs "Ignoring invalid
+    // option" on every poll (issue #580): "D" is combined/whole-home mode on
+    // newer Marstek firmware.  Inspection reporters ("0") never reach this
+    // topic — their polls fire no event — so "0" is deliberately absent.
     JsonObject phase = components["phase"].to<JsonObject>();
     phase["platform"] = "sensor";
     phase["unique_id"] = uid_prefix + "_phase";
@@ -151,6 +161,7 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
     opts.add("A");
     opts.add("B");
     opts.add("C");
+    opts.add("D");
     phase["state_topic"] = state_topic;
     phase["value_template"] = "{{ value_json.phase }}";
     phase["entity_category"] = "diagnostic";
@@ -177,15 +188,21 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
       c["entity_category"] = "diagnostic";
     }
 
-    // Last seen timestamp
-    JsonObject ls = components["last_seen"].to<JsonObject>();
-    ls["platform"] = "sensor";
-    ls["unique_id"] = uid_prefix + "_last_seen";
-    ls["name"] = "Last Seen";
-    ls["device_class"] = "timestamp";
-    ls["state_topic"] = state_topic;
-    ls["value_template"] = "{{ value_json.last_seen }}";
-    ls["entity_category"] = "diagnostic";
+    // Retired entities. HA keeps an entity that merely stops appearing in a
+    // later discovery payload, so a dropped component has to be published once
+    // with a platform-only config — which HA reads as "remove this entity" —
+    // before the payload omits it for good. Mirrors discovery.py's
+    // RETIRED_COMPONENTS / build_retirement_payload.
+    //
+    // "Last Seen" was a wall-clock timestamp stamped at publish time, so it
+    // changed on every poll, and a `timestamp` sensor carries neither a unit
+    // nor a state class — the two attributes HA's logbook uses to recognise a
+    // continuous sensor. Every poll became a logbook row (issue #576). The
+    // `last_seen` field stays in the state payload.
+    if (retire_removed) {
+      JsonObject ls = components["last_seen"].to<JsonObject>();
+      ls["platform"] = "sensor";
+    }
 
     // Poll interval
     JsonObject pi = components["poll_interval"].to<JsonObject>();
@@ -197,6 +214,19 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
     pi["state_topic"] = state_topic;
     pi["value_template"] = "{{ value_json.poll_interval }}";
     pi["entity_category"] = "diagnostic";
+
+    // Answer interval — how often this battery actually gets a reply. Equal to
+    // the poll interval unless dedupe_window is suppressing replies, which is
+    // exactly when the difference is worth seeing.
+    JsonObject ai = components["answer_interval"].to<JsonObject>();
+    ai["platform"] = "sensor";
+    ai["unique_id"] = uid_prefix + "_answer_interval";
+    ai["name"] = "Answer Interval";
+    ai["device_class"] = "duration";
+    ai["unit_of_measurement"] = "s";
+    ai["state_topic"] = state_topic;
+    ai["value_template"] = "{{ value_json.answer_interval }}";
+    ai["entity_category"] = "diagnostic";
 
     // Per-consumer controllable entities each use their own command topic with
     // retain=true, so Home Assistant persists the value across restarts (the
@@ -330,7 +360,7 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
     // namespaced `identifiers` and linked to the meter via `via_device`.
     if (!device_type.empty()) device["model_id"] = device_type;
 
-    add_origin(root);
+    add_origin(root, sw_version);
 
     root["availability_mode"] = "all";
     JsonArray avail = root["availability"].to<JsonArray>();
@@ -346,9 +376,17 @@ std::pair<std::string, std::string> build_ct002_consumer_discovery(
   return {ha_prefix + "/device/" + node_id + "/config", std::string(buf)};
 }
 
+// Value template mapping a JSON null onto Home Assistant's "unknown". A plain
+// value_json.<key> renders it as the string "None", which HA stores as a state.
+// Mirrors discovery.py _absent_as_unknown.
+static std::string absent_as_unknown(const std::string &key) {
+  return "{{ value_json." + key + " if value_json." + key + " is not none else 'unknown' }}";
+}
+
 std::pair<std::string, std::string> build_ct002_device_discovery(
     const std::string &base_topic, const std::string &device_id,
-    const std::string &ha_prefix, bool efficiency_rotation) {
+    const std::string &ha_prefix, bool efficiency_rotation,
+    const std::string &sw_version) {
   const std::string safe_dev = sanitize_id(device_id);
   const std::string node_id = "astrameter_ct002_" + safe_dev;
   const std::string state_topic = base_topic + "/ct002/" + device_id + "/status";
@@ -394,6 +432,66 @@ std::pair<std::string, std::string> build_ct002_device_discovery(
     cc["value_template"] = "{{ value_json.consumer_count }}";
     cc["entity_category"] = "diagnostic";
 
+    // Control quality — the verdict as an enum sensor whose options are the
+    // tracker's vocabulary (HA drops a state outside them), plus a trendable
+    // score. Mirrors discovery.py; the unique_ids must stay identical so HA
+    // dedupes across the Python and ESPHome paths on a shared broker.
+    JsonObject cq = components["control_quality"].to<JsonObject>();
+    cq["platform"] = "sensor";
+    cq["unique_id"] = uid_prefix + "_control_quality";
+    cq["name"] = "Control Quality";
+    cq["device_class"] = "enum";
+    JsonArray options = cq["options"].to<JsonArray>();
+    for (const auto &state : CONTROL_QUALITY_STATES) options.add(state);
+    cq["state_topic"] = state_topic;
+    cq["value_template"] = "{{ value_json.control_quality }}";
+    cq["entity_category"] = "diagnostic";
+
+    JsonObject cqs = components["control_quality_score"].to<JsonObject>();
+    cqs["platform"] = "sensor";
+    cqs["unique_id"] = uid_prefix + "_control_quality_score";
+    cqs["name"] = "Control Quality Score";
+    cqs["state_class"] = "measurement";
+    cqs["unit_of_measurement"] = "%";
+    cqs["state_topic"] = state_topic;
+    // The score is null while the loop has nothing to be scored on; map that
+    // to HA's "unknown" rather than the string "None" (mirrors discovery.py).
+    cqs["value_template"] = absent_as_unknown("control_quality_score");
+    cqs["entity_category"] = "diagnostic";
+
+    // The evidence behind the verdict, which names no cause on purpose. Same
+    // absence rule as the score (mirrors discovery.py).
+    JsonObject cqe = components["control_quality_error"].to<JsonObject>();
+    cqe["platform"] = "sensor";
+    cqe["unique_id"] = uid_prefix + "_control_quality_error";
+    cqe["name"] = "Control Quality Mean Error";
+    cqe["device_class"] = "power";
+    cqe["state_class"] = "measurement";
+    cqe["unit_of_measurement"] = "W";
+    cqe["state_topic"] = state_topic;
+    cqe["value_template"] = absent_as_unknown("control_quality_error_w");
+    cqe["entity_category"] = "diagnostic";
+
+    JsonObject cqb = components["control_quality_in_band"].to<JsonObject>();
+    cqb["platform"] = "sensor";
+    cqb["unique_id"] = uid_prefix + "_control_quality_in_band";
+    cqb["name"] = "Control Quality Time In Band";
+    cqb["state_class"] = "measurement";
+    cqb["unit_of_measurement"] = "%";
+    cqb["state_topic"] = state_topic;
+    cqb["value_template"] = absent_as_unknown("control_quality_in_band_pct");
+    cqb["entity_category"] = "diagnostic";
+
+    JsonObject cqx = components["control_quality_crossings"].to<JsonObject>();
+    cqx["platform"] = "sensor";
+    cqx["unique_id"] = uid_prefix + "_control_quality_crossings";
+    cqx["name"] = "Control Quality Zero Crossings";
+    cqx["state_class"] = "measurement";
+    cqx["unit_of_measurement"] = "/min";
+    cqx["state_topic"] = state_topic;
+    cqx["value_template"] = absent_as_unknown("control_quality_crossings_per_min");
+    cqx["entity_category"] = "diagnostic";
+
     // The Force Rotation button only does anything when efficiency rotation is
     // enabled (min_efficient_power > 0); without it every battery stays active
     // and there's nothing to rotate, so don't surface the button (mirrors
@@ -413,7 +511,7 @@ std::pair<std::string, std::string> build_ct002_device_discovery(
     device["name"] = "AstraMeter CT002 " + device_id;
     device["manufacturer"] = "astrameter";
 
-    add_origin(root);
+    add_origin(root, sw_version);
     JsonArray avail = root["availability"].to<JsonArray>();
     add_system_availability(avail.add<JsonObject>(), base_topic);
     root["state_topic"] = state_topic;

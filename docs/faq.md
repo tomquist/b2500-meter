@@ -157,10 +157,21 @@ stale numbers, overshoots, and ends up swinging back and forth. The fix is to sl
 things down and smooth out the readings. Try these one at a time, and watch how the
 battery behaves for a few minutes after each change before moving on:
 
-1. **Don't re-read the meter too often.** Set `THROTTLE_INTERVAL = 1` so
-   AstraMeter waits at least one second between readings, and
-   `DEDUPE_TIME_WINDOW = 0.9` so it ignores duplicate readings that arrive in that
-   window.
+1. **Prefer a fresh reading.** This is the setting that matters most here: your
+   battery adds each answer to its current output, so being handed the same
+   reading twice makes it apply the same correction twice — which is what an
+   overshoot looks like. Leave `WAIT_FOR_NEXT_MESSAGE = true` (the default) so
+   AstraMeter waits briefly, up to 2 seconds, for a *new* reading before it
+   answers. If that wait times out it still replies from the cache, so this
+   improves the odds rather than guaranteeing every reply is fresh. If your
+   meter is polled rather than pushed, set `THROTTLE_INTERVAL = 1` so AstraMeter
+   re-reads it at most once a second.
+
+   Reach for `DEDUPE_TIME_WINDOW` only if a battery genuinely floods you with
+   repeat polls. It works by leaving the extra polls **unanswered**, so raising
+   it does not slow a battery down smoothly — the answered rate can only drop to
+   half, a third, a quarter of the battery's own poll rate, which is why nudging
+   the value often changes nothing and then changes a lot.
 2. **Ignore tiny wobbles.** Raise `DEADBAND` to around `10`–`20` (watts) so small
    fluctuations near zero are treated as "close enough" and don't trigger a
    correction.
@@ -204,7 +215,12 @@ share as a 15 kWh one and saturates first. Three settings work together to fix t
   active time each battery holds. When demand is low and only one battery runs at a
   time, a larger battery should hold a proportionally bigger slice of the rotation
   window — e.g. `75` % and `25` % for the same 3:1 capacity ratio — so it handles
-  more of the cumulative energy over time.
+  more of the cumulative energy over time. It applies only while demand is low
+  enough to run **one** battery at a time, which is what it describes: how long
+  each battery holds the single rotating slot. Once demand runs several at once
+  every turn is a full interval again, so only `0` % still has an effect (it
+  parks a battery whenever the others can cover) — use **Distribution Weight**
+  to divide load between batteries that run together.
 
 See [CT002 / CT003 steering](ct002.md) for details on all three settings.
 

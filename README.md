@@ -10,6 +10,26 @@ meter. Your storage system sees a meter it understands; AstraMeter reads your
 actual grid power from a source of your choosing and steers the batteries toward
 net-zero grid exchange.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-overview-dark.png">
+  <img alt="AstraMeter's live status dashboard: the grid held within a few watts of zero while three batteries between them supply what the house is drawing" src="docs/images/dashboard-overview-light.png">
+</picture>
+
+<p align="center"><em>The built-in <a href="docs/dashboard.md">live status dashboard</a> — three batteries sharing one house.</em></p>
+
+<!-- marstek-family:start -->
+**🔋 The Marstek ecosystem.** This repo is part of a family of open-source tools for Marstek batteries (B2500, Venus, Jupiter, …):
+
+| Project | What it does |
+|---|---|
+| [hm2mqtt](https://github.com/tomquist/hm2mqtt) | Brings your battery into your smart home, turning its raw data into readable sensors and controls (e.g. in Home Assistant) |
+| [hame-relay](https://github.com/tomquist/hame-relay) | Connects the official Marstek cloud/app and your local smart home so both work together, forwarding data whichever way your battery is set up |
+| [marsrelay](https://github.com/tomquist/marsrelay) | Runs your battery completely offline, with no internet or Marstek cloud, while still sending all its data to your smart home |
+| **AstraMeter** (this repo) | Tells your battery your live grid usage (read from your existing meter) so it charges and discharges to avoid buying or selling power |
+| [hmjs](https://github.com/tomquist/hmjs) | Sets up and configures B2500 batteries over Bluetooth, right from your web browser, with no app or account needed |
+| [esphome-b2500](https://github.com/tomquist/esphome-b2500) | Continuously monitors and controls a B2500 over Bluetooth using a small ESP32 board |
+<!-- marstek-family:end -->
+
 It does this by emulating one or more of these devices:
 
 - **CT002 / CT003** (Marstek's native CT protocol) — use for **multiple** storage
@@ -58,9 +78,10 @@ per-source `config.ini` reference lives in
 component, see **[docs/esphome-powermeters.md](docs/esphome-powermeters.md)**.
 
 Supported sources include: Shelly, Tasmota, Shrdzm, Emlog, ioBroker, Home
-Assistant, VZLogger, ESPHome, AMIS Reader, Modbus (TCP/UDP), MQTT, JSON HTTP, TQ
+Assistant, VZLogger, ESPHome (Http-Polling or native API), AMIS Reader, Modbus (TCP/UDP), MQTT, JSON HTTP, TQ
 Energy Manager, HomeWizard, Enphase Envoy, SMA Energy Meter, FRITZ!Smart Energy
-250, Fronius Smart Meter, Tibber Pulse, Script, and SML.
+250, Fronius Smart Meter, Refoss / Meross energy monitors, Tibber Pulse, Script,
+and SML.
 
 ## Configuration
 
@@ -75,6 +96,10 @@ then consult the reference docs as needed:
 - **[CT002 / CT003 steering](docs/ct002.md)** — the CT emulator, active control,
   multi-battery balancing, efficiency optimization, and Marstek cloud
   registration.
+- **[Live status dashboard](docs/dashboard.md)** — the built-in web UI showing
+  live grid and per-battery state, and editing your configuration from the
+  browser. On by default in the Home Assistant add-on and in Docker or
+  standalone runs; an ESP32 can serve it too.
 - **[MQTT Insights & Home Assistant entities](docs/mqtt-insights.md)** —
   publishing internal state to MQTT, HA Device Discovery, and per-battery
   controls.

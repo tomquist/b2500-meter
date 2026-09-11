@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "astrameter"
-version = "2.2.4"
+version = "2.3.0"
 description = "Power-meter monitoring for Marstek battery inverters (formerly b2500-meter)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
 dependencies = [
-    "aiohttp>=3.9.0",
+    "aiohttp>=3.14.3",
     "requests",
     "urllib3>=2.6.3,<3",
     "aiomqtt>=2.0.0,<3",
@@ -19,6 +19,7 @@ dependencies = [
     "smllib",
     "pyserial-asyncio-fast",
     "configupdater>=3.2",
+    "aioesphomeapi>=36.0.1",
 ]
 
 [project.optional-dependencies]
@@ -68,12 +69,21 @@ known-first-party = ["astrameter"]
 [tool.mypy]
 python_version = "3.10"
 warn_unused_configs = true
+warn_unused_ignores = true
 warn_return_any = false
 ignore_missing_imports = true
 explicit_package_bases = true
 namespace_packages = true
 mypy_path = ["src"]
-# Typed surfaces only; full strictness would require annotating the whole codebase
-check_untyped_defs = false
-disallow_incomplete_defs = false
+check_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
 disable_error_code = ["import-untyped"]
+
+[[tool.mypy.overrides]]
+# Whether these suppressions are needed depends on whether the optional `sim`
+# extra is installed: with textual present they silence a real signature
+# mismatch, without it the call is untyped and they read as unused. CI lints
+# with `dev` only, so the module is exempt rather than wrong in one of the two.
+module = "astrameter.simulator.tui"
+warn_unused_ignores = false

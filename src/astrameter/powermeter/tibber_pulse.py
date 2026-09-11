@@ -1,12 +1,11 @@
+import logging
 import time
 from collections.abc import Callable
+from typing import Any
 
-import aiohttp
-from aiohttp import BasicAuth, ClientTimeout
+from aiohttp import BasicAuth
 
-from astrameter.config.logger import logger
-
-from .base import Powermeter
+from .http_client import HttpPowermeter
 from .sml import (
     _OBIS_POWER_CURRENT,
     _OBIS_POWER_L1,
@@ -15,6 +14,9 @@ from .sml import (
     parse_sml_powers,
 )
 
+# Stdlib logger: avoid importing astrameter.config (config_loader imports powermeter).
+logger = logging.getLogger("astrameter")
+
 # The Pulse Bridge mirrors a push source (the meter emits ~1/s, with jitter):
 # polling it occasionally returns an incomplete or CRC-bad telegram that can't
 # be decoded. Such misses are transient and self-healing, so reuse the last
@@ -22,8 +24,12 @@ from .sml import (
 # Beyond the window a genuinely broken bridge/meter still surfaces as an error.
 _STALE_AFTER_S = 15.0
 
+# The bridge's webserver is slow — responses regularly take >1 s (#551) — so
+# the default must leave comfortable headroom. Overridable via TIMEOUT.
+DEFAULT_TIMEOUT_S = 5.0
 
-class TibberPulse(Powermeter):
+
+class TibberPulse(HttpPowermeter):
     """Reads a Tibber Pulse via the local Pulse Bridge HTTP API.
 
     Fetches the raw SML telegram from the bridge's ``/data.json`` endpoint
@@ -48,8 +54,10 @@ class TibberPulse(Powermeter):
         obis_power_l1: str = _OBIS_POWER_L1,
         obis_power_l2: str = _OBIS_POWER_L2,
         obis_power_l3: str = _OBIS_POWER_L3,
+        timeout: float = DEFAULT_TIMEOUT_S,
         clock: Callable[[], float] | None = None,
-    ):
+    ) -> None:
+        super().__init__(timeout=timeout)
         self.ip = ip
         self.password = password
         self.node_id = node_id
@@ -58,35 +66,22 @@ class TibberPulse(Powermeter):
         self._obis_l1 = obis_power_l1
         self._obis_l2 = obis_power_l2
         self._obis_l3 = obis_power_l3
-        self.session: aiohttp.ClientSession | None = None
         self._clock = clock or time.monotonic
         # Last successfully decoded reading and when it was decoded, so a
         # transient undecodable telegram can reuse it instead of erroring.
         self._last_powers: list[float] | None = None
         self._last_good: float | None = None
 
-    async def start(self) -> None:
-        if self.session:
-            return
-        # Fail fast: the battery polls ~1/s, so a slow source should error
-        # quickly and let the next poll retry rather than pin a handler.
-        self.session = aiohttp.ClientSession(
-            auth=BasicAuth(self.user, self.password),
-            timeout=ClientTimeout(total=2, connect=1),
-        )
-
-    async def stop(self) -> None:
-        if self.session:
-            await self.session.close()
-            self.session = None
+    def _session_options(self) -> dict[str, Any]:
+        return {
+            **super()._session_options(),
+            "auth": BasicAuth(self.user, self.password),
+        }
 
     async def get_powermeter_watts(self) -> list[float]:
-        if not self.session:
-            raise RuntimeError("Session not started; call start() first")
-        url = f"http://{self.ip}/data.json?node_id={self.node_id}"
-        async with self.session.get(url) as resp:
-            resp.raise_for_status()
-            data = await resp.read()
+        data = await self.get_bytes(
+            f"http://{self.ip}/data.json?node_id={self.node_id}"
+        )
         powers = parse_sml_powers(
             data,
             self._obis_current,

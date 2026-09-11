@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import json
 import logging
 from collections.abc import Callable
@@ -7,22 +6,34 @@ from typing import Any
 
 import aiohttp
 
-from .base import Powermeter
+from astrameter.power_units import POWER_UNIT_SCALE, POWER_UNITS
+
+from .base import as_list
+from .ws_client import (
+    WS_HEARTBEAT_SECONDS,
+    WebSocket,
+    WebSocketConnect,
+    WebSocketPowermeter,
+    cancel,
+)
 
 # Stdlib logger: avoid importing astrameter.config (config_loader imports powermeter).
 logger = logging.getLogger("astrameter")
 
 # Home Assistant websocket subscribe_entities compressed state (homeassistant.const)
 _HA_S = "s"
+_HA_A = "a"
 _HA_LU = "lu"
 _HA_LC = "lc"
 _HA_DIFF_ADD = "+"
 
-# WebSocket heartbeat (seconds) — same rationale as HomeWizard.
-WS_HEARTBEAT_SECONDS = 30.0
+_ATTR_UNIT_OF_MEASUREMENT = "unit_of_measurement"
 
 
-class HomeAssistant(Powermeter):
+class HomeAssistant(WebSocketPowermeter):
+    _TIMEOUT_MESSAGE = "Timeout waiting for Home Assistant state"
+    _LOG_NAME = "Home Assistant"
+
     def __init__(
         self,
         ip: str,
@@ -34,27 +45,16 @@ class HomeAssistant(Powermeter):
         power_input_alias: str | list[str],
         power_output_alias: str | list[str],
         path_prefix: str | None,
-    ):
+    ) -> None:
+        super().__init__()
         self.ip = ip
         self.port = port
         self.use_https = use_https
         self._token = token
-        self.current_power_entity = (
-            [current_power_entity]
-            if isinstance(current_power_entity, str)
-            else current_power_entity
-        )
+        self.current_power_entity = as_list(current_power_entity)
         self.power_calculate = power_calculate
-        self.power_input_alias = (
-            [power_input_alias]
-            if isinstance(power_input_alias, str)
-            else power_input_alias
-        )
-        self.power_output_alias = (
-            [power_output_alias]
-            if isinstance(power_output_alias, str)
-            else power_output_alias
-        )
+        self.power_input_alias = as_list(power_input_alias)
+        self.power_output_alias = as_list(power_output_alias)
         self.path_prefix = path_prefix
 
         if self.power_calculate and len(self.power_input_alias) != len(
@@ -71,17 +71,15 @@ class HomeAssistant(Powermeter):
         # a dead TCP connection on our side. A constant numeric value is
         # therefore legitimate and must not be treated as stale.
         self._entity_values: dict[str, float | None] = {}
+        # Last-seen ``unit_of_measurement`` per entity (``None`` = no unit
+        # attribute → assume watts). Values are converted at read time so
+        # unit and state updates may arrive in any order.
+        self._entity_units: dict[str, str | None] = {}
         self._tracked_entities = self._collect_entities()
         self._msg_id = 0
         self._subscribe_entities_id: int | None = None
-        self._session: aiohttp.ClientSession | None = None
-        self._ws_task: asyncio.Task[None] | None = None
         self._fetch_states_task: asyncio.Task[None] | None = None
         self._entities_ready = asyncio.Event()
-        self._message_event = asyncio.Event()
-        # Read-only health flag for stream_online(): set on auth_ok, cleared on
-        # disconnect (via _reset_for_reconnect).
-        self._connected = False
 
     def _collect_entities(self) -> set[str]:
         if self.power_calculate:
@@ -104,61 +102,20 @@ class HomeAssistant(Powermeter):
         self._msg_id += 1
         return self._msg_id
 
-    async def start(self) -> None:
-        if self._session:
-            return
-        self._session = aiohttp.ClientSession()
-        self._ws_task = asyncio.create_task(self._ws_loop())
-
     async def stop(self) -> None:
-        if self._fetch_states_task:
-            self._fetch_states_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._fetch_states_task
-            self._fetch_states_task = None
-        if self._ws_task:
-            self._ws_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._ws_task
-            self._ws_task = None
-        if self._session:
-            await self._session.close()
-            self._session = None
+        await cancel(self._fetch_states_task)
+        self._fetch_states_task = None
+        await super().stop()
 
-    async def _ws_loop(self) -> None:
-        url = self._build_ws_url()
-        while True:
-            try:
-                assert self._session is not None
-                async with self._session.ws_connect(
-                    url, heartbeat=WS_HEARTBEAT_SECONDS
-                ) as ws:
-                    logger.info(f"Home Assistant WebSocket connected to {self.ip}")
-                    async for msg in ws:
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            await self._handle_message(ws, msg.data)
-                        elif msg.type in (
-                            aiohttp.WSMsgType.ERROR,
-                            aiohttp.WSMsgType.CLOSE,
-                            aiohttp.WSMsgType.CLOSING,
-                            aiohttp.WSMsgType.CLOSED,
-                        ):
-                            break
-                    logger.info("Home Assistant WebSocket closed")
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error("Home Assistant WebSocket error: %s", e, exc_info=True)
-            self._reset_for_reconnect()
-            await asyncio.sleep(5)
+    def _connect(self, session: aiohttp.ClientSession) -> WebSocketConnect:
+        return session.ws_connect(self._build_ws_url(), heartbeat=WS_HEARTBEAT_SECONDS)
 
-    def _reset_for_reconnect(self) -> None:
+    def _on_disconnect(self) -> None:
         """Reset protocol state and invalidate cached values so
         ``get_powermeter_watts`` raises (and ``wait_for_message`` blocks)
         until the reconnected ``subscribe_entities`` snapshot repopulates
         them.
         """
-        self._connected = False
         self._msg_id = 0
         self._subscribe_entities_id = None
         if self._fetch_states_task and not self._fetch_states_task.done():
@@ -180,6 +137,7 @@ class HomeAssistant(Powermeter):
                     and isinstance(st, dict)
                     and _HA_S in st
                 ):
+                    self._update_entity_unit(eid, st.get(_HA_A))
                     self._update_entity_value(eid, st.get(_HA_S))
         changes = ev.get("c")
         if isinstance(changes, dict):
@@ -189,6 +147,10 @@ class HomeAssistant(Powermeter):
                 plus = diff.get(_HA_DIFF_ADD)
                 if not isinstance(plus, dict):
                     continue
+                if _HA_A in plus:
+                    # Partial attribute diff — only touches the recorded
+                    # unit when unit_of_measurement itself changed.
+                    self._update_entity_unit(eid, plus.get(_HA_A), partial=True)
                 if _HA_S in plus:
                     self._update_entity_value(eid, plus.get(_HA_S))
                 elif (_HA_LU in plus or _HA_LC in plus) and self._entity_values.get(
@@ -204,13 +166,11 @@ class HomeAssistant(Powermeter):
                 if eid in self._tracked_entities:
                     self._update_entity_value(eid, None)
 
-    async def _handle_message(
-        self, ws: aiohttp.ClientWebSocketResponse, raw: str
-    ) -> None:
+    async def _on_text(self, ws: WebSocket, raw: str) -> None:
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
-            logger.error(f"Home Assistant: failed to decode message: {raw}")
+            logger.error("Home Assistant: failed to decode message: %s", raw)
             return
 
         msg_type = msg.get("type")
@@ -244,11 +204,11 @@ class HomeAssistant(Powermeter):
                 self._fetch_states_task.cancel()
             self._fetch_states_task = asyncio.create_task(self._fetch_initial_states())
         elif msg_type == "auth_invalid":
-            logger.error(f"Home Assistant auth failed: {msg.get('message', '')}")
+            logger.error("Home Assistant auth failed: %s", msg.get("message", ""))
         elif msg_type == "result":
             if msg.get("id") == self._subscribe_entities_id and not msg.get("success"):
                 logger.error(
-                    f"Home Assistant subscribe_entities failed: {msg.get('error')}"
+                    "Home Assistant subscribe_entities failed: %s", msg.get("error")
                 )
                 # No live stream after a failed subscription — clear so a
                 # REST-seeded snapshot can't keep stream_online() reporting
@@ -277,18 +237,17 @@ class HomeAssistant(Powermeter):
                         )
                         continue
                     data = await resp.json()
-            except asyncio.CancelledError:
-                raise
             except Exception as e:
                 logger.debug(
                     "Home Assistant: REST state fetch for %s failed: %s", eid, e
                 )
                 continue
             if isinstance(data, dict):
+                self._update_entity_unit(eid, data.get("attributes"))
                 self._update_entity_value(eid, data.get("state"))
 
     def _update_entity_value(self, entity_id: str, state_val: object) -> None:
-        logger.debug(f"Home Assistant: update_entity_value: {entity_id}, {state_val}")
+        logger.debug("Home Assistant: %s = %s", entity_id, state_val)
         if state_val is None:
             self._entity_values[entity_id] = None
             self._check_entities_ready()
@@ -299,11 +258,57 @@ class HomeAssistant(Powermeter):
             # ``unavailable`` / ``unknown`` (or any non-numeric state) —
             # the integration is telling us the value isn't usable.
             logger.warning(
-                f"Home Assistant sensor {entity_id} state '{state_val}' is not numeric"
+                "Home Assistant sensor %s state %r is not numeric",
+                entity_id,
+                state_val,
             )
             self._entity_values[entity_id] = None
         self._check_entities_ready()
         self._message_event.set()
+
+    def _update_entity_unit(
+        self, entity_id: str, attributes: object, *, partial: bool = False
+    ) -> None:
+        """Record the entity's ``unit_of_measurement`` from an attributes dict.
+
+        ``partial=True`` marks a ``+`` attribute diff: it only touches the
+        recorded unit when the key itself is present. A full attributes
+        payload (snapshot / REST fetch) *replaces* the recorded unit —
+        including clearing it back to the watts default when the entity no
+        longer declares one, so a stale unit can't survive a reconnect or
+        an entity reconfiguration.
+        """
+        if partial and (
+            not isinstance(attributes, dict)
+            or _ATTR_UNIT_OF_MEASUREMENT not in attributes
+        ):
+            return
+        unit = (
+            attributes.get(_ATTR_UNIT_OF_MEASUREMENT)
+            if isinstance(attributes, dict)
+            else None
+        )
+        if not isinstance(unit, str) or not unit:
+            unit = None
+        if entity_id in self._entity_units and self._entity_units[entity_id] == unit:
+            return
+        self._entity_units[entity_id] = unit
+        if unit is None or unit == "W":
+            return
+        if unit in POWER_UNIT_SCALE:
+            logger.info(
+                "Home Assistant sensor %s reports %s; converting to W automatically",
+                entity_id,
+                unit,
+            )
+        else:
+            logger.error(
+                "Home Assistant sensor %s reports unit %r, which is not a power "
+                "unit — expected one of %s. Its values will be rejected.",
+                entity_id,
+                unit,
+                ", ".join(POWER_UNITS),
+            )
 
     def _check_entities_ready(self) -> None:
         ready = all(
@@ -318,7 +323,17 @@ class HomeAssistant(Powermeter):
         val = self._entity_values.get(entity_id)
         if val is None:
             raise ValueError(f"Home Assistant sensor {entity_id} has no state")
-        return val
+        unit = self._entity_units.get(entity_id)
+        if unit is None:
+            return val
+        scale = POWER_UNIT_SCALE.get(unit)
+        if scale is None:
+            raise ValueError(
+                f"Home Assistant sensor {entity_id} reports unit '{unit}', "
+                f"which is not a power unit — expected one of "
+                f"{', '.join(POWER_UNITS)}"
+            )
+        return val * scale
 
     def stream_online(self) -> bool | None:
         # Availability-based, never timestamp-based: a steady/constant phase
@@ -343,14 +358,4 @@ class HomeAssistant(Powermeter):
         return results
 
     async def wait_for_message(self, timeout: float = 5) -> None:
-        try:
-            await asyncio.wait_for(self._entities_ready.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timeout waiting for Home Assistant state") from None
-
-    async def wait_for_next_message(self, timeout: float = 5) -> None:
-        self._message_event.clear()
-        try:
-            await asyncio.wait_for(self._message_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timeout waiting for Home Assistant state") from None
+        await self._wait(self._entities_ready, timeout)

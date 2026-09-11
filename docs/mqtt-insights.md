@@ -95,7 +95,7 @@ Example payload:
 {
   "grid_power":  {"l1": 120.0, "l2": 0.0, "l3": -30.0, "total": 90.0},
   "target":      {"l1": -50.0, "l2": 0.0, "l3": 0.0},
-  "phase": "l1",
+  "phase": "A",
   "reported_power": 600,
   "device_type": "HMG-50",
   "battery_ip": "192.168.1.50",
@@ -105,6 +105,7 @@ Example payload:
   "last_target": -50.0,
   "active": true,
   "poll_interval": 1.0,
+  "answer_interval": 1.0,
   "last_seen": "2026-06-22T10:15:00+00:00",
   "manual_target": null,
   "auto_target": true,
@@ -118,7 +119,7 @@ Example payload:
 |---|---|---|
 | `grid_power` | object | Smoothed grid reading sent to this battery, per phase plus `total` (watts; **+ = import**, − = export). |
 | `target` | object | Per-phase charge/discharge target the balancer computed for this battery (watts; sign convention as reported to the battery). No `total` key. |
-| `phase` | string | Phase this battery is assigned to (`l1`/`l2`/`l3`), or its reported phase. |
+| `phase` | string | Phase the battery reports it is clamped to: `A`, `B` or `C`, or `D` for combined / whole-home mode. |
 | `reported_power` | number | Power the battery reported it is currently producing/consuming (watts). |
 | `device_type` | string | Battery model string it announced. |
 | `battery_ip` | string | Source IP of the battery's UDP poll. |
@@ -126,8 +127,9 @@ Example payload:
 | `saturation` | number | 0–1 estimate of how saturated (maxed-out) the battery is; 1 = can't absorb/deliver more. |
 | `last_target` | number/null | Previous target sent, for rate-of-change context. |
 | `active` | bool | `false` when this battery is paused (steered to 0 W). |
-| `poll_interval` | number/null | Measured seconds between this battery's polls. |
-| `last_seen` | string | ISO-8601 UTC timestamp of this update. |
+| `poll_interval` | number/null | Measured seconds between this battery's polls, counting every poll it sends. |
+| `answer_interval` | number/null | Measured seconds between the replies it actually receives. Matches `poll_interval` unless `DEDUPE_TIME_WINDOW` is suppressing replies. |
+| `last_seen` | string | ISO-8601 UTC timestamp of this update. No Home Assistant entity — see [Is a battery still reporting?](#is-a-battery-still-reporting-home-assistant). |
 | `manual_target` | number/null | Active manual override in watts, or `null` when on automatic. |
 | `auto_target` | bool | `true` = automatic control; `false` = manual override in effect. |
 | `distribution_weight` | number | Relative share of demand when splitting across batteries (ratio-based; `1.0` neutral). |
@@ -144,12 +146,54 @@ Availability companion:
 
 | Topic | Retain | Payload |
 |---|---|---|
-| `{base}/ct002/{did}/status` | yes | `{"smooth_target": <w>, "active_control": <bool>, "consumer_count": <int>}` |
+| `{base}/ct002/{did}/status` | yes | see below |
+
+```json
+{
+  "smooth_target": 90.0,
+  "active_control": true,
+  "consumer_count": 2,
+  "control_quality": "off_target",
+  "control_quality_score": 41.5,
+  "control_quality_error_w": 214.0,
+  "control_quality_in_band_pct": 11.0,
+  "control_quality_crossings_per_min": 3.4,
+  "control_quality_band_w": 25.0
+}
+```
 
 - `smooth_target` — the device-wide smoothed grid target (watts).
 - `active_control` — `true` when the emulator is computing per-battery targets;
   `false` in relay mode (raw aggregate forwarded).
 - `consumer_count` — number of batteries currently polling this device.
+- `control_quality` — whether the grid is being held at zero: `stable`,
+  `off_target`, `limited`, `warmup` or `idle`. See
+  [Control quality](ct002.md#control-quality) for what each verdict means and
+  what to change.
+- `control_quality_score` — the same judgement as a 0–100 % number, for trending
+  and alerting. `null` (HA: `unknown`) while the loop is idle or warming up, so
+  a "score below X" automation never fires on a reading that does not exist.
+  `control_quality` itself always carries a verdict — `idle` or `warmup` in
+  those states, never `unknown`.
+- `control_quality_error_w` — mean absolute grid error over the recent window
+  (watts). The number behind the verdict.
+- `control_quality_in_band_pct` — share of that window the grid spent inside
+  the settling band, 0–100 %.
+- `control_quality_crossings_per_min` — how often the error crossed zero while
+  it was large. Read together with the verdict: a high rate beside
+  `off_target` points at a loop overshooting past zero, a near-zero one at a
+  loop that never reaches it. A noisy meter also raises it — see
+  [Control quality](ct002.md#control-quality).
+- `control_quality_band_w` — the settling band the rest is judged against
+  (`BALANCE_DEADBAND`, floored at 25 W). Configuration, so never `null`.
+
+The three evidence fields are `null` (HA: `unknown`) until at least one reading
+has been folded in, for the same reason as the score.
+
+Home Assistant gets all five as diagnostic entities on the CT device:
+**Control Quality** (an enum sensor), **Control Quality Score**, **Control
+Quality Mean Error**, **Control Quality Time In Band** and **Control Quality
+Zero Crossings**.
 
 ### Shelly — per-battery state
 
@@ -169,7 +213,7 @@ Availability companion:
 | `grid_power` | object | Per-phase grid power forwarded to this battery plus `total` (watts; + = import). |
 | `active` | bool | `false` when the battery is marked inactive. |
 | `poll_interval` | number/null | Measured seconds between polls. |
-| `last_seen` | string | ISO-8601 UTC timestamp. |
+| `last_seen` | string | ISO-8601 UTC timestamp. No Home Assistant entity — see [Is a battery still reporting?](#is-a-battery-still-reporting-home-assistant). |
 
 | Topic | Retain | Payload |
 |---|---|---|
@@ -284,9 +328,14 @@ controls are available to any MQTT client:
 - **Efficiency Window Weight** — how much of the **efficiency rotation** each
   battery takes when demand is low and the balancer runs only some batteries to
   keep them efficient. `100 %` is neutral; `0 %` skips a battery (parked while
-  limiting, but still used when all batteries are needed); in between gives it less
-  active time. Separate from **Distribution Weight** (which biases the split among
-  active batteries).
+  limiting, but still used when all batteries are needed); in between gives it
+  proportionally less, since a battery holds each turn for that fraction of
+  [EFFICIENCY_ROTATION_INTERVAL](ct002.md#battery-efficiency-optimization). Two
+  batteries you want to take turns in a 1:2 ratio can be set to `50 %` and
+  `100 %`: with the default 15-minute interval that is 7.5 minutes against 15.
+  This applies while demand runs one battery at a time; once several run at once
+  every turn is a full interval again (only `0 %` still parks a battery), and
+  **Distribution Weight** is what splits the load among them.
 - **Min DC Output** — minimum discharge in watts to keep this battery's inverter
   from switching off at 0 W and falling asleep (see
   [MIN_DC_OUTPUT](ct002.md#dc-battery-keep-alive)). Only shown for DC batteries
@@ -302,6 +351,69 @@ The CT device itself also exposes a config switch:
 
 Each of these controls publishes its set-command **retained**, so Home Assistant
 restores your values across an AstraMeter restart without any extra configuration.
+
+## Is a battery still reporting? (Home Assistant)
+
+There is deliberately **no "Last Seen" entity**. Its value changed on every poll,
+and Home Assistant records a timestamp sensor's every change in the logbook, so a
+battery polling once a second buried the logbook under its own heartbeat. Home
+Assistant already tracks the same thing for you.
+
+**Unavailable means "not reporting".** When a battery stops polling, AstraMeter
+drops it — by default after it misses ~2 of its own poll cycles, or after
+`CONSUMER_TTL` seconds if you set a fixed window
+([CT002 basic configuration](ct002.md#basic-configuration); 120 s for a Shelly
+battery) — publishes `offline` on its availability topic, and
+**every entity of that battery turns Unavailable**. That is the signal to alert
+on, and it needs no template:
+
+```yaml
+alias: AstraMeter – battery stopped reporting
+triggers:
+  - trigger: state
+    entity_id: sensor.astrameter_consumer_hmj_2_aabbccddeeff_poll_interval  # replace with yours
+    to: unavailable
+    for:
+      minutes: 5
+actions:
+  - action: notify.persistent_notification
+    data:
+      message: The battery has not reported to AstraMeter for five minutes.
+```
+
+**The timestamp itself is on every entity.** Home Assistant stamps each state
+write with `last_reported`, which advances even when the value is unchanged —
+exactly what Last Seen used to publish. Any entity of the battery will do:
+
+```jinja
+{{ states.sensor.astrameter_consumer_hmj_2_aabbccddeeff_poll_interval.last_reported }}
+```
+
+Seconds since the battery was last heard from:
+
+```jinja
+{{ (now() - states.sensor.astrameter_consumer_hmj_2_aabbccddeeff_poll_interval.last_reported).total_seconds() | round }}
+```
+
+Two things to know when you use these:
+
+- `last_changed` / `last_updated` — the **Last changed** line in an entity's
+  more-info dialog — only move when the value itself changes, so a battery
+  reporting the same wattage twice does not bump them. `last_reported` is the one
+  that follows every poll.
+- A template re-renders when an entity's state **changes**, not when it merely
+  re-reports the same value. Including `now()` (as above) also refreshes the
+  template at the start of every minute, which is what keeps an age calculation
+  live.
+
+**For the polling rate rather than recency**, use the **Poll Interval** and
+**Answer Interval** sensors. They carry a unit, so Home Assistant treats them as
+continuous and keeps them out of the logbook however fast they change.
+
+If you still want a Last Seen entity of your own, a
+[template sensor](https://www.home-assistant.io/integrations/template/) over
+`last_reported` gives you one — but exclude it under `recorder:` → `exclude:`,
+or it floods your logbook exactly as the built-in one did.
 
 ## Optional: Marstek mobile app (live MQTT)
 

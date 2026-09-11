@@ -27,17 +27,27 @@ std::string sanitize_id(const std::string &value);
 // battery device owned by another bridge (e.g. hm2mqtt). The device is
 // identified by its own namespaced `identifiers` and linked to the meter via
 // `via_device`. See the note in discovery.py and issue #438.
+//
+// retire_removed adds the platform-only stanza that tells HA to delete the
+// entities this payload no longer carries (discovery.py's RETIRED_COMPONENTS).
+// Publish that variant once, then the normal payload — an entity that merely
+// disappears from a discovery payload lives on in HA.
+// sw_version is the build's git SHA, reported in the `origin` block so HA
+// shows the same build identifier either stack publishes (discovery.py
+// _origin); empty becomes "unknown", as it does there.
 std::pair<std::string, std::string> build_ct002_consumer_discovery(
     const std::string &base_topic, const std::string &device_id,
     const std::string &consumer_id, const std::string &ha_prefix,
-    const std::string &device_type = "", bool efficiency_rotation = false);
+    const std::string &device_type = "", bool efficiency_rotation = false,
+    bool retire_removed = false, const std::string &sw_version = "");
 
 // CT002 device-level HA Discovery payload (parent device, smooth_target
 // sensor, active_control binary_sensor, consumer_count diagnostic, and —
 // only when efficiency rotation is enabled — the force_rotation button).
 std::pair<std::string, std::string> build_ct002_device_discovery(
     const std::string &base_topic, const std::string &device_id,
-    const std::string &ha_prefix, bool efficiency_rotation = false);
+    const std::string &ha_prefix, bool efficiency_rotation = false,
+    const std::string &sw_version = "");
 
 }  // namespace mqtt_insights
 }  // namespace ct002

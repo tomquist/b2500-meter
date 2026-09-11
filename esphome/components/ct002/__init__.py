@@ -12,30 +12,43 @@ schema accepts grid-power sensor IDs and the cross-phase filter pipeline
   Marstek cloud on first boot; persist the MAC via ESPPreferences;
   apply it to this `ct002:` so UDP responses + MQTT topics use the
   cloud-side identity. Requires an upstream `http_request:` block.
+* `dashboard:` — serve AstraMeter's live status dashboard from the ESP32
+  itself. On by default (ESP32 only); `dashboard: false` leaves it out of
+  the firmware entirely, and the block is only needed to change an option.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+import uuid
+from pathlib import Path
+
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import http_request, sensor
+import esphome.final_validate as fv
+from esphome.components import http_request, sensor, web_server_base
+from esphome.components.web_server_base import CONF_WEB_SERVER_BASE_ID
 from esphome.const import (
     CONF_ALPHA,
     CONF_ID,
+    CONF_JS_INCLUDE,
+    CONF_LOCAL,
     CONF_MODE,
     CONF_PASSWORD,
     CONF_TIMEZONE,
+    CONF_UNIT_OF_MEASUREMENT,
+    CONF_VERSION,
+    CONF_WEB_SERVER,
+    PLATFORM_ESP32,
 )
+from esphome.core import CORE
+
+_LOGGER = logging.getLogger(__name__)
 
 CODEOWNERS = ["@tomquist"]
 DEPENDENCIES = ["sensor"]
-# json / md5 are auto-loaded so users don't need to add empty `json:` or
-# `md5:` blocks to enable the sub-block infrastructure (they're cheap and
-# only the sub-blocks ever reference them). mqtt / http_request have
-# user-facing config of their own (broker, timeout, etc.) so we enforce
-# user-declared blocks via `cv.requires_component` on the sub-schema
-# instead of auto-loading them.
-AUTO_LOAD = ["socket", "json", "md5"]
 MULTI_CONF = False
 
 ct002_ns = cg.esphome_ns.namespace("ct002")
@@ -58,6 +71,8 @@ cloud_reporting_ns = ct002_ns.namespace("cloud_reporting")
 CloudReportingComponent = cloud_reporting_ns.class_(
     "CloudReportingComponent", cg.Component
 )
+dashboard_ns = ct002_ns.namespace("dashboard")
+DashboardComponent = dashboard_ns.class_("DashboardComponent", cg.Component)
 
 # Parent fields
 CONF_POWER_SENSOR_L1 = "power_sensor_l1"
@@ -125,6 +140,309 @@ CONF_DECAY_FACTOR = "decay_factor"
 CONF_GRACE_SECONDS = "grace_seconds"
 CONF_STALL_TIMEOUT_SECONDS = "stall_timeout_seconds"
 CONF_MIN_TARGET = "min_target"
+
+
+# Power units the raw sensor state is auto-converted to watts from
+# (issue #572: a kW sensor silently rounds to 0 W without conversion).
+# Case matters: "mW" is milliwatts, "MW" megawatts. A sensor without a
+# declared unit_of_measurement is assumed to already report watts.
+POWER_UNIT_SCALES = {
+    "W": 1.0,
+    "kW": 1000.0,
+    "MW": 1e6,
+    "mW": 0.001,
+}
+
+_POWER_SENSOR_KEYS = (
+    CONF_POWER_SENSOR_L1,
+    CONF_POWER_SENSOR_L2,
+    CONF_POWER_SENSOR_L3,
+)
+
+
+def _power_unit_scale(unit: str | None) -> float | None:
+    """Scale factor that converts the sensor's declared unit to watts.
+
+    None/empty (no declared unit) → 1.0 (assume watts, the historical
+    behavior). A declared unit that isn't a power unit → None (reject).
+    """
+    if not unit:
+        return 1.0
+    return POWER_UNIT_SCALES.get(unit)
+
+
+def _declared_unit(full_config, sensor_id) -> str | None:
+    """Best-effort lookup of the referenced sensor's declared
+    unit_of_measurement in the validated full config. Returns None when the
+    sensor (or a unit) can't be found — e.g. `homeassistant` platform
+    sensors that don't declare one.
+    """
+    get_path = getattr(full_config, "get_path_for_id", None)
+    if get_path is None:
+        return None
+    try:
+        path = get_path(sensor_id)[:-1]
+        sensor_conf = full_config.get_config_for_path(path)
+    except KeyError:
+        return None
+    if not isinstance(sensor_conf, dict):
+        return None
+    unit = sensor_conf.get(CONF_UNIT_OF_MEASUREMENT)
+    return unit if isinstance(unit, str) and unit else None
+
+
+def _validate_power_unit(conf_key: str, sensor_id, unit: str | None) -> None:
+    """Raise cv.Invalid when a referenced sensor declares a non-power unit."""
+    if _power_unit_scale(unit) is None:
+        accepted = "/".join(POWER_UNIT_SCALES)
+        raise cv.Invalid(
+            f"{conf_key} '{sensor_id}' declares unit_of_measurement "
+            f"'{unit}', which is not a power unit — ct002 needs grid power "
+            f"in watts. Point it at a sensor reporting {accepted} "
+            f"(kW-style units are converted to W automatically), or scale "
+            f"the value to W and declare 'W'.",
+            path=[conf_key],
+        )
+
+
+def _final_validate_dashboard_path(config, full):
+    """Settle where the dashboard is mounted, now that `web_server:` is known.
+
+    Both mount on the shared HTTP server, and the first handler that claims a
+    URL wins — so two pages at `/` would resolve to whichever component
+    happened to register first, which is codegen ordering, i.e. a coin flip.
+    Since the dashboard is on by default, an unasked-for one must never be the
+    reason somebody's `web_server:` build stops working: with no `path:` of its
+    own it steps aside to `/astrameter` instead of contesting the root. A
+    `path:` the user did write is theirs, so `path: /` alongside `web_server:`
+    is the one case still worth refusing.
+    """
+    dashboard = config.get(CONF_DASHBOARD)
+    if dashboard is None:
+        return
+    collides = CONF_WEB_SERVER in full
+    if CONF_PATH not in dashboard:
+        dashboard[CONF_PATH] = DASHBOARD_ASIDE_PATH if collides else ""
+        return
+    if dashboard[CONF_PATH] != "" or not collides:
+        return
+    raise cv.Invalid(
+        "`web_server:` already serves ESPHome's own page at '/', so the "
+        "AstraMeter dashboard cannot also be mounted there. Give it a path of "
+        f"its own — set `path: {DASHBOARD_ASIDE_PATH}` (or any other) on this "
+        "dashboard block, and the page will be served from there",
+        path=[CONF_DASHBOARD, CONF_PATH],
+    )
+
+
+# The snippet handed to ESPHome's own web UI, which has no notion of a link:
+# its frontends render a fixed set of entity domains, and every name and state
+# is text-bound, so no entity can ever come out as an anchor. The one opening
+# is `js_include:` — a file gzipped into flash, served at /0.js and loaded as a
+# module ahead of <esp-app> — which leaves the link a few lines of DOM.
+#
+# Kept ASCII (→ rather than the arrow itself) so the bytes are the same
+# whatever encoding the file is read back with. The colours are the frontend's
+# own — its header background, and the text colour the `color-scheme` it sets
+# implies — so the bar follows the page into dark mode without knowing which
+# mode it is in. The font has to be restated rather than inherited: the
+# frontend declares it on `:host`, inside <esp-app>'s shadow DOM, which does
+# not reach an anchor sitting beside it in the light DOM.
+#
+# The leading `;` is the one that matters when a user's own `js_include:` runs
+# ahead of this in the same module: theirs ending on an expression with no
+# semicolon would otherwise take the IIFE below for its argument list.
+_WEB_SERVER_LINK_TEMPLATE = """\
+// astrameter-web-server-link — added by AstraMeter's ct002 component
+// (dashboard: web_server_link: false switches it off).
+// Regenerated on every build; edits here are lost.
+;(() => {
+  const link = document.createElement("a");
+  link.href = %(href)s;
+  link.textContent = "AstraMeter dashboard \\u2192";
+  link.style.cssText =
+    "display:block;padding:.6em 1.5em;text-align:center;color:inherit;" +
+    "text-decoration:none;background:rgba(127,127,127,.3);" +
+    "border-radius:0 0 12px 12px;" +
+    "font-family:ui-monospace,system-ui,Helvetica,Roboto,Oxygen,Ubuntu,sans-serif";
+  document.body.prepend(link);
+})();
+"""
+
+# Where the generated snippet lands: ESPHome's data directory, under a
+# subdirectory of our own.
+#
+# NOT the build directory, however much it looks like the natural home for a
+# generated file. `write_cpp` calls `update_storage_json` first, which
+# `clean_build(full=True)`s — an outright rmtree of the build directory —
+# whenever the storage sidecar changed, which includes every first build. That
+# lands between our final-validation and web_server's codegen, so a file
+# written there is gone by the time it is read, and only on some builds.
+#
+# Not the user's config directory either: this is our artifact, not something
+# they should find sitting next to their YAML.
+WEB_SERVER_LINK_DIR = "astrameter"
+
+
+def _web_server_link_path():
+    """Where this device's generated snippet goes, or None if there is nowhere.
+
+    Namespaced by device name because ESPHome's data directory is shared by
+    every configuration beside it — two devices in one directory would
+    otherwise write each other's link.
+    """
+    if CORE.config_path is None or not CORE.name:
+        return None
+    return CORE.relative_internal_path(
+        WEB_SERVER_LINK_DIR, f"{CORE.name}.web-server-link.js"
+    )
+
+
+def _final_validate_web_server_link(config, full):
+    """Give ESPHome's own page a way through to the dashboard beside it.
+
+    With `web_server:` configured the dashboard steps aside to /astrameter
+    (above), which nothing on ESPHome's page points at — so a device serving
+    both hides one of them behind a URL the user has to already know. ESPHome
+    offers no config-level way to add a link, so this writes the anchor into
+    `web_server:`'s `js_include:` on the user's behalf.
+
+    Reaching into another component's config is only sound because
+    final-validation mutations *are* what codegen reads: `fv.full_config` is
+    the same object that becomes `CORE.config`, and web_server's `to_code`
+    runs afterwards (this is the same mechanism that defaults our own `path:`
+    just above). It has to happen here rather than in `to_code`, though —
+    web_server generates at CoroPriority.WEB and we generate at 0, so by the
+    time our codegen runs it has already read the file.
+
+    Anything that leaves the link out is a no-op and never an error: the page
+    is reachable either way, and a build must not fail over a convenience.
+    """
+    dashboard = config.get(CONF_DASHBOARD)
+    if dashboard is None or not dashboard.get(CONF_WEB_SERVER_LINK, True):
+        return
+    web_server = full.get(CONF_WEB_SERVER)
+    if web_server is None:
+        # Nothing to link *from* — with no ESPHome page, the dashboard has the
+        # root to itself.
+        return
+    if web_server.get(CONF_VERSION, 2) == 1:
+        # v1 builds its page in C++ and does have a `/0.js` tag — but behind
+        # `js_include_ != nullptr`, and web_server's codegen never calls
+        # `set_js_include()`, so the pointer is null for every v1 build and the
+        # tag is never emitted. The file would reach flash and nothing would
+        # load it.
+        _LOGGER.info(
+            "AstraMeter: `web_server: version: 1` serves a page that never "
+            "loads its `js_include:`, so it cannot carry a link to the "
+            "dashboard. The dashboard is served from http://<device>%s/",
+            dashboard[CONF_PATH],
+        )
+        return
+    if web_server.get(CONF_LOCAL):
+        _LOGGER.info(
+            "AstraMeter: `web_server: local: true` serves a prebuilt page that "
+            "cannot carry a link to the dashboard. It is served from "
+            "http://<device>%s/",
+            dashboard[CONF_PATH],
+        )
+        return
+    generated = _web_server_link_path()
+    if generated is None:
+        return
+
+    existing = web_server.get(CONF_JS_INCLUDE)
+    snippet = _WEB_SERVER_LINK_TEMPLATE % {"href": json.dumps(_link_href(config))}
+    prior = ""
+    # UnicodeError as much as OSError: `cv.file_` checks only that the path
+    # exists, so a user's `js_include:` can be any bytes at all, and decoding
+    # it is the one step here that can fail on a file that is otherwise fine.
+    # Both have to leave the build alone rather than take it down.
+    try:
+        if existing:
+            prior = _prior_js(CORE.relative_config_path(existing), generated)
+        _write_atomically(generated, prior + snippet)
+    except (OSError, UnicodeError):
+        return
+    web_server[CONF_JS_INCLUDE] = generated
+
+
+# Marks our own output, for the benefit of the "is this the user's file?" test
+# below. Kept in the snippet itself rather than inferred from the path, so a
+# copy of it is recognised too.
+_WEB_SERVER_LINK_MARKER = "astrameter-web-server-link"
+
+
+def _prior_js(existing_path, generated):
+    """The user's own `js_include:`, to run ahead of ours in the same module.
+
+    Empty when what we are pointed at is our own previous output. That is not
+    hypothetical: the config still names the user's file, but a path can reach
+    ours by another spelling — a symlink, a `..` hop, a bind-mounted config
+    directory — and each build would then prepend the last build's copy, so
+    the number of links on the page (and the bytes in flash) would grow on
+    every compile. Both the resolved path and the content are checked, since
+    a *copy* of our output has neither the same path nor any business being
+    prepended.
+    """
+    if existing_path.resolve() == generated.resolve():
+        return ""
+    content = existing_path.read_text(encoding="utf-8")
+    if _WEB_SERVER_LINK_MARKER in content:
+        return ""
+    return content.rstrip("\n") + "\n\n"
+
+
+def _write_atomically(path, content):
+    """Write *content* to *path* as one replacement, never a truncated file.
+
+    Generating during validation means this runs far more often than a build
+    does — every `esphome config`, and the ESPHome dashboard's editor
+    validates as you type. A plain truncating write can therefore land in the
+    middle of a concurrent compile reading the same file, which would embed a
+    half-written module and take the user's own script down with it.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Unique per call, not merely per process. The overlap this guards against
+    # is two validations of the same device inside one process, so a pid alone
+    # would give both writers the same temporary path — and each one's `finally`
+    # would then be free to delete the other's file out from under it.
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_text(content, encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _link_href(config) -> str:
+    """The dashboard's URL as the injected anchor should spell it.
+
+    With a trailing slash: `/astrameter` answers with a redirect to
+    `/astrameter/`, so linking the bare prefix would cost every visitor a
+    round trip.
+    """
+    return (config[CONF_DASHBOARD][CONF_PATH] or "") + "/"
+
+
+def _final_validate(config):
+    """Cross-component checks that need the whole validated configuration."""
+    full = fv.full_config.get()
+    # Reject power_sensor_lX references whose declared unit is not a power
+    # unit (e.g. °C, %, kWh) — a wrong-unit sensor otherwise fails silently
+    # at runtime (issue #572).
+    for conf_key in _POWER_SENSOR_KEYS:
+        if conf_key in config:
+            _validate_power_unit(
+                conf_key, config[conf_key], _declared_unit(full, config[conf_key])
+            )
+    _final_validate_dashboard_path(config, full)
+    # Strictly after the path is settled: the link points at wherever the
+    # dashboard ended up.
+    _final_validate_web_server_link(config, full)
+
+
+FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 def _validate_three_phase_sensors(config):
@@ -377,7 +695,246 @@ CLOUD_REPORTING_SCHEMA = cv.All(
 )
 
 
+# ────────────────────────────────────────────────────────────────────────
+# Sub-block: dashboard (live status web UI served from the ESP32; opt-out)
+# ────────────────────────────────────────────────────────────────────────
+
+CONF_DASHBOARD = "dashboard"
+CONF_PATH = "path"
+CONF_CONTROLS = "controls"
+CONF_ALLOWED_HOSTS = "allowed_hosts"
+CONF_WEB_SERVER_LINK = "web_server_link"
+
+# Where a default-on dashboard goes when `web_server:` already holds the root.
+DASHBOARD_ASIDE_PATH = "/astrameter"
+
+
+def _validate_dashboard_path(value):
+    """Mount prefix, normalized to '' (root) or '/segment' with no trailing slash."""
+    path = cv.string_strict(value)
+    if not path.startswith("/"):
+        raise cv.Invalid(f"{CONF_PATH!r} must start with '/'; got {value!r}")
+    if "?" in path or "#" in path:
+        raise cv.Invalid(f"{CONF_PATH!r} must be a plain path; got {value!r}")
+    return path.rstrip("/")
+
+
+def _dashboard_toggle(value):
+    """The value as a bool if it is one, else None.
+
+    Substitutions expand to *strings*, so a packaged config saying
+    `dashboard: ${enable_dashboard}` hands this "false", not False. Deferring
+    to cv.boolean keeps every spelling it accepts equivalent, instead of the
+    dict form failing with "expected a dictionary".
+    """
+    try:
+        return cv.boolean(value)
+    except cv.Invalid:
+        return None
+
+
+def _dashboard_shorthand(value):
+    """`dashboard:` and `dashboard: true` mean "on, with the defaults".
+
+    Turning it on should not require knowing a single option name, and the
+    dict form stays available for the rare setup that needs one.
+    """
+    if value is None or _dashboard_toggle(value) is True:
+        return {}
+    return value
+
+
+DASHBOARD_OPTIONS_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(): cv.declare_id(DashboardComponent),
+        # ESPHome's shared HTTP server — the same one `web_server:` and
+        # `captive_portal:` mount on, so they can coexist on one port.
+        cv.GenerateID(CONF_WEB_SERVER_BASE_ID): cv.use_id(
+            web_server_base.WebServerBase
+        ),
+        # No default: whether the unset path means the root or a corner of
+        # its own depends on `web_server:`, which is only known once the whole
+        # configuration is validated (_final_validate_dashboard_path fills it).
+        cv.Optional(CONF_PATH): _validate_dashboard_path,
+        # Off by default, like DASHBOARD_ALLOW_WRITE on the Python side:
+        # the page has no login of its own, so steering someone's
+        # batteries from the LAN stays an explicit choice.
+        cv.Optional(CONF_CONTROLS, default=False): cv.boolean,
+        # Extra names the page answers under. An ESP32 is reached by IP or by
+        # the `.local` name mDNS already gives it, and both are allowed
+        # unconditionally, so this is empty for everyone but a reverse proxy —
+        # a name is refused by default because it is the one part of the
+        # address another website can aim at this device (DNS rebinding).
+        cv.Optional(CONF_ALLOWED_HOSTS, default=[]): cv.ensure_list(cv.string_strict),
+        # Only bites when `web_server:` is configured, which is the only case
+        # where the dashboard is not at the root and so needs pointing at.
+        cv.Optional(CONF_WEB_SERVER_LINK, default=True): cv.boolean,
+    }
+).extend(cv.COMPONENT_SCHEMA)
+
+DASHBOARD_SCHEMA = cv.All(
+    _dashboard_shorthand,
+    DASHBOARD_OPTIONS_SCHEMA,
+    # ESPHome's HTTP server exists on ESP32 (and the other ESP-family targets)
+    # only — there is no implementation for `host`, and the smaller targets
+    # would not fit the page anyway.
+    cv.only_on([PLATFORM_ESP32]),
+)
+
+
+def _resolve_dashboard(config):
+    """Settle whether there is a dashboard at all, before the schema runs.
+
+    This is what makes the feature opt-out: an absent key becomes the default
+    block, and only `dashboard: false` removes it. Afterwards the key is
+    present if and only if the device gets a dashboard, which is the single
+    fact everything downstream — the schema, codegen and AUTO_LOAD — reads.
+
+    ESP32 only, because ESPHome's HTTP server is: there is no implementation
+    for `host`, and the smaller targets could not hold the page anyway.
+    """
+    if not isinstance(config, dict):
+        return config
+    if _dashboard_toggle(config.get(CONF_DASHBOARD)) is False:
+        # Removed outright, so a disabled dashboard pulls in nothing at all —
+        # no HTTP server, no page in flash.
+        del config[CONF_DASHBOARD]
+    elif CONF_DASHBOARD not in config and CORE.is_esp32:
+        config[CONF_DASHBOARD] = {}
+    return config
+
+
+def AUTO_LOAD(config):
+    """Components pulled in on the user's behalf.
+
+    json / md5 are always loaded so nobody has to add empty `json:` or `md5:`
+    blocks for the sub-block infrastructure (they're cheap and only the
+    sub-blocks reference them). web_server_base only when there is a dashboard
+    to serve, which is by default — `dashboard: false` is what leaves the HTTP
+    server out. mqtt / http_request have user-facing config of their own
+    (broker, timeout, ...) so those stay `cv.requires_component` on the
+    sub-schema instead.
+
+    A parameterized AUTO_LOAD runs *after* CONFIG_SCHEMA, not before it
+    (AddDynamicAutoLoadsValidationStep, priority -5.0), so what arrives here is
+    the validated config with _resolve_dashboard already applied: the key is
+    present exactly when a dashboard was asked for. Testing the raw spelling
+    instead would read `dashboard: false` as an absent key and load the server
+    for a build that opted out.
+    """
+    loads = ["socket", "json", "md5"]
+    if isinstance(config, dict) and CONF_DASHBOARD in config:
+        loads.append("web_server_base")
+    return loads
+
+
+def _astrameter_version() -> str:
+    """AstraMeter's version, read from the repo this component ships in.
+
+    External components are fetched as a whole repo checkout, so pyproject.toml
+    sits three levels up. Best-effort: an unusual layout just means the page
+    shows no version rather than a wrong one.
+    """
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    try:
+        for line in pyproject.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version = "):
+                return line.split('"')[1]
+    except (OSError, IndexError):
+        pass
+    return ""
+
+
+def _is_sha(value: str) -> bool:
+    """40 hex chars, or 64 for a repo using SHA-256 object names."""
+    return len(value) in (40, 64) and all(c in "0123456789abcdef" for c in value)
+
+
+def _ref_dirs(git_dir: Path) -> list[Path]:
+    """Directories a ref may live in, nearest first.
+
+    A linked worktree keeps its own HEAD but shares the branch refs, so the
+    directory `.git` pointed at has to fall back to the one its ``commondir``
+    names — otherwise a worktree checked out to a branch resolves to nothing.
+    """
+    dirs = [git_dir]
+    commondir = git_dir / "commondir"
+    if commondir.is_file():
+        common = Path(commondir.read_text(encoding="utf-8").strip())
+        if not common.is_absolute():
+            common = (git_dir / common).resolve()
+        dirs.append(common)
+    return dirs
+
+
+def _read_ref(git_dir: Path, ref: str) -> str:
+    """Resolve one ref out of *git_dir*, loose file first, then `packed-refs`."""
+    loose = git_dir / ref
+    if loose.is_file():
+        sha = loose.read_text(encoding="utf-8").strip()
+        return sha if _is_sha(sha) else ""
+    # Packed by `git gc`, so the loose file is gone.
+    packed = git_dir / "packed-refs"
+    if packed.is_file():
+        for line in packed.read_text(encoding="utf-8").splitlines():
+            sha, _, name = line.partition(" ")
+            if name.strip() == ref and _is_sha(sha):
+                return sha
+    return ""
+
+
+def _astrameter_git_commit() -> str:
+    """SHA of the checkout this component ships in, or "" when there is none.
+
+    The Python stack gets its SHA from ``GIT_COMMIT_SHA``, baked in when CI
+    builds the image; a firmware has no such build step, so the SHA is read
+    out of the repo `esphome compile` is reading the sources from. `.git` is
+    read directly rather than shelling out to `git`, which need not be
+    installed wherever ESPHome runs — and a shallow clone (what ESPHome makes
+    of a `github://` source) has HEAD like any other.
+
+    Best-effort, like the version above: no repo, an odd layout, or a ref
+    this cannot resolve means the page shows no commit rather than a wrong
+    one.
+    """
+    root = Path(__file__).resolve().parents[3]
+    # Only a real AstraMeter checkout has a SHA worth reporting. ESPHome also
+    # accepts a top-level ``components/ct002`` layout, where that ``parents[3]``
+    # lands *above* the vendor root — and an ESPHome config directory kept in
+    # git (most of them are) would then stamp its own commit on the firmware as
+    # the build it is running. ``src/astrameter`` marks this repository and
+    # nothing else, so an unrecognisable root reports nothing rather than
+    # somebody else's SHA.
+    if not (root / "src" / "astrameter").is_dir():
+        return ""
+    git_dir = root / ".git"
+    try:
+        if git_dir.is_file():
+            # A linked worktree: `.git` is a pointer to a private directory
+            # holding this worktree's own HEAD.
+            pointer = git_dir.read_text(encoding="utf-8").split("gitdir:", 1)[1]
+            git_dir = Path(pointer.strip())
+            if not git_dir.is_absolute():
+                git_dir = (root / git_dir).resolve()
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            # Detached — checking out a tag or a SHA, as a release build does.
+            return head if _is_sha(head) else ""
+        ref = head.split(":", 1)[1].strip()
+        for ref_dir in _ref_dirs(git_dir):
+            sha = _read_ref(ref_dir, ref)
+            if sha:
+                return sha
+    # Anything unreadable or not a repository at all, including a `.git` file
+    # whose bytes are not text (UnicodeDecodeError is a ValueError, not an
+    # OSError): codegen must not fail over a cosmetic field.
+    except (OSError, IndexError, UnicodeDecodeError):
+        pass
+    return ""
+
+
 CONFIG_SCHEMA = cv.All(
+    _resolve_dashboard,
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(CT002Component),
@@ -417,6 +974,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_MQTT_INSIGHTS): MQTT_INSIGHTS_SCHEMA,
             cv.Optional(CONF_MARSTEK_REGISTRATION): MARSTEK_REGISTRATION_SCHEMA,
             cv.Optional(CONF_CLOUD_REPORTING): CLOUD_REPORTING_SCHEMA,
+            cv.Optional(CONF_DASHBOARD): DASHBOARD_SCHEMA,
         }
     ).extend(cv.COMPONENT_SCHEMA),
     _validate_three_phase_sensors,
@@ -434,6 +992,19 @@ async def to_code(config):
         sensor_l3 = await cg.get_variable(config[CONF_POWER_SENSOR_L3])
         cg.add(var.set_power_sensor_l2(sensor_l2))
         cg.add(var.set_power_sensor_l3(sensor_l3))
+
+    # Unit → watts conversion (issue #572). A declared power unit yields a
+    # per-phase scale; declaring any unit (even W) also disables the runtime
+    # kW-suspicion heuristic for that phase. Non-power units were already
+    # rejected by FINAL_VALIDATE_SCHEMA.
+    for idx, conf_key in enumerate(_POWER_SENSOR_KEYS):
+        if conf_key not in config:
+            continue
+        unit = _declared_unit(CORE.config, config[conf_key])
+        if unit is not None:
+            scale = _power_unit_scale(unit)
+            assert scale is not None  # guaranteed by final validate
+            cg.add(var.set_power_unit_scale(idx, scale))
 
     cg.add(var.set_ct_type(config[CONF_CT_TYPE]))
     cg.add(var.set_ct_mac(config[CONF_CT_MAC]))
@@ -535,6 +1106,8 @@ async def to_code(config):
         await _to_code_marstek_registration(config, var)
     if CONF_CLOUD_REPORTING in config:
         await _to_code_cloud_reporting(config, var)
+    if CONF_DASHBOARD in config:
+        await _to_code_dashboard(config, var)
 
 
 async def _to_code_mqtt_insights(config, ct002_var):
@@ -561,6 +1134,16 @@ async def _to_code_mqtt_insights(config, ct002_var):
             int(sub[CONF_MARSTEK_MQTT_INTERVAL].total_milliseconds)
         )
     )
+    # The broker locator, for the dashboard's Diagnostics card. Taken from the
+    # user's `mqtt:` block rather than the client at runtime: the client keeps
+    # its credentials struct private, and the address sits next to the
+    # username and password there.
+    mqtt_config = CORE.config.get("mqtt") or {}
+    cg.add(var.set_broker(str(mqtt_config.get("broker", ""))))
+    cg.add(var.set_broker_port(int(mqtt_config.get("port", 0))))
+    # Reported as the HA discovery `origin` block's sw_version, the way the
+    # Python stack reports its own SHA there.
+    cg.add(var.set_git_commit(_astrameter_git_commit()))
 
 
 async def _to_code_marstek_registration(config, ct002_var):
@@ -615,3 +1198,38 @@ async def _to_code_cloud_reporting(config, ct002_var):
     cg.add(var.set_fcv(sub[CONF_FCV]))
     cg.add(var.set_sv(sub[CONF_SV]))
     cg.add(var.set_interval_ms(int(sub[CONF_INTERVAL].total_milliseconds)))
+
+
+async def _to_code_dashboard(config, ct002_var):
+    """Codegen for the optional `dashboard:` sub-block.
+
+    Mounts the status page + `api/status` on ESPHome's shared HTTP server.
+    The define gates dashboard.cpp, dashboard_state.cpp and the embedded page;
+    with AUTO_LOAD leaving the HTTP server out too, `dashboard: false` saves
+    about 90 KB of flash and the server's ~6 KB of heap.
+    """
+    sub = config[CONF_DASHBOARD]
+    cg.add_define("USE_CT002_DASHBOARD")
+    var = cg.new_Pvariable(sub[CONF_ID])
+    await cg.register_component(var, sub)
+    cg.add(var.set_ct002(ct002_var))
+
+    base = await cg.get_variable(sub[CONF_WEB_SERVER_BASE_ID])
+    cg.add(var.set_base(base))
+    cg.add(var.set_path(sub[CONF_PATH]))
+    cg.add(var.set_controls(sub[CONF_CONTROLS]))
+    for host in sub[CONF_ALLOWED_HOSTS]:
+        cg.add(var.add_allowed_host(host))
+
+    # When MQTT Insights is configured too, the page shows that integration's
+    # state — the same card the Python add-on's dashboard has.
+    if CONF_MQTT_INSIGHTS in config:
+        insights = await cg.get_variable(config[CONF_MQTT_INSIGHTS][CONF_ID])
+        cg.add(var.set_mqtt_insights(insights))
+
+    # Shown on the page's Diagnostics tab, so a user can tell which build
+    # they are looking at without reading the firmware log.
+    cg.add(var.set_version(_astrameter_version()))
+    cg.add(var.set_git_commit(_astrameter_git_commit()))
+    logger_config = CORE.config.get("logger") or {}
+    cg.add(var.set_log_level(str(logger_config.get("level", ""))))

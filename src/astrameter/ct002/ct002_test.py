@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from astrameter.ct002.ct002 import CT002
-from astrameter.ct002.protocol import build_payload
+from astrameter.ct002.ct002 import CT002, _values_finite
+from astrameter.ct002.protocol import build_payload, parse_request
 
 
 class _RecordingTransport:
@@ -12,7 +12,7 @@ class _RecordingTransport:
     def __init__(self) -> None:
         self.sent: list[bytes] = []
 
-    def sendto(self, data: bytes, addr) -> None:
+    def sendto(self, data: bytes, addr: tuple) -> None:
         self.sent.append(data)
 
 
@@ -51,6 +51,81 @@ def test_dedup_window_zero_disables() -> None:
         assert ct._dedup.should_process("consumer-A") is True
 
 
+def _drive_polls(ct: CT002, clock: FakeClock, gaps: list[float]) -> _RecordingTransport:
+    """Poll ``ct`` once per entry in *gaps*, waiting that long beforehand."""
+    transport = _RecordingTransport()
+    for gap in gaps:
+        clock.now += gap
+        asyncio.run(
+            ct._handle_request(_poll("AABBCCDDEEFF"), ("10.0.0.5", 50000), transport)
+        )
+    return transport
+
+
+def test_poll_interval_measures_the_battery_not_our_replies() -> None:
+    """`poll_interval` is the battery's cadence even while dedupe drops polls.
+
+    Measuring it after the dedupe gate would report our answer rate instead,
+    which is what made a 0.6 s window look like it had been rounded up
+    (issue #589).
+    """
+    clock = FakeClock()
+    clock.now = 1000.0
+    # Battery polls every 0.5 s; the window suppresses every other reply.
+    ct = CT002(ct_mac="", dedupe_time_window=0.6, clock=clock)
+    transport = _drive_polls(ct, clock, [0.0] + [0.5] * 8)
+
+    consumer = ct._consumers["aabbccddeeff"]
+    assert consumer.poll_interval == 0.5, "poll_interval must track every poll"
+    # Every other poll is answered, so replies land 1.0 s apart.
+    assert consumer.answer_interval == 1.0
+    assert len(transport.sent) == 5  # polls 1, 3, 5, 7, 9
+
+
+def test_answer_interval_matches_poll_interval_without_dedupe() -> None:
+    clock = FakeClock()
+    clock.now = 1000.0
+    ct = CT002(ct_mac="", dedupe_time_window=0.0, clock=clock)
+    transport = _drive_polls(ct, clock, [0.0] + [2.0] * 5)
+
+    consumer = ct._consumers["aabbccddeeff"]
+    assert consumer.poll_interval == 2.0
+    assert consumer.answer_interval == 2.0
+    assert len(transport.sent) == 6
+
+
+def test_deduped_poll_advances_the_status_revision() -> None:
+    """A suppressed poll still moves state, so it must move `rev` with it.
+
+    The status API's revision is how a client decides whether to re-render;
+    leaving it untouched would freeze a deduped battery at its last answered
+    poll even though its liveness and poll interval just changed.
+    """
+    clock = FakeClock()
+    clock.now = 1000.0
+    ct = CT002(ct_mac="", dedupe_time_window=0.6, clock=clock)
+    _drive_polls(ct, clock, [0.0])
+    after_first = ct._rev
+
+    clock.now += 0.1  # inside the window → suppressed
+    _drive_polls(ct, clock, [0.0])
+    assert ct._rev > after_first
+
+
+def test_deduped_poll_refreshes_liveness() -> None:
+    """A suppressed poll still keeps the consumer out of the eviction sweep."""
+    clock = FakeClock()
+    clock.now = 1000.0
+    ct = CT002(ct_mac="", dedupe_time_window=100.0, clock=clock)
+    # 40 s apart: past the adaptive fallback TTL, and every poll after the
+    # first is suppressed by the wide window.
+    _drive_polls(ct, clock, [0.0, 40.0])
+
+    clock.now += 1.0
+    ct._cleanup_consumers()
+    assert "aabbccddeeff" in ct._consumers
+
+
 def test_set_consumer_efficiency_window_weight_accepts_valid_range() -> None:
     ct = CT002()
     for value in (0.0, 0.25, 0.5, 1.0):
@@ -73,6 +148,11 @@ def test_consumer_efficiency_window_weight_defaults_to_one() -> None:
     assert ct._get_consumer("c1").efficiency_window_weight == 1.0
 
 
+def _mark_reported(ct: CT002, consumer_id: str, now: float) -> None:
+    """Fake a consumer whose last poll arrived at *now*."""
+    ct._get_consumer(consumer_id).timestamp = now
+
+
 def test_overrides_survive_consumer_eviction() -> None:
     """A battery that goes silent past its TTL is evicted, but its user-set
     control state is re-seeded onto the fresh consumer when it returns."""
@@ -87,7 +167,7 @@ def test_overrides_survive_consumer_eviction() -> None:
 
     # Mark it as having reported, then let it fall silent past the TTL.
     clock.now = 5.0
-    ct._get_consumer("c1").timestamp = clock.now
+    _mark_reported(ct, "c1", clock.now)
     clock.now += 11.0
     ct._cleanup_consumers()
     assert "c1" not in ct._consumers  # evicted
@@ -113,7 +193,7 @@ def test_override_tracks_latest_value_through_eviction() -> None:
     ct.set_consumer_auto_target("c1", True)
 
     clock.now = 5.0
-    ct._get_consumer("c1").timestamp = clock.now
+    _mark_reported(ct, "c1", clock.now)
     clock.now += 11.0
     ct._cleanup_consumers()
 
@@ -150,7 +230,9 @@ async def _gated_before_send(ct: CT002, gate: asyncio.Event) -> list[int]:
     returns a fixed grid reading.  Returns a one-element call counter list."""
     calls = [0]
 
-    async def before_send(_addr, _fields=None, _consumer_id=None):
+    async def before_send(
+        _addr: tuple, _request: object = None, _consumer_id: str | None = None
+    ) -> list[float]:
         calls[0] += 1
         await gate.wait()
         return [150.0, 0.0, 0.0]
@@ -236,3 +318,77 @@ async def test_poll_answered_again_after_burst_coalesced() -> None:
     # A later poll (a fresh reading) is still answered — no permanent drop.
     await ct._handle_request(_poll(mac), addr, transport)
     assert len(transport.sent) == 2
+
+
+# ---------------------------------------------------------------------------
+# Non-finite meter readings (issue #548): a NaN/Inf sample must take the same
+# zero-delta hold path as an unavailable meter and leave the stateful
+# controller untouched, so control recovers on the next finite reading.
+# Before the guard, one NaN poisoned the grid-state predictor permanently
+# (every later innovation is NaN) and the pace clamp turned the NaN reading
+# into a constant +pace_base_step command until restart.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+async def test_non_finite_reading_holds_and_control_recovers(bad: float) -> None:
+    clock = FakeClock()
+    ct = CT002(ct_mac="", active_control=True, clock=clock)
+    grid = [300.0]
+
+    async def before_send(
+        _addr: tuple, _request: object = None, _consumer_id: str | None = None
+    ) -> list[float]:
+        return [grid[0], 0.0, 0.0]
+
+    ct.before_send = before_send
+    transport = _RecordingTransport()
+    addr = ("192.168.178.134", 22222)
+
+    async def poll() -> list[str]:
+        clock.now += 15.0
+        await ct._handle_request(_poll("02b250b26777", power=0), addr, transport)
+        fields, err = parse_request(transport.sent[-1])
+        assert fields is not None, err
+        return fields
+
+    # Warm poll: import drives a positive (discharge) target.
+    r = await poll()
+    assert int(r[4]) > 0
+
+    # The meter glitches: a non-finite sample answers with a zero-delta hold.
+    grid[0] = bad
+    r = await poll()
+    assert [r[i] for i in (4, 5, 6, 7)] == ["0", "0", "0", "0"]
+
+    # The meter recovers with an export reading: control resumes and steers
+    # negative — a poisoned predictor kept this pinned at +pace_base_step.
+    grid[0] = -300.0
+    r = await poll()
+    assert int(r[4]) < 0
+
+
+def test_values_finite_helper() -> None:
+    assert _values_finite([1, 2.5, "300"]) is True
+    assert _values_finite([]) is True
+    assert _values_finite([float("nan")]) is False
+    assert _values_finite([1.0, float("inf")]) is False
+    assert _values_finite(["abc"]) is False
+    assert _values_finite([None]) is False
+    assert _values_finite([10**400]) is False  # float() raises OverflowError
+
+
+async def test_start_reports_the_port_the_os_assigned() -> None:
+    """``udp_port=0`` asks the OS for a free port; the CT must report the real one.
+
+    The log line and the status document both read ``self.udp_port``, so leaving
+    it at the configured 0 would tell an operator the emulator is listening on
+    port 0.
+    """
+    ct = CT002(udp_port=0)
+    await ct.start()
+    try:
+        assert ct.udp_port != 0
+        assert ct.status_snapshot().udp_port == ct.udp_port
+    finally:
+        await ct.stop()

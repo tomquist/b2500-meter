@@ -22,7 +22,27 @@ export interface State {
     deviceTypes: string[];
     deviceIds: string;
     skipPowermeterTest: boolean;
-    webConfigEnabled: boolean;
+    /// Tri-state, like the setting: "" leaves the config editor to the
+    /// dashboard (whose Configuration tab it is), "true" serves it without
+    /// one, "false" refuses it even with one.
+    webConfigEnabled: string;
+    dashboardEnabled: boolean;
+    /// ESPHome only. The firmware serves the dashboard unless told not to, so
+    /// this one starts true — unlike dashboardEnabled, which is the Python
+    /// service's opt-in.
+    esphomeDashboard: boolean;
+    /// ESPHome only. The board's page has no login of its own and no ingress
+    /// to sit behind, so its controls stay opt-in — unlike dashboardAllowWrite,
+    /// which the Python service and the add-on both ship on.
+    esphomeControls: boolean;
+    dashboardAllowWrite: boolean;
+    dashboardDirectAccess: boolean;
+    /// Comma-separated extra host names the web port answers under. Empty for
+    /// almost everyone: IP addresses, localhost, .local and .home.arpa always
+    /// work, and a
+    /// name that resolves through a nameserver is refused unless listed here
+    /// so no other site can aim a browser at this port.
+    dashboardAllowedHosts: string;
     webServerPort: string;
     throttleInterval: string;
     waitForNextMessage: string;
@@ -52,7 +72,17 @@ export function defaultState(): State {
       deviceTypes: ["ct002"],
       deviceIds: "",
       skipPowermeterTest: false,
-      webConfigEnabled: false,
+      webConfigEnabled: "",
+      // On by default, matching the service itself. It is read-only until
+      // `dashboardAllowWrite` says otherwise.
+      dashboardEnabled: true,
+      esphomeDashboard: true,
+      esphomeControls: false,
+      // On by default, matching the service and the add-on.
+      dashboardAllowWrite: true,
+      // Unauthenticated access to the add-on's port. Off unless asked for.
+      dashboardDirectAccess: false,
+      dashboardAllowedHosts: "",
       webServerPort: "",
       throttleInterval: "",
       waitForNextMessage: "",
@@ -91,6 +121,17 @@ function asStr(v: unknown, fallback: string): string {
 }
 function asBool(v: unknown, fallback: boolean): boolean {
   return typeof v === "boolean" ? v : fallback;
+}
+// The config editor was a checkbox before it was tri-state, so a saved state
+// can carry a boolean. `true` said "serve the editor" and still does; `false`
+// only ever meant "I did not tick this", never "keep the dashboard's
+// Configuration tab out" — the checkbox could not say that — so it restores as
+// unset rather than as the "off" that would newly take that tab away. Anything
+// outside the three known values is treated the same way, since the generator
+// reads every non-"true" string as False.
+function asWebConfig(v: unknown): string {
+  if (typeof v === "boolean") return v ? "true" : "";
+  return v === "true" || v === "false" ? v : "";
 }
 function asObject(v: unknown): Fields {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Fields) : {};
@@ -139,7 +180,13 @@ export function migrate(s: any): State {
         deviceTypes: Array.isArray(sg.deviceTypes) ? sg.deviceTypes.map((t: unknown) => String(t)) : dg.deviceTypes,
         deviceIds: asStr(sg.deviceIds, dg.deviceIds),
         skipPowermeterTest: asBool(sg.skipPowermeterTest, dg.skipPowermeterTest),
-        webConfigEnabled: asBool(sg.webConfigEnabled, dg.webConfigEnabled),
+        webConfigEnabled: asWebConfig(sg.webConfigEnabled),
+        dashboardEnabled: asBool(sg.dashboardEnabled, dg.dashboardEnabled),
+        esphomeDashboard: asBool(sg.esphomeDashboard, dg.esphomeDashboard),
+        esphomeControls: asBool(sg.esphomeControls, dg.esphomeControls),
+        dashboardAllowWrite: asBool(sg.dashboardAllowWrite, dg.dashboardAllowWrite),
+        dashboardDirectAccess: asBool(sg.dashboardDirectAccess, dg.dashboardDirectAccess),
+        dashboardAllowedHosts: asStr(sg.dashboardAllowedHosts, dg.dashboardAllowedHosts),
         webServerPort: asStr(sg.webServerPort, dg.webServerPort),
         throttleInterval: asStr(sg.throttleInterval, dg.throttleInterval),
         waitForNextMessage: asStr(sg.waitForNextMessage, dg.waitForNextMessage),

@@ -19,8 +19,15 @@ from __future__ import annotations
 
 import _ct002_e2e_backend as be
 import pytest
-from _ct002_e2e_backend import E2E_UDP_PORT, EsphomeSim, HarnessClock, find_free_ports
+from _ct002_e2e_backend import (
+    E2E_UDP_PORT,
+    EsphomeSim,
+    HarnessClock,
+    PollScheduler,
+    find_free_ports,
+)
 
+from astrameter.ct002.balancer import BalancerConfig
 from astrameter.ct002.ct002 import CT002
 from astrameter.simulator.battery import BatterySimulator
 from astrameter.simulator.load_model import LoadModel
@@ -30,7 +37,7 @@ pytestmark = pytest.mark.esphome_e2e
 
 
 @pytest.fixture(params=["python", "esphome"], autouse=True)
-def _emulator_backend(request):
+def _emulator_backend(request: pytest.FixtureRequest):
     if request.param == "esphome" and not be.have_esphome():
         pytest.skip("esphome CLI not on PATH; install with `uv tool install esphome`")
     be.ACTIVE_BACKEND = request.param
@@ -106,20 +113,21 @@ class _Issue376Harness:
                 udp_port=ct_port,
                 ct_mac=ct_mac,
                 active_control=True,
-                fair_distribution=True,
-                min_efficient_power=0,
+                balancer=BalancerConfig(fair_distribution=True, min_efficient_power=0),
                 clock=self.clock,
                 reset_fn=None,
                 consumer_ttl=100000,
             )
 
-            async def update_readings(_addr, _fields=None, _consumer_id=None):
+            async def update_readings(_addr, _request=None, _consumer_id=None):
                 grid = self.powermeter.compute_grid()
                 return [grid["phase_a"], grid["phase_b"], grid["phase_c"]]
 
             self.ct002.before_send = update_readings
         else:
             self.ct002 = None
+
+        self._scheduler = PollScheduler(self.batteries, self.clock, self._step_battery)
 
     async def start(self) -> None:
         await self.powermeter.start()
@@ -152,18 +160,14 @@ class _Issue376Harness:
         await b._send_request()
 
     async def step(self, n: int = 1) -> None:
-        for _ in range(n):
-            max_dt = max(b.poll_interval for b in self.batteries)
-            for b in self.batteries:
-                await self._step_battery(b)
-            self.clock.advance(max_dt)
+        await self._scheduler.step(n)
 
     # -- backend-agnostic emulator-state accessors -------------------------
 
     def phase_dchrg(self, phase: str) -> float:
         """Aggregated *_dchrg_power for a phase (positive instructed power)."""
         if self.backend == "python":
-            return self.ct002._collect_reports_by_phase()[phase]["dchrg_power"]
+            return self.ct002._collect_reports_by_phase()[phase].dchrg_power
         total = 0.0
         for c in self._esphome.dump()["consumers"].values():
             if c["phase"] != phase:

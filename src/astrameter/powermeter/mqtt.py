@@ -1,28 +1,23 @@
 import asyncio
 import contextlib
 import json
+import logging
 import ssl
 
 import aiomqtt
-from jsonpath_ng.ext import parse
 
-from astrameter.config.logger import logger
+from .base import PushPowermeter, as_list
+from .json_http import extract_json_value
 
-from .base import Powermeter
+# Stdlib logger: avoid importing astrameter.config (config_loader imports powermeter).
+logger = logging.getLogger("astrameter")
 
 RECONNECT_DELAY = 5
 
 
-def extract_json_value(data, path):
-    jsonpath_expr = parse(path)
-    match = jsonpath_expr.find(data)
-    if match:
-        return float(match[0].value)
-    else:
-        raise ValueError("No match found for the JSON path")
+class MqttPowermeter(PushPowermeter):
+    _TIMEOUT_MESSAGE = "Timeout waiting for MQTT message"
 
-
-class MqttPowermeter(Powermeter):
     def __init__(
         self,
         broker: str,
@@ -32,7 +27,8 @@ class MqttPowermeter(Powermeter):
         username: str | None = None,
         password: str | None = None,
         tls: bool = False,
-    ):
+    ) -> None:
+        super().__init__()
         self.broker = broker
         self.port = port
         self.username = username
@@ -40,7 +36,7 @@ class MqttPowermeter(Powermeter):
         self.tls = tls
 
         # Normalize topic(s) and json_path(s) into subscription list
-        topics = [topic] if isinstance(topic, str) else list(topic)
+        topics = as_list(topic)
         if json_path is None:
             paths: list[str | None] = [None] * len(topics)
         elif isinstance(json_path, str):
@@ -68,14 +64,12 @@ class MqttPowermeter(Powermeter):
             zip(topics, paths, strict=True)
         )
 
-        # Build O(1) topic -> subscription index mapping
         self._topic_indices: dict[str, list[int]] = {}
-        for i, (t, _) in enumerate(self._subscriptions):
-            self._topic_indices.setdefault(t, []).append(i)
+        for index, (topic_name, _) in enumerate(self._subscriptions):
+            self._topic_indices.setdefault(topic_name, []).append(index)
 
         self.values: list[float | None] = [None] * len(self._subscriptions)
         self._run_task: asyncio.Task[None] | None = None
-        self._message_event = asyncio.Event()
         self._connected_event = asyncio.Event()
 
     @property
@@ -94,55 +88,65 @@ class MqttPowermeter(Powermeter):
         self._run_task = asyncio.create_task(self._run())
 
     async def _run(self) -> None:
-        unique_topics = list(self._topic_indices.keys())
         tls_context = ssl.create_default_context() if self.tls else None
         while True:
             try:
-                async with aiomqtt.Client(
-                    hostname=self.broker,
-                    port=self.port,
-                    username=self.username,
-                    password=self.password,
-                    tls_context=tls_context,
-                    keepalive=60,
-                ) as client:
-                    logger.info(f"Connected to MQTT broker {self.broker}:{self.port}")
-                    for t in unique_topics:
-                        await client.subscribe(t)
-                    self._connected_event.set()
-                    async for message in client.messages:
-                        raw = message.payload
-                        payload = raw.decode() if isinstance(raw, bytes) else str(raw)
-                        topic_str = str(message.topic)
-                        indices = self._topic_indices.get(topic_str, [])
-                        if not indices:
-                            continue
-                        # Parse JSON once if any subscription for this topic needs it
-                        parsed_json = None
-                        for i in indices:
-                            _, jp = self._subscriptions[i]
-                            try:
-                                if jp:
-                                    if parsed_json is None:
-                                        parsed_json = json.loads(payload)
-                                    self.values[i] = extract_json_value(parsed_json, jp)
-                                else:
-                                    self.values[i] = float(payload)
-                                self._message_event.set()
-                            except (json.JSONDecodeError, ValueError) as e:
-                                logger.error(
-                                    f"Failed to parse MQTT payload for index {i}: {e}"
-                                )
-            except aiomqtt.MqttError as e:
+                await self._serve_connection(tls_context)
+            except aiomqtt.MqttError as exc:
                 self._connected_event.clear()
                 # Reconnect loop — traceback would be noisy, keep it terse.
                 logger.warning(
                     "MQTT connection error: %s. Reconnecting in %ss...",
-                    e,
+                    exc,
                     RECONNECT_DELAY,
                     exc_info=False,
                 )
                 await asyncio.sleep(RECONNECT_DELAY)
+
+    async def _serve_connection(self, tls_context: ssl.SSLContext | None) -> None:
+        """Subscribe and store every message, until the connection drops."""
+        async with aiomqtt.Client(
+            hostname=self.broker,
+            port=self.port,
+            username=self.username,
+            password=self.password,
+            tls_context=tls_context,
+            keepalive=60,
+        ) as client:
+            logger.info("Connected to MQTT broker %s:%s", self.broker, self.port)
+            for topic_name in self._topic_indices:
+                await client.subscribe(topic_name)
+            self._connected_event.set()
+            async for message in client.messages:
+                raw = message.payload
+                payload = raw.decode() if isinstance(raw, bytes) else str(raw)
+                self._store(str(message.topic), payload)
+
+    def _store(self, topic: str, payload: str) -> None:
+        """Fill every subscription slot *topic* feeds from one payload.
+
+        Several subscriptions can read different JSON paths out of the same
+        topic, so the document is parsed once for all of them.
+        """
+        document: object = None
+        for index in self._topic_indices.get(topic, ()):
+            _, json_path = self._subscriptions[index]
+            try:
+                if json_path:
+                    if document is None:
+                        document = json.loads(payload)
+                    self.values[index] = extract_json_value(document, json_path)
+                else:
+                    self.values[index] = float(payload)
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.error(
+                    "Failed to parse MQTT payload on %s for index %d: %s",
+                    topic,
+                    index,
+                    exc,
+                )
+                continue
+            self._message_event.set()
 
     async def stop(self) -> None:
         if self._run_task:
@@ -165,26 +169,13 @@ class MqttPowermeter(Powermeter):
             return list(self.values)  # type: ignore[arg-type]
         raise ValueError("No value received from MQTT")
 
-    async def wait_for_message(self, timeout=5):
-        if all(v is not None for v in self.values):
-            return
+    async def wait_for_message(self, timeout: float = 5) -> None:
+        # Every subscription must have delivered, so keep waiting for messages
+        # until the deadline rather than returning on the first one.
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while True:
+        while not all(v is not None for v in self.values):
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise TimeoutError("Timeout waiting for MQTT message")
-            self._message_event.clear()
-            try:
-                await asyncio.wait_for(self._message_event.wait(), timeout=remaining)
-            except asyncio.TimeoutError:
-                raise TimeoutError("Timeout waiting for MQTT message") from None
-            if all(v is not None for v in self.values):
-                return
-
-    async def wait_for_next_message(self, timeout=5):
-        self._message_event.clear()
-        try:
-            await asyncio.wait_for(self._message_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timeout waiting for MQTT message") from None
+                raise TimeoutError(self._TIMEOUT_MESSAGE)
+            await self.wait_for_next_message(remaining)

@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import json
 import logging
 import os
@@ -9,7 +8,14 @@ from collections.abc import Callable
 
 import aiohttp
 
-from .base import Powermeter, stream_fresh
+from .base import stream_fresh
+from .ws_client import (
+    WS_HEARTBEAT_SECONDS,
+    WebSocket,
+    WebSocketConnect,
+    WebSocketPowermeter,
+    cancel,
+)
 
 # Stdlib logger: avoid importing astrameter.config (config_loader imports powermeter).
 logger = logging.getLogger("astrameter")
@@ -17,12 +23,6 @@ logger = logging.getLogger("astrameter")
 # Certificate: https://api-documentation.homewizard.com/assets/files/homewizard-ca-cert-56d062ef8e71d1038f464ea905d42fc6.pem
 # Docs: https://api-documentation.homewizard.com/docs/v2/authorization#https
 CA_CERT_PATH = os.path.join(os.path.dirname(__file__), "homewizard_ca.pem")
-
-# WebSocket heartbeat (seconds).  With this set, aiohttp sends ping
-# frames at this interval and forcibly closes the connection if no
-# pong is received within 2x the heartbeat — catches half-open TCP
-# sockets that would otherwise freeze ``async for msg in ws`` forever.
-WS_HEARTBEAT_SECONDS = 30.0
 
 # Maximum age of the last-received measurement before ``get_powermeter_watts``
 # considers the value stale and raises.  HomeWizard P1 dongles push
@@ -36,8 +36,43 @@ DEFAULT_MAX_MEASUREMENT_AGE_SECONDS = 30.0
 # frames but has stopped sending measurement events).
 WATCHDOG_TIMEOUT_SECONDS = 45.0
 
+# How far from zero the total has to be before three zero phases are read as
+# "this meter publishes no per-phase power" rather than as a house sitting at
+# zero.  Both registers are whole watts, and they are measured separately, so a
+# healthy three-phase meter can round its phases to 0 W beside a total of ±1 W.
+# It gates that one finding only: once made, it latches (see _note_total_only),
+# so a meter without per-phase power keeps its small totals.
+MIN_TOTAL_FALLBACK_W = 5.0
 
-class HomeWizardPowermeter(Powermeter):
+
+def _number(value: object) -> float | None:
+    """The reading as a float, or ``None`` when the field is absent or not numeric."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _phase_values(data: dict) -> list[float] | None:
+    """The per-phase readings, or ``None`` when the meter publishes none.
+
+    L2/L3 are absent on a single-phase meter and read as 0 W; a phase that is
+    present but not numeric makes the whole set unusable, because there is no
+    way to tell which leg the missing watts belong to.
+    """
+    if "power_l1_w" not in data:
+        return None
+    values = [
+        _number(data.get(key, 0)) for key in ("power_l1_w", "power_l2_w", "power_l3_w")
+    ]
+    if any(value is None for value in values):
+        return None
+    return [value for value in values if value is not None]
+
+
+class HomeWizardPowermeter(WebSocketPowermeter):
+    _TIMEOUT_MESSAGE = "Timeout waiting for HomeWizard measurement"
+    _LOG_NAME = "HomeWizard"
+
     def __init__(
         self,
         ip: str,
@@ -48,29 +83,30 @@ class HomeWizardPowermeter(Powermeter):
         max_measurement_age_seconds: float = DEFAULT_MAX_MEASUREMENT_AGE_SECONDS,
         clock: Callable[[], float] | None = None,
     ) -> None:
+        super().__init__()
         self.ip = ip
         self.token = token
         self.serial = serial
         self._verify_ssl = verify_ssl
+        self._ssl_context: ssl.SSLContext | None = None
         self._max_measurement_age_seconds = max(0.0, max_measurement_age_seconds)
         self._clock = clock or time.monotonic
         self.values: list[float] | None = None
         self._last_measurement_time: float | None = None
-        # Read-only health flag for stream_online(): set once the WebSocket is
-        # up and subscribed, cleared whenever the connection drops.
-        self._connected = False
         # True only while measurements arrive as a *continuous* stream (each one
         # before the previous goes stale).  A broken P1 dongle still accepts the
         # WebSocket and replays a single cached value every time the watchdog
         # force-reconnects; that lone sample would otherwise reset the freshness
         # window and flap the "Online" sensor on/off.  See stream_online().
         self._stream_healthy = False
-        self._session: aiohttp.ClientSession | None = None
-        self._ws_task: asyncio.Task[None] | None = None
-        self._message_event = asyncio.Event()
-        # Set whenever we receive a new measurement; the ws_loop watchdog
-        # clears it after checking staleness to re-arm the timer.
+        # Set whenever we receive a new measurement; the read watchdog clears it
+        # after checking staleness to re-arm the timer.
         self._fresh_measurement_event = asyncio.Event()
+        # Set once the meter has been found to publish a total but no per-phase
+        # power, so later samples keep reading the total however small it gets.
+        # See _note_total_only().
+        self._phases_unusable = False
+        self._total_only_logged = False
 
         if not verify_ssl:
             logger.warning(
@@ -94,110 +130,69 @@ class HomeWizardPowermeter(Powermeter):
             return
         self.values = None
         self._last_measurement_time = None
-        self._connected = False
         self._stream_healthy = False
-        self._message_event = asyncio.Event()
-        self._fresh_measurement_event = asyncio.Event()
-        self._session = aiohttp.ClientSession()
-        self._ws_task = asyncio.create_task(self._ws_loop())
+        self._message_event.clear()
+        self._fresh_measurement_event.clear()
+        self._phases_unusable = False
+        self._total_only_logged = False
+        await super().start()
 
-    async def stop(self) -> None:
-        # Clear before cancelling: the ws_loop re-raises CancelledError before
-        # its own reset runs, so stream_online() would otherwise stay True.
-        self._connected = False
-        if self._ws_task:
-            self._ws_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._ws_task
-            self._ws_task = None
-        if self._session:
-            await self._session.close()
-            self._session = None
+    def _connect(self, session: aiohttp.ClientSession) -> WebSocketConnect:
+        if self._ssl_context is None:
+            # Built once and kept: _connect runs on every reconnect, and
+            # building the context reads the bundled CA off disk.
+            self._ssl_context = self._build_ssl_context()
+        return session.ws_connect(
+            f"wss://{self.ip}/api/ws",
+            ssl=self._ssl_context,
+            server_hostname=f"appliance/p1dongle/{self.serial}",
+            heartbeat=WS_HEARTBEAT_SECONDS,
+        )
 
-    async def _ws_loop(self) -> None:
-        url = f"wss://{self.ip}/api/ws"
-        ssl_context = self._build_ssl_context()
-        server_hostname = f"appliance/p1dongle/{self.serial}"
-        while True:
-            try:
-                assert self._session is not None
-                async with self._session.ws_connect(
-                    url,
-                    ssl=ssl_context,
-                    server_hostname=server_hostname,
-                    heartbeat=WS_HEARTBEAT_SECONDS,
-                ) as ws:
-                    logger.info(f"HomeWizard WebSocket connected to {self.ip}")
-                    # Start a watchdog that force-closes the ws if no
-                    # measurement arrives within WATCHDOG_TIMEOUT_SECONDS.
-                    # This catches the case where the dongle's TCP
-                    # keepalives succeed (so aiohttp's heartbeat doesn't
-                    # trip) but the measurement stream has stalled at
-                    # the application layer.
-                    watchdog = asyncio.create_task(self._measurement_watchdog(ws))
-                    try:
-                        async for msg in ws:
-                            if msg.type == aiohttp.WSMsgType.TEXT:
-                                await self._handle_message(ws, msg.data)
-                            elif msg.type in (
-                                aiohttp.WSMsgType.ERROR,
-                                aiohttp.WSMsgType.CLOSE,
-                                aiohttp.WSMsgType.CLOSING,
-                                aiohttp.WSMsgType.CLOSED,
-                            ):
-                                break
-                    finally:
-                        watchdog.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await watchdog
-                    logger.info("HomeWizard WebSocket closed")
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error("HomeWizard WebSocket error: %s", e, exc_info=True)
-            self._connected = False
-            await asyncio.sleep(5)
+    async def _read(self, ws: WebSocket) -> None:
+        # A watchdog alongside the reader force-closes the socket when no
+        # measurement arrives, which the aiohttp heartbeat cannot catch: the
+        # dongle's TCP keepalives keep answering while the measurement stream
+        # has stalled a layer above them.
+        watchdog = asyncio.create_task(self._measurement_watchdog(ws))
+        try:
+            await super()._read(ws)
+        finally:
+            await cancel(watchdog)
 
-    async def _measurement_watchdog(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+    async def _measurement_watchdog(self, ws: WebSocket) -> None:
         """Force-close *ws* when no measurement has arrived within
         :data:`WATCHDOG_TIMEOUT_SECONDS`.
 
-        HomeWizard P1 dongles normally push a measurement every ~1 s.
-        A dongle that stops streaming without closing the TCP connection
-        will otherwise sit forever in :meth:`_ws_loop`'s
-        ``async for msg in ws`` — the exact failure mode observed in
-        the user's report.
+        HomeWizard P1 dongles normally push a measurement every ~1 s. A dongle
+        that stops streaming without closing the TCP connection would otherwise
+        sit in the read loop forever.
         """
-        try:
-            while True:
-                self._fresh_measurement_event.clear()
-                try:
-                    await asyncio.wait_for(
-                        self._fresh_measurement_event.wait(),
-                        timeout=WATCHDOG_TIMEOUT_SECONDS,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "HomeWizard watchdog: no measurement for %.0fs, "
-                        "force-closing WebSocket to trigger a reconnect",
-                        WATCHDOG_TIMEOUT_SECONDS,
-                    )
-                    await ws.close()
-                    return
-        except asyncio.CancelledError:
-            raise
+        while True:
+            self._fresh_measurement_event.clear()
+            try:
+                await asyncio.wait_for(
+                    self._fresh_measurement_event.wait(),
+                    timeout=WATCHDOG_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "HomeWizard watchdog: no measurement for %.0fs, "
+                    "force-closing WebSocket to trigger a reconnect",
+                    WATCHDOG_TIMEOUT_SECONDS,
+                )
+                await ws.close()
+                return
 
-    async def _handle_message(
-        self, ws: aiohttp.ClientWebSocketResponse, raw: str
-    ) -> None:
+    async def _on_text(self, ws: WebSocket, raw: str) -> None:
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
-            logger.error(f"HomeWizard: failed to decode message: {raw}")
+            logger.error("HomeWizard: failed to decode message: %s", raw)
             return
 
         if not isinstance(msg, dict):
-            logger.error(f"HomeWizard: unexpected message format: {raw}")
+            logger.error("HomeWizard: unexpected message format: %s", raw)
             return
 
         msg_type = msg.get("type")
@@ -213,19 +208,27 @@ class HomeWizardPowermeter(Powermeter):
                 self._handle_measurement(data)
         elif msg_type == "error":
             error_data = msg.get("data", {})
-            logger.error(f"HomeWizard error: {error_data.get('message', msg)}")
+            logger.error("HomeWizard error: %s", error_data.get("message", msg))
         else:
-            logger.debug(f"HomeWizard: unknown message type: {msg_type}")
+            logger.debug("HomeWizard: unknown message type: %s", msg_type)
 
     def _handle_measurement(self, data: dict) -> None:
-        if "power_l1_w" in data:
-            values = [
-                data["power_l1_w"],
-                data.get("power_l2_w", 0),
-                data.get("power_l3_w", 0),
-            ]
-        elif "power_w" in data:
-            values = [data["power_w"]]
+        total = _number(data.get("power_w"))
+        phases = _phase_values(data)
+        if phases is not None and any(phases):
+            # Whatever was concluded before, this meter does publish per-phase.
+            self._phases_unusable = False
+            values = phases
+        elif total is not None and (
+            phases is None
+            or self._phases_unusable
+            or abs(total) >= MIN_TOTAL_FALLBACK_W
+        ):
+            if phases is not None:
+                self._note_total_only(total)
+            values = [total]
+        elif phases is not None:
+            values = phases
         else:
             return
 
@@ -246,6 +249,30 @@ class HomeWizardPowermeter(Powermeter):
         self._message_event.set()
         self._fresh_measurement_event.set()
 
+    def _note_total_only(self, total: float) -> None:
+        """Record that this meter publishes no per-phase power, and say so once.
+
+        The finding latches: from here on the total is read however small it
+        gets, instead of the reading dropping back to three zeroes every time
+        the house passes near zero.  It is cleared again by any non-zero phase.
+
+        Not a fault to fix, so info rather than a warning: a three-phase
+        connection without neutral (3x230 V, common in Belgium) is a perfectly
+        ordinary supply whose meter publishes the total only, with the per-phase
+        registers left at 0 W.  Worth saying once because it explains why the
+        dashboard shows the whole house on phase A, the way a single-phase meter
+        does.
+        """
+        self._phases_unusable = True
+        if self._total_only_logged:
+            return
+        self._total_only_logged = True
+        logger.info(
+            "HomeWizard: meter publishes no per-phase power (all phases 0 W, "
+            "total %.0f W); reading the total instead",
+            total,
+        )
+
     def stream_online(self) -> bool | None:
         return (
             self._connected
@@ -258,29 +285,13 @@ class HomeWizardPowermeter(Powermeter):
         )
 
     async def get_powermeter_watts(self) -> list[float]:
-        if self.values is None:
+        last = self._last_measurement_time
+        if self.values is None or last is None:
             raise ValueError("No value received from HomeWizard")
-        if (
-            self._max_measurement_age_seconds > 0
-            and self._last_measurement_time is not None
-        ):
-            age = self._clock() - self._last_measurement_time
-            if age > self._max_measurement_age_seconds:
-                raise ValueError(
-                    f"HomeWizard measurement is stale "
-                    f"({age:.1f}s old, max {self._max_measurement_age_seconds:.1f}s)"
-                )
+        max_age = self._max_measurement_age_seconds
+        if not stream_fresh(last, max_age, self._clock):
+            age = self._clock() - last
+            raise ValueError(
+                f"HomeWizard measurement is stale ({age:.1f}s old, max {max_age:.1f}s)"
+            )
         return list(self.values)
-
-    async def wait_for_message(self, timeout: float = 5) -> None:
-        try:
-            await asyncio.wait_for(self._message_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timeout waiting for HomeWizard measurement") from None
-
-    async def wait_for_next_message(self, timeout: float = 5) -> None:
-        self._message_event.clear()
-        try:
-            await asyncio.wait_for(self._message_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timeout waiting for HomeWizard measurement") from None

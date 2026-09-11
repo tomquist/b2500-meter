@@ -4,6 +4,8 @@
 
 import {
   getPowermeter,
+  parseChannels,
+  formatChannels,
   PER_METER_TUNING,
   CT_BASIC,
   CT_ACTIVE,
@@ -58,9 +60,30 @@ function generalSection(state: State): string {
   lines.push(`DEVICE_TYPE = ${types}`);
   if (!isBlank(g.deviceIds)) lines.push(`DEVICE_IDS = ${g.deviceIds.trim()}`);
   lines.push(`SKIP_POWERMETER_TEST = ${boolToIni(!!g.skipPowermeterTest)}`);
-  if (g.webConfigEnabled) {
-    lines.push("WEB_CONFIG_ENABLED = True");
-    if (!isBlank(g.webServerPort)) lines.push(`WEB_SERVER_PORT = ${g.webServerPort}`);
+  // Tri-state: written only when the user answered, since leaving it out is
+  // itself an answer — the config editor then follows the dashboard below.
+  if (!isBlank(g.webConfigEnabled)) {
+    lines.push(`WEB_CONFIG_ENABLED = ${g.webConfigEnabled === "true" ? "True" : "False"}`);
+  }
+  // The dashboard is on unless the form says otherwise (`undefined` from an
+  // ad-hoc caller means "default", and the default is on). Written out either
+  // way — it is the one line a user goes looking for to turn the page off.
+  const dashboardEnabled = g.dashboardEnabled !== false;
+  lines.push(`DASHBOARD_ENABLED = ${boolToIni(dashboardEnabled)}`);
+  // Writes are on by default too, and this is the line someone turns off after
+  // reading the security section — so it is written out whenever the page is
+  // served, not only when it deviates.
+  if (dashboardEnabled) lines.push(`DASHBOARD_ALLOW_WRITE = ${boolToIni(g.dashboardAllowWrite !== false)}`);
+  // Only emitted when the user named something: the default allowlist (IPs,
+  // localhost, .local) covers almost every setup, and an empty line here would
+  // read as a knob that needs turning.
+  if (dashboardEnabled && !isBlank(g.dashboardAllowedHosts)) {
+    lines.push(`DASHBOARD_ALLOWED_HOSTS = ${g.dashboardAllowedHosts}`);
+  }
+  // The port carries the health check too, so a chosen one is kept even when
+  // neither the dashboard nor the editor is served on it.
+  if (!isBlank(g.webServerPort)) {
+    lines.push(`WEB_SERVER_PORT = ${g.webServerPort}`);
   }
   if (!isBlank(g.throttleInterval)) lines.push(`THROTTLE_INTERVAL = ${g.throttleInterval}`);
   if (!isBlank(g.waitForNextMessage)) lines.push(`WAIT_FOR_NEXT_MESSAGE = ${g.waitForNextMessage}`);
@@ -80,6 +103,8 @@ function meterSection(meter: Meter, opts: { multi: boolean }): string {
   const phaseList = pm.phaseListKeys && meter.phases === 3 ? pm.phaseListKeys : null;
 
   for (const field of pm.fields) {
+    // CHANNELS is normalized below so Python and ESPHome share one grammar.
+    if (field.key === "CHANNELS") continue;
     let value = fields[field.key];
     if (phaseList && field.key === "TOPIC" && !isBlank(value)) {
       lines.push(`TOPICS = ${String(value).trim()}`);
@@ -97,6 +122,21 @@ function meterSection(meter: Meter, opts: { multi: boolean }): string {
   // PER_PHASE) rather than per-phase field lists.
   if (pm.phaseFlagKey && meter.phases === 3) {
     lines.push(`${pm.phaseFlagKey} = True`);
+  }
+
+  // CHANNELS: positive decimal ints only (same rules as Python parse_channels).
+  // Three-phase keeps a valid 3-id list or falls back to phaseChannelsValue;
+  // single-phase keeps a single valid id or defaults to "1".
+  if (pm.fields.some((f) => f.key === "CHANNELS")) {
+    let ids = parseChannels(fields.CHANNELS);
+    if (pm.phaseChannelsValue && meter.phases === 3) {
+      if (!ids || ids.length !== 3) {
+        ids = parseChannels(pm.phaseChannelsValue) ?? [1, 2, 3];
+      }
+    } else if (!ids || ids.length !== 1) {
+      ids = [1];
+    }
+    lines.push(`CHANNELS = ${formatChannels(ids)}`);
   }
 
   // Per-meter tuning (throttle, smoothing, transform, hampel, PID …)
@@ -306,7 +346,9 @@ function esphomeSensor(state: State) {
     const sensors = (use3 ? ids : ["grid_l1"]).map((id, i) => templateSensor(id) + phaseFilterBlock(i));
     const url = use3 ? esp.url3!(f) : (esp.url1 ? esp.url1(f) : "http://example.com/api");
     const lambdaBody = use3
-      ? esp.lambda3
+      ? typeof esp.lambda3 === "function"
+        ? esp.lambda3(f)
+        : esp.lambda3
       : typeof esp.lambda1 === "function"
         ? esp.lambda1(f)
         : esp.lambda1;
@@ -570,6 +612,29 @@ export function generateEsphome(state: State): string {
   if (fb) ctLines.push(fb);
   for (const b of ct002OptionalBlocks(state.ct)) ctLines.push(b);
 
+  // The live status dashboard, served by the board itself. It is on by
+  // default, so the only things worth writing down are the two deviations:
+  // leaving it out of the firmware, and allowing writes. Controls have their
+  // own flag here: the board has no ingress to sit behind, so unlike the
+  // service's DASHBOARD_ALLOW_WRITE they stay off until asked for.
+  if (state.general && state.general.esphomeDashboard === false) {
+    ctLines.push(`${IND}dashboard: false`);
+  } else if (state.general && (state.general.esphomeControls || !isBlank(state.general.dashboardAllowedHosts))) {
+    const dash = [`${IND}dashboard:`];
+    if (state.general.esphomeControls) dash.push(`${IND}${IND}controls: true`);
+    // The board's IP and its `.local` mDNS name are allowed without asking, so
+    // this only appears when the user named something else — a reverse proxy.
+    const hosts = String(state.general.dashboardAllowedHosts || "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
+    if (hosts.length) {
+      dash.push(`${IND}${IND}allowed_hosts:`);
+      for (const name of hosts) dash.push(`${IND}${IND}${IND}- ${name}`);
+    }
+    ctLines.push(dash.join("\n"));
+  }
+
   if (wantInsights) {
     const mf = state.mqttInsights.fields || {};
     const sub = [`${IND}mqtt_insights:`];
@@ -672,6 +737,18 @@ export function generateHomeAssistant(state: State): string {
   add("throttle_interval", !isBlank(g.throttleInterval) ? g.throttleInterval : tuning.THROTTLE_INTERVAL);
   add("wait_for_next_message", !isBlank(g.waitForNextMessage) ? g.waitForNextMessage : tuning.WAIT_FOR_NEXT_MESSAGE);
   add("dedupe_time_window", g.dedupeTimeWindow);
+
+  // The add-on always serves the dashboard — it is the sidebar panel — so
+  // there is no option to emit for that. Only a read-only dashboard deviates
+  // from the add-on default.
+  if (!g.dashboardAllowWrite) add("dashboard_allow_write", false);
+  // Reaching the page on the add-on's own port, bypassing the Home Assistant
+  // login that ingress provides. Off in the add-on, so only opting in is worth
+  // emitting.
+  if (g.dashboardDirectAccess) add("dashboard_direct_access", true);
+  // Only meaningful alongside that port, but harmless on its own, so it is
+  // emitted whenever the user named a host rather than gated on it.
+  add("dashboard_allowed_hosts", g.dashboardAllowedHosts);
 
   // CT identity / control-mode / efficiency / DC keep-alive options.
   const ctf = (state.ct && state.ct.fields) || {};

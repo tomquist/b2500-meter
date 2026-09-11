@@ -2,6 +2,8 @@ import asyncio
 import contextlib
 import json
 import ssl
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -10,8 +12,8 @@ import pytest
 from .homewizard import HomeWizardPowermeter
 
 
-def _create_powermeter(**overrides):
-    defaults = dict(
+def _create_powermeter(**overrides: Any) -> HomeWizardPowermeter:
+    defaults: dict[str, Any] = dict(
         ip="192.168.1.1",
         token="ABCD1234",
         serial="aabbccddee",
@@ -27,7 +29,7 @@ def _ws_text(data: dict) -> aiohttp.WSMessage:
 # --- Category A: Measurement parsing ---
 
 
-def test_measurement_three_phase():
+def test_measurement_three_phase() -> None:
     pm = _create_powermeter()
     pm._handle_measurement(
         {"power_w": -543, "power_l1_w": -200, "power_l2_w": -143, "power_l3_w": -200}
@@ -35,31 +37,121 @@ def test_measurement_three_phase():
     assert pm.values == [-200, -143, -200]
 
 
-def test_measurement_single_phase():
+def test_measurement_single_phase() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": 500})
     assert pm.values == [500]
 
 
-def test_measurement_missing_phases():
+def test_measurement_missing_phases() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": -543, "power_l1_w": -543})
     assert pm.values == [-543, 0, 0]
 
 
-def test_measurement_no_power_fields():
+def test_measurement_falls_back_to_total_when_phases_are_all_zero() -> None:
+    """Issue #650: a 3x230 V connection without neutral publishes a correct
+    total beside three constant zeroes."""
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [-73]
+
+
+def test_measurement_keeps_zero_phases_when_total_is_zero() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": 0, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [0, 0, 0]
+
+
+def test_small_total_is_kept_once_the_meter_is_known_to_lack_phases() -> None:
+    """The rounding-noise band gates the *finding*, not every later reading."""
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    pm._handle_measurement(
+        {"power_w": -4, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [-4]
+
+
+def test_real_phases_clear_the_total_only_finding() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": -30, "power_l2_w": -43, "power_l3_w": 0}
+    )
+    assert pm.values == [-30, -43, 0]
+    pm._handle_measurement(
+        {"power_w": -4, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [0, 0, 0]
+
+
+def test_measurement_keeps_zero_phases_when_total_is_rounding_noise() -> None:
+    """A healthy meter rounds its phases to 0 W beside a total of ±1 W."""
+    pm = _create_powermeter()
+    with patch("astrameter.powermeter.homewizard.logger") as log:
+        pm._handle_measurement(
+            {"power_w": -1, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+        )
+    assert pm.values == [0, 0, 0]
+    assert log.info.call_count == 0
+
+
+def test_measurement_keeps_phases_when_one_is_non_zero() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": -73, "power_l3_w": 0}
+    )
+    assert pm.values == [0, -73, 0]
+
+
+def test_measurement_falls_back_to_total_when_a_phase_is_not_numeric() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": None, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [-73]
+
+
+def test_measurement_ignores_non_numeric_total() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement({"power_w": "nope"})
+    assert pm.values is None
+
+
+def test_total_only_is_noted_once_and_is_not_a_warning() -> None:
+    """A supply whose meter reports no per-phase power is ordinary, not a fault."""
+    pm = _create_powermeter()
+    with patch("astrameter.powermeter.homewizard.logger") as log:
+        for _ in range(3):
+            pm._handle_measurement(
+                {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+            )
+    assert log.info.call_count == 1
+    assert log.warning.call_count == 0
+
+
+def test_measurement_no_power_fields() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"energy_import_kwh": 1234.5})
     assert pm.values is None
 
 
-def test_negative_power_preserved():
+def test_negative_power_preserved() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": -1500})
     assert pm.values == [-1500]
 
 
-def test_measurement_sets_event():
+def test_measurement_sets_event() -> None:
     pm = _create_powermeter()
     assert not pm._message_event.is_set()
     pm._handle_measurement({"power_w": 100})
@@ -69,10 +161,10 @@ def test_measurement_sets_event():
 # --- Category B: Auth/subscribe flow ---
 
 
-async def test_authorization_requested_sends_token():
+async def test_authorization_requested_sends_token() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(
+    await pm._on_text(
         ws,
         json.dumps(
             {"type": "authorization_requested", "data": {"api_version": "2.0.0"}}
@@ -81,59 +173,57 @@ async def test_authorization_requested_sends_token():
     ws.send_json.assert_called_once_with({"type": "authorization", "data": "ABCD1234"})
 
 
-async def test_authorized_subscribes_to_measurements():
+async def test_authorized_subscribes_to_measurements() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(ws, json.dumps({"type": "authorized"}))
+    await pm._on_text(ws, json.dumps({"type": "authorized"}))
     ws.send_json.assert_called_once_with({"type": "subscribe", "data": "measurement"})
 
 
-async def test_error_message_does_not_crash():
+async def test_error_message_does_not_crash() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(
+    await pm._on_text(
         ws,
         json.dumps({"type": "error", "data": {"message": "user:not-authorized"}}),
     )
     assert pm.values is None
 
 
-async def test_malformed_json_does_not_crash():
+async def test_malformed_json_does_not_crash() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(ws, "not valid json")
+    await pm._on_text(ws, "not valid json")
     assert pm.values is None
 
 
-async def test_unknown_message_type_does_not_crash():
+async def test_unknown_message_type_does_not_crash() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(ws, json.dumps({"type": "unknown_type"}))
+    await pm._on_text(ws, json.dumps({"type": "unknown_type"}))
     assert pm.values is None
 
 
-async def test_non_dict_json_does_not_crash():
+async def test_non_dict_json_does_not_crash() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(ws, json.dumps([1, 2, 3]))
+    await pm._on_text(ws, json.dumps([1, 2, 3]))
     assert pm.values is None
-    await pm._handle_message(ws, json.dumps("just a string"))
-    assert pm.values is None
-
-
-async def test_measurement_non_dict_data_ignored():
-    pm = _create_powermeter()
-    ws = AsyncMock()
-    await pm._handle_message(
-        ws, json.dumps({"type": "measurement", "data": "not a dict"})
-    )
+    await pm._on_text(ws, json.dumps("just a string"))
     assert pm.values is None
 
 
-async def test_measurement_message_stores_values():
+async def test_measurement_non_dict_data_ignored() -> None:
     pm = _create_powermeter()
     ws = AsyncMock()
-    await pm._handle_message(
+    await pm._on_text(ws, json.dumps({"type": "measurement", "data": "not a dict"}))
+    assert pm.values is None
+
+
+async def test_measurement_message_stores_values() -> None:
+    pm = _create_powermeter()
+    ws = AsyncMock()
+    await pm._on_text(
         ws,
         json.dumps({"type": "measurement", "data": {"power_w": 500}}),
     )
@@ -143,14 +233,14 @@ async def test_measurement_message_stores_values():
 # --- Category C: SSL context ---
 
 
-def test_ssl_context_verify_enabled():
+def test_ssl_context_verify_enabled() -> None:
     pm = _create_powermeter()
     ctx = pm._build_ssl_context()
     assert ctx.verify_mode == ssl.CERT_REQUIRED
     assert ctx.check_hostname is True
 
 
-def test_ssl_context_verify_disabled():
+def test_ssl_context_verify_disabled() -> None:
     pm = _create_powermeter(verify_ssl=False)
     ctx = pm._build_ssl_context()
     assert ctx.verify_mode == ssl.CERT_NONE
@@ -160,13 +250,13 @@ def test_ssl_context_verify_disabled():
 # --- Category D: get_powermeter_watts ---
 
 
-async def test_get_watts_no_data_raises():
+async def test_get_watts_no_data_raises() -> None:
     pm = _create_powermeter()
     with pytest.raises(ValueError):
         await pm.get_powermeter_watts()
 
 
-async def test_get_watts_returns_copy():
+async def test_get_watts_returns_copy() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": 100})
     result = await pm.get_powermeter_watts()
@@ -188,7 +278,7 @@ class _FakeClock:
         self.now += seconds
 
 
-async def test_get_watts_raises_when_measurement_is_stale():
+async def test_get_watts_raises_when_measurement_is_stale() -> None:
     """Staleness regression (matches the production lockup):  a
     push-based powermeter whose WebSocket has silently half-opened
     must surface an error to the caller instead of serving stale
@@ -211,7 +301,7 @@ async def test_get_watts_raises_when_measurement_is_stale():
         await pm.get_powermeter_watts()
 
 
-async def test_get_watts_staleness_disabled_when_max_age_is_zero():
+async def test_get_watts_staleness_disabled_when_max_age_is_zero() -> None:
     """A zero ``max_measurement_age_seconds`` disables the age check
     entirely — intended escape hatch for anyone with a dongle that
     genuinely updates very slowly.
@@ -223,7 +313,7 @@ async def test_get_watts_staleness_disabled_when_max_age_is_zero():
     assert await pm.get_powermeter_watts() == [100]
 
 
-async def test_fresh_measurement_clears_staleness():
+async def test_fresh_measurement_clears_staleness() -> None:
     """A new measurement after a long silence must reset the age clock."""
     clock = _FakeClock()
     pm = _create_powermeter(max_measurement_age_seconds=30.0, clock=clock)
@@ -240,13 +330,13 @@ async def test_fresh_measurement_clears_staleness():
 # --- Category D3: stream_online health hook ---------------------------------
 
 
-def test_stream_online_false_before_any_measurement():
+def test_stream_online_false_before_any_measurement() -> None:
     pm = _create_powermeter()
     # Not connected and nothing received yet.
     assert pm.stream_online() is False
 
 
-async def test_stream_online_true_when_connected_and_fresh():
+async def test_stream_online_true_when_connected_and_fresh() -> None:
     clock = _FakeClock()
     pm = _create_powermeter(max_measurement_age_seconds=30.0, clock=clock)
     pm._connected = True
@@ -260,7 +350,7 @@ async def test_stream_online_true_when_connected_and_fresh():
     assert pm.stream_online() is True
 
 
-async def test_stream_online_false_after_single_sample():
+async def test_stream_online_false_after_single_sample() -> None:
     """One sample alone is not a continuous stream — a broken dongle that
     replays a single cached value on reconnect must not read as online."""
     clock = _FakeClock()
@@ -270,7 +360,7 @@ async def test_stream_online_false_after_single_sample():
     assert pm.stream_online() is False
 
 
-async def test_stream_online_false_when_connected_but_stale():
+async def test_stream_online_false_when_connected_but_stale() -> None:
     clock = _FakeClock()
     pm = _create_powermeter(max_measurement_age_seconds=30.0, clock=clock)
     pm._connected = True
@@ -282,7 +372,7 @@ async def test_stream_online_false_when_connected_but_stale():
     assert pm.stream_online() is False
 
 
-async def test_stream_online_does_not_flap_on_reconnect_replay():
+async def test_stream_online_does_not_flap_on_reconnect_replay() -> None:
     """Regression for the flapping "Online" sensor (#427): a broken P1 dongle
     keeps accepting the WebSocket and replays one cached value on every
     watchdog-triggered reconnect.  Each lone sample resets the freshness
@@ -314,7 +404,7 @@ async def test_stream_online_does_not_flap_on_reconnect_replay():
     assert pm.stream_online() is True
 
 
-async def test_stream_online_stays_online_across_brief_reconnect():
+async def test_stream_online_stays_online_across_brief_reconnect() -> None:
     """A short blip (reconnect well within the freshness window) keeps the
     stream healthy — only gaps longer than max age break continuity."""
     clock = _FakeClock()
@@ -329,7 +419,7 @@ async def test_stream_online_stays_online_across_brief_reconnect():
     assert pm.stream_online() is True
 
 
-async def test_stream_online_healthy_when_staleness_disabled():
+async def test_stream_online_healthy_when_staleness_disabled() -> None:
     """With max_age=0 the staleness check is disabled, so any sample on a
     connected stream counts as online."""
     clock = _FakeClock()
@@ -341,7 +431,7 @@ async def test_stream_online_healthy_when_staleness_disabled():
     assert pm.stream_online() is True
 
 
-def test_stream_online_false_when_disconnected_even_if_fresh():
+def test_stream_online_false_when_disconnected_even_if_fresh() -> None:
     clock = _FakeClock()
     pm = _create_powermeter(max_measurement_age_seconds=30.0, clock=clock)
     pm._connected = False
@@ -352,23 +442,23 @@ def test_stream_online_false_when_disconnected_even_if_fresh():
 # --- Category E: wait_for_message ---
 
 
-async def test_wait_for_message_returns_when_data_available():
+async def test_wait_for_message_returns_when_data_available() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": 100})
     await pm.wait_for_message(timeout=1)
 
 
-async def test_wait_for_message_timeout():
+async def test_wait_for_message_timeout() -> None:
     pm = _create_powermeter()
     with pytest.raises(TimeoutError):
         await pm.wait_for_message(timeout=0)
 
 
-async def test_wait_for_next_message_blocks_until_new():
+async def test_wait_for_next_message_blocks_until_new() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": 100})
 
-    async def _push_later():
+    async def _push_later() -> None:
         await asyncio.sleep(0.05)
         pm._handle_measurement({"power_w": 200})
 
@@ -378,7 +468,7 @@ async def test_wait_for_next_message_blocks_until_new():
     assert await pm.get_powermeter_watts() == [200]
 
 
-async def test_wait_for_next_message_timeout():
+async def test_wait_for_next_message_timeout() -> None:
     pm = _create_powermeter()
     pm._handle_measurement({"power_w": 100})
     with pytest.raises(TimeoutError):
@@ -388,7 +478,7 @@ async def test_wait_for_next_message_timeout():
 # --- Category F: Lifecycle ---
 
 
-async def test_start_creates_session_and_task():
+async def test_start_creates_session_and_task() -> None:
     pm = _create_powermeter()
     with patch.object(pm, "_ws_loop", new_callable=AsyncMock) as mock_loop:
         mock_loop.return_value = None
@@ -398,7 +488,7 @@ async def test_start_creates_session_and_task():
         await pm.stop()
 
 
-async def test_start_is_idempotent():
+async def test_start_is_idempotent() -> None:
     pm = _create_powermeter()
     with patch.object(pm, "_ws_loop", new_callable=AsyncMock) as mock_loop:
         mock_loop.return_value = None
@@ -409,7 +499,7 @@ async def test_start_is_idempotent():
         await pm.stop()
 
 
-async def test_stop_closes_session():
+async def test_stop_closes_session() -> None:
     pm = _create_powermeter()
     with patch.object(pm, "_ws_loop", new_callable=AsyncMock) as mock_loop:
         mock_loop.return_value = None
@@ -419,12 +509,12 @@ async def test_stop_closes_session():
         assert pm._ws_task is None
 
 
-async def test_stop_without_start():
+async def test_stop_without_start() -> None:
     pm = _create_powermeter()
     await pm.stop()
 
 
-async def test_start_resets_stale_state():
+async def test_start_resets_stale_state() -> None:
     pm = _create_powermeter()
     # Simulate leftover state from a previous session
     pm.values = [999.0]
@@ -444,16 +534,23 @@ async def test_start_resets_stale_state():
 class _FakeWs:
     """A fake ws that yields given messages and records send_json calls."""
 
-    def __init__(self, messages):
+    def __init__(self, messages: list[Any]) -> None:
         self._messages = messages
         self.send_json = AsyncMock()
+        self.closed = False
 
-    async def __aiter__(self):
+    async def close(self) -> bool:
+        # The read watchdog force-closes the socket; without this the fake
+        # would raise where the real connection just goes away.
+        self.closed = True
+        return True
+
+    async def __aiter__(self) -> AsyncIterator[Any]:
         for msg in self._messages:
             yield msg
 
 
-async def test_full_auth_subscribe_measurement_flow():
+async def test_full_auth_subscribe_measurement_flow() -> None:
     pm = _create_powermeter()
 
     messages = [
@@ -465,44 +562,39 @@ async def test_full_auth_subscribe_measurement_flow():
 
     async for msg in ws:
         if msg.type == aiohttp.WSMsgType.TEXT:
-            await pm._handle_message(ws, msg.data)
+            await pm._on_text(ws, msg.data)
 
     ws.send_json.assert_any_call({"type": "authorization", "data": "ABCD1234"})
     ws.send_json.assert_any_call({"type": "subscribe", "data": "measurement"})
     assert await pm.get_powermeter_watts() == [500]
 
 
-async def test_close_message_exits_iteration():
+async def test_close_message_exits_iteration() -> None:
+    """A CLOSE frame ends the read, so nothing after it is acted on."""
     pm = _create_powermeter()
+    ws = _FakeWs(
+        [
+            _ws_text({"type": "authorized"}),
+            aiohttp.WSMessage(aiohttp.WSMsgType.CLOSE, None, None),
+            _ws_text({"type": "measurement", "data": {"power_w": 500}}),
+        ]
+    )
 
-    messages = [
-        _ws_text({"type": "authorized"}),
-        aiohttp.WSMessage(aiohttp.WSMsgType.CLOSE, None, None),
-        _ws_text({"type": "measurement", "data": {"power_w": 500}}),
-    ]
-    ws = _FakeWs(messages)
+    await pm._read(ws)
 
-    processed = []
-    async for msg in ws:
-        if msg.type == aiohttp.WSMsgType.TEXT:
-            await pm._handle_message(ws, msg.data)
-            processed.append(msg)
-        elif msg.type in (
-            aiohttp.WSMsgType.CLOSE,
-            aiohttp.WSMsgType.CLOSING,
-            aiohttp.WSMsgType.CLOSED,
-            aiohttp.WSMsgType.ERROR,
-        ):
-            break
-
-    assert len(processed) == 1
+    # The frame before the CLOSE was acted on — this is the only test that
+    # drives the shared read loop, so without it a dropped TEXT dispatch in
+    # WebSocketPowermeter._read would go unnoticed.
+    ws.send_json.assert_awaited_once_with({"type": "subscribe", "data": "measurement"})
+    assert pm._connected is True
+    # ...and the one after it was not.
     assert pm.values is None
 
 
 # --- Category H: Reconnection ---
 
 
-def _mock_ws_context(ws):
+def _mock_ws_context(ws: Any) -> MagicMock:
     """Create an async context manager that yields *ws*."""
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=ws)
@@ -510,11 +602,11 @@ def _mock_ws_context(ws):
     return ctx
 
 
-def _empty_ws():
+def _empty_ws() -> MagicMock:
     """Create a mock ws whose async iteration ends immediately."""
     ws = AsyncMock()
 
-    async def empty_aiter():
+    async def empty_aiter() -> AsyncIterator[Any]:
         return
         yield  # pragma: no cover — makes this an async generator
 
@@ -522,13 +614,13 @@ def _empty_ws():
     return ws
 
 
-async def test_ws_loop_reconnects_after_disconnect():
+async def test_ws_loop_reconnects_after_disconnect() -> None:
     pm = _create_powermeter()
     pm._session = MagicMock(spec=aiohttp.ClientSession)
 
     call_count = 0
 
-    def fake_ws_connect(*args, **kwargs):
+    def fake_ws_connect(*args: Any, **kwargs: Any) -> Any:
         nonlocal call_count
         call_count += 1
         if call_count >= 2:
@@ -555,7 +647,7 @@ async def test_ws_loop_passes_heartbeat_to_ws_connect() -> None:
     captured_kwargs: dict = {}
     call_count = 0
 
-    def fake_ws_connect(*args, **kwargs):
+    def fake_ws_connect(*args: Any, **kwargs: Any) -> None:
         nonlocal call_count
         call_count += 1
         captured_kwargs.update(kwargs)
@@ -578,7 +670,7 @@ async def test_ws_loop_passes_heartbeat_to_ws_connect() -> None:
     )
 
 
-async def test_measurement_watchdog_closes_ws_on_timeout():
+async def test_measurement_watchdog_closes_ws_on_timeout() -> None:
     """Regression: when the WebSocket is alive (no transport error)
     but the measurement stream has stalled, the watchdog must force
     a close so ``ws_loop`` drops through to the reconnect branch.
@@ -599,7 +691,7 @@ async def test_measurement_watchdog_closes_ws_on_timeout():
     ws.close.assert_called_once()
 
 
-async def test_measurement_watchdog_re_arms_after_each_measurement():
+async def test_measurement_watchdog_re_arms_after_each_measurement() -> None:
     """The watchdog clears its event on every iteration so a single
     early measurement cannot appease it forever — the timer must
     restart from zero every time.  This test drives the real event
@@ -611,7 +703,7 @@ async def test_measurement_watchdog_re_arms_after_each_measurement():
 
     iterations = 0
 
-    async def set_event_twice_then_wait():
+    async def set_event_twice_then_wait() -> None:
         nonlocal iterations
         while True:
             await asyncio.sleep(0.001)
@@ -634,13 +726,13 @@ async def test_measurement_watchdog_re_arms_after_each_measurement():
     ws.close.assert_called_once()
 
 
-async def test_ws_loop_reconnects_on_client_error():
+async def test_ws_loop_reconnects_on_client_error() -> None:
     pm = _create_powermeter()
     pm._session = MagicMock(spec=aiohttp.ClientSession)
 
     call_count = 0
 
-    def fake_ws_connect(*args, **kwargs):
+    def fake_ws_connect(*args: Any, **kwargs: Any) -> None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

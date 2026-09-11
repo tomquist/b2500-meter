@@ -12,14 +12,24 @@ import logging
 import random
 import time
 
+from astrameter.ct002 import protocol
 from astrameter.ct002.balancer import device_capabilities
 
-from . import protocol
-from .b2500_steering import B2500SteeringController
+from .b2500_steering import MIN_CHANNEL_OUTPUT_W, B2500SteeringController
 from .firmware_steering import FirmwareSteeringController
-from .venus_d_steering import VenusDSteeringController
+from .venus_integer_steering import (
+    DEADBAND_HMG50_W,
+    DEADBAND_W,
+    PARK_ALONE_HMG50,
+    PARK_ALONE_VENUS,
+    VenusIntegerSteeringController,
+)
 
 logger = logging.getLogger("astra_sim.battery")
+
+# Phase letters a battery can sit on, mapped to the index of its power field in
+# ``protocol.RESPONSE_LABELS`` (``A_phase_power`` at 4).
+PHASE_FIELD_INDEX: dict[str, int] = {"A": 4, "B": 5, "C": 6}
 
 
 class BatterySimulator:
@@ -47,11 +57,11 @@ class BatterySimulator:
         dc_input_power: float = 0.0,
         participates: bool = True,
         initial_power: float = 0.0,
+        min_channel_output: int = MIN_CHANNEL_OUTPUT_W,
     ) -> None:
-        if phase not in protocol.PHASE_FIELD_INDEX:
+        if phase not in PHASE_FIELD_INDEX:
             raise ValueError(
-                f"Invalid phase {phase!r}, must be one of "
-                f"{list(protocol.PHASE_FIELD_INDEX)}"
+                f"Invalid phase {phase!r}, must be one of {list(PHASE_FIELD_INDEX)}"
             )
 
         self.mac = mac.upper()
@@ -85,14 +95,16 @@ class BatterySimulator:
         self._pending_power_targets: list[tuple[int, float]] = []
         self._dc_input_power: float = 0.0
         self.dc_input_power = dc_input_power  # reuse setter clamp
+        # In-flight polls started by :meth:`run`.  Held only so the event loop
+        # keeps a strong reference to them (asyncio tasks are weakly
+        # referenced and would otherwise be collectable mid-flight).
+        self._poll_tasks: set[asyncio.Task] = set()
 
-        # Self-consumption control law. Most Marstek batteries (Venus class) run
-        # the firmware ramp controller on the grid value read back from the CT;
-        # ``hi``/``lo`` are the charge / discharge limits in its convention
-        # (setpoint positive = charge, negative = discharge).
+        # Self-consumption control law, run on the grid value read back from the
+        # CT. This ramp controller is the fallback: the Venus/HMG-50 and the
+        # DC-coupled B2500 controllers built below take over for those families,
+        # leaving Jupiter (HMN/HMM/JPLS) and any unrecognised device type here.
         self._steering = FirmwareSteeringController()
-        self._steer_hi = float(self.max_charge_power)
-        self._steer_lo = -float(self.max_discharge_power)
 
         # The B2500 family (HMA/HMJ/HMK) is DC-coupled (see :mod:`b2500_steering`):
         # two DC output channels, each its own regulator running every cycle, so
@@ -103,29 +115,47 @@ class BatterySimulator:
             and not caps.has_builtin_inverter
             and not caps.has_ac_input
         )
-        # Two channels, each capped at half the unit's discharge envelope.
-        _ch_max = max(1, self.max_discharge_power // 2)
-        self._b2500_channels = (
-            [
-                B2500SteeringController(max_output=_ch_max),
-                B2500SteeringController(max_output=_ch_max),
-            ]
+        # One device-level controller: the firmware's integrator is device-wide
+        # and the split across the two outputs happens below it. The unit's
+        # minimum (``pmin``) is twice the per-channel floor callers pass in, and
+        # it is a *clamp on the command*, not a gate on the response — a B2500
+        # cannot form a command below it at all (``0`` removes the floor).
+        self._b2500 = (
+            B2500SteeringController(
+                p=max(1, self.max_discharge_power),
+                pmin=2 * min_channel_output,
+            )
             if self._is_dc_output
-            else []
+            else None
         )
 
-        # Venus D (VNSD-0) is AC-coupled like the rest of the Venus class but
-        # runs a different self-consumption loop: an integer proportional
-        # integrator rather than the float ramp (see :mod:`venus_d_steering`).
-        # Its setpoint convention is the opposite of the ramp controller's —
-        # positive = discharge, negative = charge — so ``hi`` is the discharge
-        # limit and ``lo`` the (negative) charge limit, and the simulator target
-        # is the setpoint *unnegated*.
-        self._is_venus_d = (
-            self.meter_dev_type.upper().startswith("VNSD") and not self._is_dc_output
-        )
-        self._venus_d_steering = (
-            VenusDSteeringController() if self._is_venus_d else None
+        # The AC-coupled Venus units that aren't an HMG-50 (VNSA-0, VNSD-0,
+        # VNSE3-0) all run one law: an integer proportional integrator behind an
+        # input-conditioning gate (see :mod:`venus_integer_steering`). All three
+        # firmwares were read end to end — integrator and gate alike, and the
+        # gate is the same routine in each. Its setpoint convention is the
+        # opposite of the HMG-50 ramp controller's — positive = discharge,
+        # negative = charge — so ``hi`` is the discharge limit and ``lo`` the
+        # (negative) charge limit, and the simulator target is the setpoint
+        # *unnegated*.
+        # The HMG-50 carries *both* laws and picks between them on a model code
+        # it parses out of the meter's greeting; only code 1 — the "no model
+        # suffix" fallback — takes the float gain-table ramp. AstraMeter
+        # announces ``HME-4``, so a real HMG-50 driven by it runs the same
+        # integer integrator as the other Venus units, with a wider rest
+        # deadband and a wider single-unit park.
+        _dt = self.meter_dev_type.upper()
+        self._is_hmg50 = _dt.startswith("HMG")
+        self._is_venus_integer = (
+            _dt.startswith("VNS") or self._is_hmg50
+        ) and not self._is_dc_output
+        self._venus_steering = (
+            VenusIntegerSteeringController(
+                park_alone=PARK_ALONE_HMG50 if self._is_hmg50 else PARK_ALONE_VENUS,
+                deadband=DEADBAND_HMG50_W if self._is_hmg50 else DEADBAND_W,
+            )
+            if self._is_venus_integer
+            else None
         )
 
         # Optionally start already in motion (net output W; positive = discharge,
@@ -135,16 +165,25 @@ class BatterySimulator:
         # running when a disturbance arrives. The relevant steering controller's
         # setpoint is seeded so its ramp law holds the seeded output instead of
         # winding back to zero on the first cycle.
+        # A DC-coupled B2500 has no AC input and cannot charge, so a negative
+        # seed would start it in a state it can never physically be in and
+        # would simulate charging until the first CT reply displaced it. Clamp
+        # the seed itself, not just the controller's command.
+        if initial_power and self._b2500 is not None:
+            initial_power = max(0, initial_power)
         if initial_power:
             self._current_power = float(initial_power)
             self._target_power = float(initial_power)
             self._requested_target = float(initial_power)
-            if self._venus_d_steering is not None:
-                self._venus_d_steering.setpoint = round(initial_power)
-            elif not self._b2500_channels:
-                # Ramp controller: target = -setpoint, so seed the inverse. (The
-                # B2500's command-domain regulator converges from the seeded
-                # measured output, so it needs no explicit setpoint seed.)
+            if self._venus_steering is not None:
+                self._venus_steering.setpoint = round(initial_power)
+            elif self._b2500 is not None:
+                # The B2500's integrator accumulates onto its own command, so it
+                # has to start from the seeded output — and it only integrates
+                # while it is actually producing.
+                self._b2500.seed(round(initial_power))
+            else:
+                # Ramp controller: target = -setpoint, so seed the inverse.
                 self._steering.setpoint = -float(initial_power)
 
     # -- public read-only properties ---------------------------------------
@@ -285,6 +324,13 @@ class BatterySimulator:
     async def _send_request(self) -> list[str] | None:
         request_fields = self._request_fields()
         phase_field = request_fields[4]
+        # Claim the sequence number now, not after the reply lands. `run()`
+        # fires polls without awaiting them, so counting on receipt would let
+        # concurrent polls read the same value and repeat the inspection phase
+        # — and a poll that is never answered (dedupe drop, lost datagram)
+        # would leave the battery stuck in inspection forever. A real device
+        # counts the polls it sent.
+        self._request_count += 1
         payload = protocol.build_payload(request_fields)
 
         loop = asyncio.get_running_loop()
@@ -306,10 +352,8 @@ class BatterySimulator:
             if transport is not None:
                 transport.close()
 
-        self._request_count += 1
-
-        response_fields, err = protocol.parse_message(data)
-        if err:
+        response_fields, err = protocol.parse_request(data)
+        if response_fields is None:
             logger.debug("Battery %s: bad response: %s", self.mac, err)
             return None
 
@@ -324,14 +368,18 @@ class BatterySimulator:
         """Derive the new AC target from the grid value read back from the CT.
 
         The grid value (sum of the per-phase power fields, positive = importing)
-        is fed to this battery's steering controller. Venus-class batteries run
-        :class:`FirmwareSteeringController` (a ramp law with input-conditioning
-        gates), whose sign is the inverse of the simulator's (setpoint positive =
-        charge), so the simulator target is the negated setpoint. A DC-coupled
-        B2500 instead runs :class:`B2500SteeringController` on its DC output (see
-        :meth:`_steer_b2500_output`). A Venus D (VNSD-0) runs
-        :class:`VenusDSteeringController`, an integer integrator whose setpoint is
-        already in the simulator's sign (positive = discharge), applied directly.
+        is fed to this battery's steering controller. Every AC-coupled unit —
+        the HMG-50 (Venus C) included, since it takes its float ramp only for a
+        meter model code AstraMeter does not present — runs
+        :class:`VenusIntegerSteeringController`, whose setpoint is already in
+        the simulator's sign (positive = discharge) and is applied directly;
+        the HMG-50 differs only in its rest deadband and single-unit park. A
+        DC-coupled B2500 instead runs :class:`B2500SteeringController` on its
+        DC output (see :meth:`_steer_b2500_output`).
+        :class:`FirmwareSteeringController` — the ramp law for the code-1 path
+        — is the fallback for everything else: Jupiter (``HMN``/``HMM``/
+        ``JPLS``), which is AC-coupled but not a Venus, and any device type
+        :func:`device_capabilities` does not recognise.
 
         Cross-battery share-split: a real battery divides the grid value by the
         number of batteries reported on its phase (the ``*_chrg_nb`` count), so
@@ -349,32 +397,36 @@ class BatterySimulator:
 
         grid_reading = field(4) + field(5) + field(6)
 
-        if self._b2500_channels:
+        if self._b2500 is not None:
             self._steer_b2500_output(grid_reading)
-            return
-
-        if self._venus_d_steering is not None:
-            # Venus D: integer integrator, positive setpoint = discharge. Its own
-            # grid reading (used only for the per-step branch) tracks the CT
-            # value in this closed loop. ±15 W deadband in combined (phase D)
-            # mode, ±11 W otherwise.
-            vd_setpoint = self._venus_d_steering.step(
-                grid_reading,
-                float(self.max_discharge_power),
-                -float(self.max_charge_power),
-                measured_grid=grid_reading,
-                phase_count=2 if self.phase == "D" else 1,
-            )
-            self._apply_ct_derived_target(float(vd_setpoint))
             return
 
         # *_chrg_nb for this battery's phase (fields 9/10/11 → indices 8/9/10).
         phase_count = field(8 + "ABC".index(self.phase))
 
+        if self._venus_steering is not None:
+            # Venus A / D / E: integer integrator behind its own gate, positive
+            # setpoint = discharge. Both the gate and the integrator's per-step
+            # branch key off the unit's own measured output rather than the CT
+            # value (see :mod:`venus_integer_steering`), and the ``*_chrg_nb``
+            # count both splits the reading and widens the park to ±15 W.
+            venus_setpoint = self._venus_steering.step(
+                grid_reading,
+                float(self.max_discharge_power),
+                -float(self.max_charge_power),
+                out=self._current_power,
+                device_count=phase_count,
+            )
+            self._apply_ct_derived_target(float(venus_setpoint))
+            return
+
+        # Charge / discharge limits in the ramp controller's convention
+        # (setpoint positive = charge), read live like the Venus path above so
+        # a runtime change to either cap takes effect.
         setpoint = self._steering.step(
             grid_reading,
-            self._steer_hi,
-            self._steer_lo,
+            float(self.max_charge_power),
+            -float(self.max_discharge_power),
             device_count=phase_count,
             out=self._current_power,
         )
@@ -382,29 +434,41 @@ class BatterySimulator:
         self._apply_ct_derived_target(-setpoint)
 
     def _steer_b2500_output(self, grid_reading: int) -> None:
-        """Steer a DC-coupled B2500's two output channels toward nulling the grid.
+        """Steer a DC-coupled B2500's DC output toward nulling the grid.
 
         The B2500 only discharges its DC output (no AC input, never charges from
-        AC). The setpoint is incremental (``output + 0.9 * grid``; see
-        :mod:`b2500_steering`), floored at 0, capped at the discharge envelope, and
-        split evenly across the two channels.
+        AC). The firmware integrates the grid reading into a device-wide command
+        clamped to ``[pmin, p]``, then splits it across the two outputs; see
+        :mod:`b2500_steering`.
         """
-        cur = max(0, round(self._current_power))
-        target = cur + grid_reading * 9 // 10  # incremental: 90% of the residual
-        target = max(0, min(target, self.max_discharge_power))
+        assert self._b2500 is not None
+        envelope = self.max_discharge_power
         # At full SoC the PV passes straight through to the output and cannot be
         # curtailed below the DC input (the pack is full, the PV has nowhere else
         # to go). The steering can't drive the output under that floor, so don't
         # let it try — otherwise it fights the passthrough override and the
         # output oscillates instead of settling at the PV level.
-        if self._soc >= 1.0 and self._dc_input_power > 0:
-            target = max(target, round(self._dc_input_power))
-        per_channel = target // 2
-        own = cur // 2  # each channel's ~half of the measured output
-        out = sum(ch.regulate(per_channel, own) for ch in self._b2500_channels)
-        self._apply_ct_derived_target(float(out))
+        floor = (
+            round(self._dc_input_power)
+            if self._soc >= 1.0 and self._dc_input_power > 0
+            else 0
+        )
+        out = self._b2500.step(
+            grid_reading,
+            max(0, round(self._current_power)),
+            self.poll_interval,
+            max_power=envelope,
+        )
+        self._apply_ct_derived_target(float(max(out, floor)))
 
     # -- main loop ---------------------------------------------------------
+
+    def _advance(self, dt: float) -> None:
+        """Advance the simulated plant by *dt* seconds (no I/O)."""
+        self._step_index += 1
+        self._drain_pending_power_targets()
+        self._update_power(dt)
+        self._update_soc(dt)
 
     async def step(self, dt: float | None = None) -> list[str] | None:
         """Execute one simulation iteration with explicit *dt*.
@@ -412,15 +476,18 @@ class BatterySimulator:
         When *dt* is ``None`` it defaults to :attr:`poll_interval`.
         Unlike :meth:`run`, this does **not** sleep or touch
         ``_last_update`` — it is designed for deterministic test
-        stepping.
+        stepping, so it awaits the reply rather than detaching it.
         """
         if dt is None:
             dt = self.poll_interval
-        self._step_index += 1
-        self._drain_pending_power_targets()
-        self._update_power(dt)
-        self._update_soc(dt)
+        self._advance(dt)
         return await self._send_request()
+
+    def _spawn_poll(self) -> None:
+        """Send one poll without letting the reply gate the next one."""
+        task = asyncio.create_task(self._send_request())
+        self._poll_tasks.add(task)
+        task.add_done_callback(self._poll_tasks.discard)
 
     async def run(self) -> None:
         logger.info(
@@ -430,17 +497,35 @@ class BatterySimulator:
             self._soc * 100,
         )
         self._last_update = time.monotonic()
-        while True:
-            now = time.monotonic()
-            dt = (now - self._last_update) * self.time_scale
-            self._last_update = now
+        next_poll = self._last_update
+        try:
+            while True:
+                now = time.monotonic()
+                dt = (now - self._last_update) * self.time_scale
+                self._last_update = now
 
-            await self.step(dt)
+                self._advance(dt)
+                # The firmware sends on its own cadence and applies whatever
+                # comes back — it does not hold the next poll until the CT
+                # answers.  Awaiting the reply here would make an unanswered
+                # poll (a dedupe drop, a lost datagram) push the whole schedule
+                # out by the receive timeout, which the real device never does.
+                self._spawn_poll()
 
-            jitter = random.uniform(-0.5, 0.5)
-            await asyncio.sleep(
-                max(0.05, (self.poll_interval + jitter) / self.time_scale)
-            )
+                jitter = random.uniform(-0.5, 0.5)
+                next_poll += max(0.05, (self.poll_interval + jitter) / self.time_scale)
+                # Absolute deadline, so a slow or timed-out exchange cannot
+                # accumulate drift into the polling schedule.
+                await asyncio.sleep(max(0.0, next_poll - time.monotonic()))
+        finally:
+            # cancel() only *requests* cancellation; without the await the
+            # detached polls never reach their `finally` and their transports
+            # leak past shutdown.
+            tasks = list(self._poll_tasks)
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     # -- serialisation -----------------------------------------------------
 

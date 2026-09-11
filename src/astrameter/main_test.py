@@ -1,8 +1,9 @@
 import argparse
-import configparser
 from ipaddress import IPv4Network
 
-from astrameter.config.config_loader import ClientFilter
+from astrameter.config.config_loader import ClientFilter, new_config_parser
+from astrameter.config.ini_config import IniAppConfig
+from astrameter.config.settings import ConfiguredPowermeter
 from astrameter.main import _resolve_device_config, read_ct_powermeter
 from astrameter.powermeter import Powermeter
 
@@ -15,7 +16,7 @@ class _StubPowermeter(Powermeter):
         values: list[float],
         wait_raises: BaseException | None = None,
         wait_calls: list[float] | None = None,
-    ):
+    ) -> None:
         self._values = values
         self._wait_raises = wait_raises
         self._wait_calls = wait_calls if wait_calls is not None else []
@@ -26,7 +27,7 @@ class _StubPowermeter(Powermeter):
     async def get_powermeter_watts_raw(self) -> list[float]:
         return list(self._values)
 
-    async def wait_for_next_message(self, timeout=5):
+    async def wait_for_next_message(self, timeout: float = 5) -> None:
         self._wait_calls.append(timeout)
         if self._wait_raises is not None:
             raise self._wait_raises
@@ -35,34 +36,34 @@ class _StubPowermeter(Powermeter):
 _LOCAL = ClientFilter([IPv4Network("127.0.0.1/32")])
 
 
-async def test_read_ct_powermeter_returns_none_when_no_match():
+async def test_read_ct_powermeter_returns_none_when_no_match() -> None:
     pm = _StubPowermeter([10.0])
-    powermeters = [(pm, _LOCAL, True)]
+    powermeters = [ConfiguredPowermeter(pm, _LOCAL, True)]
     assert await read_ct_powermeter(("10.0.0.1", 0), powermeters) is None
 
 
-async def test_read_ct_powermeter_pads_to_three_phases():
+async def test_read_ct_powermeter_pads_to_three_phases() -> None:
     pm = _StubPowermeter([42.0])
-    powermeters = [(pm, _LOCAL, False)]
+    powermeters = [ConfiguredPowermeter(pm, _LOCAL, False)]
     assert await read_ct_powermeter(("127.0.0.1", 0), powermeters) == [42.0, 0, 0]
 
 
-async def test_read_ct_powermeter_skips_wait_when_disabled():
+async def test_read_ct_powermeter_skips_wait_when_disabled() -> None:
     pm = _StubPowermeter([1.0, 2.0, 3.0])
-    powermeters = [(pm, _LOCAL, False)]
+    powermeters = [ConfiguredPowermeter(pm, _LOCAL, False)]
     result = await read_ct_powermeter(("127.0.0.1", 0), powermeters)
     assert result == [1.0, 2.0, 3.0]
     assert pm._wait_calls == []
 
 
-async def test_read_ct_powermeter_calls_wait_with_2s_when_enabled():
+async def test_read_ct_powermeter_calls_wait_with_2s_when_enabled() -> None:
     pm = _StubPowermeter([1.0, 2.0, 3.0])
-    powermeters = [(pm, _LOCAL, True)]
+    powermeters = [ConfiguredPowermeter(pm, _LOCAL, True)]
     await read_ct_powermeter(("127.0.0.1", 0), powermeters)
     assert pm._wait_calls == [2]
 
 
-async def test_stub_powermeter_raw_matches_watts():
+async def test_stub_powermeter_raw_matches_watts() -> None:
     pm = _StubPowermeter([3.0, 4.0, 5.0])
     assert (
         await pm.get_powermeter_watts_raw()
@@ -75,42 +76,43 @@ async def test_stub_powermeter_raw_matches_watts():
     )
 
 
-async def test_read_ct_powermeter_swallows_timeout_and_serves_cached():
+async def test_read_ct_powermeter_swallows_timeout_and_serves_cached() -> None:
     """Issue #327: a slow push meter must not break CT002 responses."""
     pm = _StubPowermeter(
         [11.0, 22.0, 33.0],
         wait_raises=TimeoutError("simulated slow meter"),
     )
-    powermeters = [(pm, _LOCAL, True)]
+    powermeters = [ConfiguredPowermeter(pm, _LOCAL, True)]
     result = await read_ct_powermeter(("127.0.0.1", 0), powermeters)
     assert result == [11.0, 22.0, 33.0]
 
 
 def _resolve(device_type: str) -> tuple[list[str], list[str]]:
-    cfg = configparser.ConfigParser()
+    cfg = new_config_parser()
     cfg.add_section("GENERAL")
     cfg.set("GENERAL", "DEVICE_TYPE", device_type)
+    config = IniAppConfig(cfg)
     args = argparse.Namespace(
         device_types=None, skip_powermeter_test=None, device_ids=None
     )
-    device_types, device_ids, _ = _resolve_device_config(cfg, args)
+    device_types, device_ids, _ = _resolve_device_config(config, config.general(), args)
     return device_types, device_ids
 
 
-def test_resolve_device_config_shellypro3em_new_gets_shelly_id():
+def test_resolve_device_config_shellypro3em_new_gets_shelly_id() -> None:
     """Issue #389: explicit shellypro3em_new must use a shellypro3em-* id."""
     device_types, device_ids = _resolve("shellypro3em_new")
     assert device_types == ["shellypro3em_new"]
     assert device_ids == ["shellypro3em-ec4609c439c1"]
 
 
-def test_resolve_device_config_shellypro3em_old_gets_shelly_id():
+def test_resolve_device_config_shellypro3em_old_gets_shelly_id() -> None:
     device_types, device_ids = _resolve("shellypro3em_old")
     assert device_types == ["shellypro3em_old"]
     assert device_ids == ["shellypro3em-ec4609c439c1"]
 
 
-def test_resolve_device_config_shellypro3em_expands_to_old_and_new():
+def test_resolve_device_config_shellypro3em_expands_to_old_and_new() -> None:
     device_types, device_ids = _resolve("shellypro3em")
     assert device_types == ["shellypro3em_old", "shellypro3em_new"]
     assert device_ids == ["shellypro3em-ec4609c439c1", "shellypro3em-ec4609c439c1"]

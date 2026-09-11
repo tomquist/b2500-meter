@@ -18,11 +18,18 @@ from __future__ import annotations
 
 import contextlib
 import socket
+from collections.abc import Iterator
 
 import _ct002_e2e_backend as be
 import pytest
-from _ct002_e2e_backend import E2E_UDP_PORT, EsphomeSim, HarnessClock
+from _ct002_e2e_backend import (
+    E2E_UDP_PORT,
+    EsphomeSim,
+    HarnessClock,
+    PollScheduler,
+)
 
+from astrameter.ct002.balancer import BalancerConfig
 from astrameter.ct002.ct002 import CT002
 from astrameter.simulator.battery import BatterySimulator
 from astrameter.simulator.load_model import LoadModel
@@ -35,7 +42,7 @@ pytestmark = pytest.mark.esphome_e2e
 # stale-meter (``before_send``) and harness-lifecycle tests are Python-only
 # and skip on esphome (see the per-test guards).
 @pytest.fixture(params=["python", "esphome"], autouse=True)
-def _emulator_backend(request):
+def _emulator_backend(request: pytest.FixtureRequest) -> Iterator[None]:
     if request.param == "esphome" and not be.have_esphome():
         pytest.skip("esphome CLI not on PATH; install with `uv tool install esphome`")
     be.ACTIVE_BACKEND = request.param
@@ -175,16 +182,19 @@ class _Harness:
                 udp_port=ct_port,
                 ct_mac=ct_mac,
                 active_control=True,
-                fair_distribution=True,
-                min_efficient_power=min_efficient_power,
-                efficiency_rotation_interval=efficiency_rotation_interval,
-                probe_min_power=20,  # lower so the test's small loads can probe
+                balancer=BalancerConfig(
+                    fair_distribution=True,
+                    min_efficient_power=min_efficient_power,
+                    efficiency_rotation_interval=efficiency_rotation_interval,
+                    # lower so the test's small loads can probe
+                    probe_min_power=20,
+                ),
                 clock=self.clock,
                 reset_fn=None,
                 consumer_ttl=100000,  # avoid eviction during long mock-time sims
             )
 
-            async def update_readings(_addr, _fields=None, _consumer_id=None):
+            async def update_readings(_addr, _request=None, _consumer_id=None):
                 if self.powermeter_raises_stale:
                     raise ValueError("HomeWizard measurement is stale (test)")
                 if self.frozen_grid is not None:
@@ -195,6 +205,8 @@ class _Harness:
             self.ct002.before_send = update_readings
         else:
             self.ct002 = None
+
+        self._scheduler = PollScheduler(self.batteries, self.clock, self._step_battery)
 
     def freeze_meter_at_current_reading(self) -> None:
         """Simulate a push-based powermeter going stale.  From this
@@ -288,10 +300,7 @@ class _Harness:
         await b._send_request()
 
     async def step(self, n: int = 1) -> None:
-        for _ in range(n):
-            for b in self.batteries:
-                await self._step_battery(b)
-            self.clock.advance(max(b.poll_interval for b in self.batteries))
+        await self._scheduler.step(n)
 
     def battery_powers(self) -> list[float]:
         return [b.current_power for b in self.batteries]
@@ -456,7 +465,7 @@ class TestProbeLockup:
 
     async def test_powermeter_stale_error_is_handled_gracefully(
         self,
-        caplog,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """The fixed path: when the powermeter proactively raises
         ``ValueError`` on detected staleness (as the HomeWizard /
