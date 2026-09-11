@@ -1246,6 +1246,14 @@ class LoadBalancer:
         weights: dict[str, float],
         desired_total: float,
     ) -> float:
+        """*consumer_id*'s slice of *desired_total*, in W.
+
+        The probe path's allocator: the batteries backing a probe split the
+        demand the probe candidate is not carrying. Weight-proportional, then
+        balance-corrected toward the pool's average unless fair distribution is
+        off, the consumer did not report, or the whole demand is inside the
+        balance deadband.
+        """
         fair_share = weighted_share(desired_total, weights, reports, consumer_id)
         if (
             not self._cfg.fair_distribution
