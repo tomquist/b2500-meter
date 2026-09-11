@@ -67,6 +67,33 @@ def test_measurement_keeps_zero_phases_when_total_is_zero() -> None:
     assert pm.values == [0, 0, 0]
 
 
+def test_small_total_is_kept_once_the_meter_is_known_to_lack_phases() -> None:
+    """The rounding-noise band gates the *finding*, not every later reading."""
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    pm._handle_measurement(
+        {"power_w": -4, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [-4]
+
+
+def test_real_phases_clear_the_total_only_finding() -> None:
+    pm = _create_powermeter()
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    pm._handle_measurement(
+        {"power_w": -73, "power_l1_w": -30, "power_l2_w": -43, "power_l3_w": 0}
+    )
+    assert pm.values == [-30, -43, 0]
+    pm._handle_measurement(
+        {"power_w": -4, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
+    )
+    assert pm.values == [0, 0, 0]
+
+
 def test_measurement_keeps_zero_phases_when_total_is_rounding_noise() -> None:
     """A healthy meter rounds its phases to 0 W beside a total of ±1 W."""
     pm = _create_powermeter()
@@ -75,7 +102,7 @@ def test_measurement_keeps_zero_phases_when_total_is_rounding_noise() -> None:
             {"power_w": -1, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
         )
     assert pm.values == [0, 0, 0]
-    assert log.warning.call_count == 0
+    assert log.info.call_count == 0
 
 
 def test_measurement_keeps_phases_when_one_is_non_zero() -> None:
@@ -100,14 +127,16 @@ def test_measurement_ignores_non_numeric_total() -> None:
     assert pm.values is None
 
 
-def test_total_fallback_is_logged_once() -> None:
+def test_total_only_is_noted_once_and_is_not_a_warning() -> None:
+    """A supply whose meter reports no per-phase power is ordinary, not a fault."""
     pm = _create_powermeter()
     with patch("astrameter.powermeter.homewizard.logger") as log:
         for _ in range(3):
             pm._handle_measurement(
                 {"power_w": -73, "power_l1_w": 0, "power_l2_w": 0, "power_l3_w": 0}
             )
-        assert log.warning.call_count == 1
+    assert log.info.call_count == 1
+    assert log.warning.call_count == 0
 
 
 def test_measurement_no_power_fields() -> None:

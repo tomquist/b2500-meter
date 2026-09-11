@@ -414,8 +414,9 @@ SERIAL = your_device_serial
 
 Per-phase readings are used when the meter publishes them. Some meters — notably
 three-phase connections without neutral (3x230 V, common in Belgium) — report a
-correct total beside a constant 0 W on every phase; AstraMeter then steers on the
-total instead and logs that it is doing so.
+correct total beside a constant 0 W on every phase. AstraMeter then steers on the
+total, which it notes once in the log; the reading appears on phase A, exactly as a
+single-phase meter's does.
 
 ## Enphase Envoy (IQ Gateway)
 

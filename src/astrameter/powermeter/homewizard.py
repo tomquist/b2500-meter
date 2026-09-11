@@ -40,6 +40,8 @@ WATCHDOG_TIMEOUT_SECONDS = 45.0
 # "this meter publishes no per-phase power" rather than as a house sitting at
 # zero.  Both registers are whole watts, and they are measured separately, so a
 # healthy three-phase meter can round its phases to 0 W beside a total of ±1 W.
+# It gates that one finding only: once made, it latches (see _note_total_only),
+# so a meter without per-phase power keeps its small totals.
 MIN_TOTAL_FALLBACK_W = 5.0
 
 
@@ -100,9 +102,11 @@ class HomeWizardPowermeter(WebSocketPowermeter):
         # Set whenever we receive a new measurement; the read watchdog clears it
         # after checking staleness to re-arm the timer.
         self._fresh_measurement_event = asyncio.Event()
-        # Logged once per connection attempt when the meter turns out to publish
-        # a total but no per-phase power.  See _log_total_fallback().
-        self._total_fallback_logged = False
+        # Set once the meter has been found to publish a total but no per-phase
+        # power, so later samples keep reading the total however small it gets.
+        # See _note_total_only().
+        self._phases_unusable = False
+        self._total_only_logged = False
 
         if not verify_ssl:
             logger.warning(
@@ -129,7 +133,8 @@ class HomeWizardPowermeter(WebSocketPowermeter):
         self._stream_healthy = False
         self._message_event.clear()
         self._fresh_measurement_event.clear()
-        self._total_fallback_logged = False
+        self._phases_unusable = False
+        self._total_only_logged = False
         await super().start()
 
     def _connect(self, session: aiohttp.ClientSession) -> WebSocketConnect:
@@ -210,14 +215,20 @@ class HomeWizardPowermeter(WebSocketPowermeter):
     def _handle_measurement(self, data: dict) -> None:
         total = _number(data.get("power_w"))
         phases = _phase_values(data)
-        if phases is not None and (
-            any(phases) or total is None or abs(total) < MIN_TOTAL_FALLBACK_W
-        ):
+        if phases is not None and any(phases):
+            # Whatever was concluded before, this meter does publish per-phase.
+            self._phases_unusable = False
             values = phases
-        elif total is not None:
+        elif total is not None and (
+            phases is None
+            or self._phases_unusable
+            or abs(total) >= MIN_TOTAL_FALLBACK_W
+        ):
             if phases is not None:
-                self._log_total_fallback(total)
+                self._note_total_only(total)
             values = [total]
+        elif phases is not None:
+            values = phases
         else:
             return
 
@@ -238,21 +249,27 @@ class HomeWizardPowermeter(WebSocketPowermeter):
         self._message_event.set()
         self._fresh_measurement_event.set()
 
-    def _log_total_fallback(self, total: float) -> None:
-        """Announce, once, that the per-phase fields are being ignored.
+    def _note_total_only(self, total: float) -> None:
+        """Record that this meter publishes no per-phase power, and say so once.
 
-        Some meters publish the per-phase registers as a constant 0 W while the
-        total is right — three-phase connections without neutral (3x230 V, common
-        in Belgium) are the case we know of.  Steering on those zeroes leaves the
-        battery idle, so the total is used instead; it lands on phase A the same
-        way a single-phase meter's reading does.
+        The finding latches: from here on the total is read however small it
+        gets, instead of the reading dropping back to three zeroes every time
+        the house passes near zero.  It is cleared again by any non-zero phase.
+
+        Not a fault to fix, so info rather than a warning: a three-phase
+        connection without neutral (3x230 V, common in Belgium) is a perfectly
+        ordinary supply whose meter publishes the total only, with the per-phase
+        registers left at 0 W.  Worth saying once because it explains why the
+        dashboard shows the whole house on phase A, the way a single-phase meter
+        does.
         """
-        if self._total_fallback_logged:
+        self._phases_unusable = True
+        if self._total_only_logged:
             return
-        self._total_fallback_logged = True
-        logger.warning(
-            "HomeWizard: meter reports 0 W on every phase while the total is "
-            "%.0f W; using the total as a single-phase reading",
+        self._total_only_logged = True
+        logger.info(
+            "HomeWizard: meter publishes no per-phase power (all phases 0 W, "
+            "total %.0f W); reading the total instead",
             total,
         )
 
