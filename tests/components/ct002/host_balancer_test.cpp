@@ -44,6 +44,13 @@ using esphome::ct002::to_grid_reading;
 class TestableBalancer : public LoadBalancer {
  public:
   using LoadBalancer::LoadBalancer;
+  void stage_probe(double now) {
+    this->priority_ = {"a", "b"};
+    this->last_rotation_ = now;
+    this->begin_probe_("a", {"a"}, {"b"}, {"b"}, now);
+  }
+  bool has_probe() const { return this->probe_state_.has_value(); }
+
   void set_saturation(const std::string &consumer_id, double score) {
     this->get_consumer_(consumer_id).saturation_score = score;
   }
@@ -229,6 +236,43 @@ TEST(LoadBalancer, ZeroWeightTakesNoShare) {
   const auto b_out = b.compute_target("b", ConsumerMode{}, reports, 400.0f, {}, {}, {});
   EXPECT_FLOAT_EQ(a_out[0], 0.0f);
   EXPECT_FLOAT_EQ(b_out[0], 400.0f);
+}
+
+TEST(LoadBalancer, AllZeroWeightsParkAndResume) {
+  // The all-zero pool must not fall back to an equal split, even while
+  // winding down existing charge/discharge. Mirrors the Python regression.
+  for (bool fair : {false, true}) {
+    for (float grid : {-1000.0f, 1000.0f}) {
+      for (float power : {0.0f, 200.0f, -200.0f}) {
+        BalancerConfig cfg;
+        cfg.fair_distribution = fair;
+        cfg.min_efficient_power = 0.0f;
+        cfg.pace_base_step = 0.0f;
+        cfg.grid_predict_trust = 0.0f;  // assert allocation against the raw grid
+        auto b = make_balancer(cfg);
+        ReportMap reports;
+        reports["a"] = ConsumerReport{"HMA-2", "A", power, 0.0f};
+        reports["b"] = ConsumerReport{"HMA-2", "A", power, 0.0f};
+        for (const auto &cid : {"a", "b"}) {
+          const auto out = b.compute_target(cid, ConsumerMode{}, reports, grid, {}, {}, {});
+          EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], -power);
+        }
+        reports["a"] = ConsumerReport{"HMA-2", "A", 0.0f, 1.0f};
+        reports["b"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+        const auto out = b.compute_target("a", ConsumerMode{}, reports, grid, {}, {}, {});
+        EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], grid);
+      }
+    }
+  }
+}
+
+TEST(LoadBalancer, ZeroWeightPreservesManualOverride) {
+  auto b = make_balancer(BalancerConfig{});
+  ReportMap reports;
+  reports["a"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+  const auto out = b.compute_target("a", ConsumerMode{ConsumerModeKind::MANUAL, 300.0f},
+                                   reports, 1000.0f, {}, {"a"}, {});
+  EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], 300.0f);
 }
 
 TEST(LoadBalancer, AutoSplitAcrossPhases) {
@@ -755,3 +799,31 @@ TEST(SteerLog, WithNoSinkTheBalancerFormatsNothing) {
 }
 
 }  // namespace
+
+
+TEST(LoadBalancer, ParkingProbeParticipantCancelsBeforeResume) {
+  // Candidate and backup both invalidate the handoff when explicitly parked.
+  for (const auto &first : {"a", "b"}) {
+    double now = 1000.0;
+    BalancerConfig cfg;
+    cfg.min_efficient_power = 500.0f;
+    cfg.pace_base_step = 0.0f;
+    cfg.grid_predict_trust = 0.0f;
+    auto b = make_testable(&now, cfg);
+    b.stage_probe(now);
+    ReportMap reports;
+    reports["a"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+    reports["b"] = ConsumerReport{"HMA-2", "A", 0.0f, 0.0f};
+    b.compute_target(first, ConsumerMode{}, reports, 400.0f, {}, {}, {});
+    EXPECT_FALSE(b.has_probe());
+    for (const auto &cid : {"a", "b"}) {
+      const auto out = b.compute_target(cid, ConsumerMode{}, reports, 400.0f, {}, {}, {});
+      EXPECT_FLOAT_EQ(out[0] + out[1] + out[2], 0.0f);
+    }
+    now += 1.0;  // Before the old deadline: resume allocation, not the old probe.
+    reports["a"].weight = 1.0f;
+    const auto out = b.compute_target("a", ConsumerMode{}, reports, 400.0f, {}, {}, {});
+    EXPECT_FALSE(b.has_probe());
+    EXPECT_GT(out[0] + out[1] + out[2], 100.0f);
+  }
+}

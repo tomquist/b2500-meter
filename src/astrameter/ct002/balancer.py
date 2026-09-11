@@ -1903,6 +1903,14 @@ class LoadBalancer:
         control_grid = self._apply_import_trim(control_grid, trim_fresh)
         self._diag_control_grid = control_grid
 
+        # Weight zero is an explicit park, including when every battery is
+        # parked. Do this before allocation/probing can fall back to an equal
+        # share, and wind existing output down rather than merely adding zero.
+        if consumer_id and consumer_id in reports and reports[consumer_id].weight == 0:
+            if consumer_id in self._probe_participants():
+                self._clear_probe_state("participant parked")
+            return self._steer_to_zero(consumer_id, reports, paced=True)
+
         charge_blind, any_ac_chargeable = self._charge_blind(reports, grid_total)
         # Share weight per consumer: a saturated battery (one that stopped
         # following its commands) earns a smaller slice, floored just above
