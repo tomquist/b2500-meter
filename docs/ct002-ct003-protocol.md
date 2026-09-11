@@ -83,8 +83,18 @@ same ASCII wire field.
 - Any other value (observed: `0`, empty) is the **`'0'` unassigned bucket** — the
   **inspection mode** a device uses while it is still determining which phase it is on.
 - The emulator:
-  - **Responds** to the request (so the device can continue its phase detection), and
-  - **Does not** add an unassigned/inspection reporter's power to a committed‑phase aggregate.
+  - **Responds** to the request (so the device can continue its phase detection),
+  - **Does not** add an unassigned/inspection reporter's power to a committed‑phase aggregate, and
+  - **Resets the meter's conditioning wrappers** (Hampel window, EMA, deadband) on every
+    inspection poll and once more when the sweep ends — see below.
+- Inspection is **not** only a startup state: a Venus on firmware 1.50 was observed
+  re‑running it roughly every 35 minutes, and the routine is a *sweep* — the battery
+  takes itself off the CT and drives its own output to nearly full discharge and then
+  nearly full charge (~20 s) to watch the CT reading follow. Its grid swing is real and
+  is the whole point, so a rolling‑median filter must not reject it as a spike: it would
+  answer the sweep with a frozen pre‑sweep reading and then reject the true readings that
+  come back, steering the battery against an inverted grid sign once the sweep ends
+  (issue #652).
 - The `participate` flag (field 7) is an additional, explicit gate: even a fully phase‑committed reporter
   is **excluded from aggregation** when it sends `0`.
 
