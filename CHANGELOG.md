@@ -1,6 +1,6 @@
 # Changelog
 
-## Next
+## 2.3.0
 
 - **Fixed** batteries resuming automatic charging or discharging when every distribution weight was set to zero; all parked batteries now wind down to zero until their weights are restored ([#646](https://github.com/tomquist/astrameter/pull/646)).
 
