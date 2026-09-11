@@ -45,6 +45,19 @@ agent should write on GitHub is a **review thread**, to argue that a finding is
 wrong — a finding you accept needs no reply, just the fix. Everything else you
 say to the person you're working with.
 
+## Branches and pull requests
+
+Open pull requests against **`develop`**, never `main` (see `CONTRIBUTING.md`).
+`main` takes release merges and maintainer hotfixes only — never agent work,
+and the guard below exempts maintainers, so nothing will catch it for you.
+Tooling offers `main` as the base, so set it yourself;
+`.github/workflows/pr-base-guard.yml` retargets what slips through, at the cost
+of a round-trip.
+
+GitHub reads that workflow and `.github/pull_request_template.md` from the
+**default branch**, so edits to either do nothing until they reach `main` at the
+next release.
+
 ## Changelog
 
 For user-facing work, keep **exactly one bullet under `## Next`** for *your
