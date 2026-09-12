@@ -24,6 +24,7 @@ from astrameter.status.serialize import (
     compact,
     ct002_to_wire,
     iso,
+    iso_datetime,
     powermeter_to_wire,
     round_or_none,
     shelly_to_wire,
@@ -270,8 +271,12 @@ def _as_wire_dict(snapshot: Any) -> dict[str, Any]:
     """Shallow dataclass → wire dict for the integration snapshots.
 
     Their field names are already the wire names, so unlike the device
-    snapshots they need no rename layer — only ``None``-dropping and nested
-    dataclass expansion.
+    snapshots they need no rename layer — only ``None``-dropping, nested
+    dataclass expansion, and the ``datetime`` → ISO-8601 step that makes every
+    ``_at`` field a string on the wire.  There is no second chance at that
+    last one: a ``datetime`` that survives here reaches the plain
+    ``json.dumps`` in ``web_guard.json_response``, and the ``TypeError`` it
+    raises takes down the whole status response.
     """
     if not dataclasses.is_dataclass(snapshot) or isinstance(snapshot, type):
         return {}
@@ -282,6 +287,8 @@ def _as_wire_dict(snapshot: Any) -> dict[str, Any]:
             continue
         if dataclasses.is_dataclass(value) and not isinstance(value, type):
             out[field.name] = _as_wire_dict(value)
+        elif isinstance(value, datetime):
+            out[field.name] = iso_datetime(value)
         elif isinstance(value, (tuple, list)):
             out[field.name] = [
                 _as_wire_dict(v)

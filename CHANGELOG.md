@@ -2,6 +2,8 @@
 
 ## Next
 
+- **Fixed** the dashboard staying blank and `/api/status` returning nothing once cloud reporting had sent its first push ([#654](https://github.com/tomquist/astrameter/issues/654)).
+
 
 ## 2.3.0
 
