@@ -4,7 +4,7 @@
 
 - **Fixed** a battery being driven to full charge or discharge against the house for up to a minute after it ran its phase detection, on setups using the optional Hampel outlier filter ([#652](https://github.com/tomquist/astrameter/issues/652), [#653](https://github.com/tomquist/astrameter/pull/653)).
 
-- **Fixed** an MQTT power meter freezing on its last reading, while still reporting itself healthy, after the meter published a single null or non-numeric value ([#657](https://github.com/tomquist/astrameter/issues/657)).
+- **Fixed** an MQTT power meter freezing on its last reading, while still reporting itself healthy, after the meter published a single null or non-numeric value ([#657](https://github.com/tomquist/astrameter/issues/657), [#658](https://github.com/tomquist/astrameter/pull/658)).
 
 
 ## 2.3.0
