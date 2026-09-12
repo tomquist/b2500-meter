@@ -18,6 +18,9 @@ from astrameter.cloud_reporting import (
 from astrameter.config.config_loader import new_config_parser
 from astrameter.config.ini_config import IniAppConfig
 from astrameter.ct002 import CT002
+from astrameter.mqtt_insights.marstek_mqtt import MarstekMqttBinding
+from astrameter.mqtt_insights.service import MqttInsightsConfig, MqttInsightsService
+from astrameter.powermeter.base import Powermeter
 from astrameter.powermeter.wrappers.health import HealthTrackingPowermeter
 from astrameter.status import StatusRegistry, detect_config_mode
 from astrameter.status.config_mode import materialize_config, target_path
@@ -526,3 +529,93 @@ def test_iso_datetime_reads_a_naive_stamp_as_local_time() -> None:
     aware = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
     assert iso_datetime(aware) == "2026-06-18T12:00:00+00:00"
     assert iso_datetime(aware.astimezone()) == "2026-06-18T12:00:00+00:00"
+
+
+# -- every subsystem at once ------------------------------------------
+
+
+class _StubMeter(Powermeter):
+    """Innermost meter, so the health wrapper has a pipeline to report."""
+
+    async def get_powermeter_watts(self) -> list[float]:
+        return [230.0, -14.0, 0.0]
+
+
+async def _everything() -> StatusRegistry:
+    """A registry with every optional subsystem populated.
+
+    The `/api/status` tests run against devices alone, and until #654 nothing
+    anywhere put a cloud reporter in a registry — which is exactly why a field
+    only that subsystem produces reached users unserialized.  This builds the
+    whole document instead, from the real objects rather than stand-ins, so
+    the assertion below covers each subsystem's own snapshot types.
+    """
+    from astrameter.shelly.shelly import Shelly
+
+    registry = _registry()
+    registry.register_device("ct-1", "ct002", _ct())
+
+    shelly = Shelly([], udp_port=2220, device_id="sh-1", device_type="shellypro3em_new")
+    shelly._track_battery_seen(("10.0.0.31", 1010))
+    registry.register_device("sh-1", "shellypro3em", shelly)
+
+    meter = HealthTrackingPowermeter(_StubMeter(), name="SCRIPT_1")
+    await meter.get_powermeter_watts()
+    registry.powermeters = [meter]
+
+    insights = MqttInsightsService(MqttInsightsConfig(broker="10.0.0.2"))
+    await insights.register_marstek(
+        MarstekMqttBinding(
+            device_id="ct-1",
+            ct_type="HME-4",
+            mac="02b250000001",
+            get_values=_StubMeter().get_powermeter_watts,
+            wifi_rssi=-55,
+        )
+    )
+    registry.insights = insights
+
+    registry.cloud_reporters["aabbccddeeff"] = await _reporter_that_has_pushed()
+    registry.managed_marstek["HME-4"] = ("02b250000001", 121)
+    return registry
+
+
+async def test_the_whole_status_document_is_json() -> None:
+    """The backstop for the class of bug #654 was: the serializer's contract
+    is JSON, but every test asserted dicts, and a dict holding a live
+    ``datetime`` compares equal to one holding a live ``datetime``.  Only
+    ``json.dumps`` can tell them apart, and before this nothing called it —
+    so the one thing that could was the running server.
+    """
+    registry = await _everything()
+
+    document = json.loads(json.dumps(registry.snapshot(ingress=False)))
+
+    # Pin what was covered, so a subsystem added later that `_everything`
+    # forgets shows up as this test going quiet rather than staying green.
+    assert len(document["devices"]) == 2
+    assert len(document["powermeters"]) == 1
+    assert set(document["integrations"]) == {
+        "mqtt_insights",
+        "cloud_reporting",
+        "marstek_account",
+    }
+    assert document["integrations"]["mqtt_insights"]["marstek_bindings"]
+
+
+def test_a_value_with_no_wire_form_is_refused_not_passed_through() -> None:
+    """The trapdoor #654 came through: `_as_wire_dict` wrote every unknown
+    type to the wire untouched, leaving `json.dumps` to fail on it at request
+    time.  Refusing here names the field and fails in the suite instead."""
+
+    @dataclasses.dataclass
+    class Snapshot:
+        ok: str = "fine"
+        rogue: Any = Path("/etc/passwd")
+
+    with pytest.raises(TypeError, match="rogue: a PosixPath has no wire form"):
+        _as_wire_dict(Snapshot())
+
+    # A sequence is the same wire, so it gets the same refusal.
+    with pytest.raises(TypeError, match="rogue: a PosixPath"):
+        _as_wire_dict(Snapshot(rogue=[Path("/etc/passwd")]))
